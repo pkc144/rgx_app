@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "892331696104",
+    "project_id": "alphaquark-59f50",
+    "storage_bucket": "alphaquark-59f50.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:892331696104:android:13a97e1825d56dc7e60e5d",
+        "android_client_info": {
+          "package_name": "com.arpint.alphaquark"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "892331696104-edd73qtuqltcj68qkrqh7fptq01vvb2u.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.arpint.alphaquark",
+            "certificate_hash": "baa554e7fe6ddd5a76946e9f50218660c9f00423"
+          }
+        },
+        {
+          "client_id": "892331696104-e26pu9iotqrjk1o6jq4ifd4e95fasil1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8rSYoQQWOeVwR6bayjBVgdlHMlCIskyI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "892331696104-e26pu9iotqrjk1o6jq4ifd4e95fasil1.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "892331696104-gs4gdllr0ges38e0i4627b4arb6over6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.arpint.alphaquark"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

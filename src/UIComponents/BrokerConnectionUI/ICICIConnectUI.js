@@ -1,0 +1,365 @@
+import React, {useRef, useState} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  SafeAreaView,
+  Dimensions,
+  Image,
+  TextInput,
+  ActivityIndicator,
+} from 'react-native';
+import Modal from 'react-native-modal';
+import {WebView} from 'react-native-webview';
+import {
+  EyeIcon,
+  EyeOffIcon,
+  ChevronLeft,
+  ChevronUp,
+  ChevronDown,
+} from 'lucide-react-native';
+import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
+import LinearGradient from 'react-native-linear-gradient';
+import iciciIcon from '../../assets/icici.png';
+import ICICIHelpContent from './HelpUI/ICICIHelpContent';
+
+const {height: screenHeight, width: screenWidth} = Dimensions.get('window');
+const commonHeight = 40;
+
+const ICICIConnectUI = ({
+  isVisible,
+  onClose,
+  apiKey,
+  secretKey,
+  isPasswordVisible,
+  isPasswordVisibleup,
+  showWebView,
+  authUrl,
+  helpVisible,
+  loading,
+  setApiKey,
+  setSecretKey,
+  setHelpVisible,
+  setIsPasswordVisible,
+  setIsPasswordVisibleup,
+  initiateAuth,
+  handleWebViewNavigationStateChange,
+  shouldRenderContent,
+}) => {
+  const scrollViewRef = useRef(null);
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Modal
+      isVisible={isVisible}
+      onBackdropPress={onClose}
+      onBackButtonPress={onClose}
+      style={styles.modal}
+      backdropOpacity={0.1}
+      useNativeDriver
+      animationIn="slideInUp"
+      animationOut="slideOutDown">
+      <SafeAreaView style={styles.modalContent}>
+        <LinearGradient
+          colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.headerRow}>
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <TouchableOpacity style={styles.backButton} onPress={onClose}>
+              <ChevronLeft size={24} color="#000" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Connect to ICICI</Text>
+          </View>
+          <Image
+            source={iciciIcon}
+            style={{
+              width: 35,
+              height: 35,
+              backgroundColor: '#fff',
+              borderRadius: 3,
+            }}
+            resizeMode="contain"
+          />
+        </LinearGradient>
+        {shouldRenderContent && !showWebView && (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            ref={scrollViewRef}>
+            {/* Header */}
+
+            {/* Help Section */}
+            <View style={[styles.guideBox, {maxHeight: expanded ? 420 : 320}]}>
+              <ScrollView
+                showsVerticalScrollIndicator
+                nestedScrollEnabled
+                contentContainerStyle={styles.helpScrollContent}>
+                <ICICIHelpContent
+                  expanded={expanded}
+                  onExpandChange={setExpanded}
+                />
+              </ScrollView>
+              <TouchableOpacity
+                onPress={() => setExpanded(!expanded)}
+                style={styles.toggleContainer}>
+                <Text style={styles.toggleText}>
+                  {expanded ? 'See Less' : 'Read More'}
+                </Text>
+                <View style={styles.toggleIconContainer}>
+                  {expanded ? (
+                    <ChevronUp size={14} color="#000" />
+                  ) : (
+                    <ChevronDown size={14} color="#000" />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* API & Secret Inputs */}
+            <View style={styles.inputCard}>
+              <View style={styles.connectRow}>
+                <Text style={styles.connectLabel}>Connect to ICICI</Text>
+                <Image
+                  source={iciciIcon}
+                  style={{width: 30, height: 30, borderRadius: 3}}
+                  resizeMode="contain"
+                />
+              </View>
+              <View style={{paddingHorizontal: 10}}>
+                <View>
+                  <Text style={styles.headerLabel}>API Key :</Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      value={apiKey}
+                      placeholder="Enter your API key"
+                      placeholderTextColor="grey"
+                      style={[styles.inputStyles, {color: 'grey', flex: 1}]}
+                      secureTextEntry={!isPasswordVisibleup}
+                      onChangeText={text => setApiKey(text.trim())}
+                    />
+                    <TouchableOpacity
+                      onPress={() =>
+                        setIsPasswordVisibleup(!isPasswordVisibleup)
+                      }>
+                      {apiKey ? (
+                        isPasswordVisibleup ? (
+                          <EyeIcon size={24} color="#000" />
+                        ) : (
+                          <EyeOffIcon size={24} color="#000" />
+                        )
+                      ) : null}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View>
+                  <Text style={styles.headerLabel}>Secret Key :</Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      value={secretKey}
+                      placeholder="Enter your Secret key"
+                      placeholderTextColor="grey"
+                      style={[styles.inputStyles, {color: 'grey', flex: 1}]}
+                      secureTextEntry={!isPasswordVisible}
+                      onChangeText={text => setSecretKey(text.trim())}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                      {secretKey ? (
+                        isPasswordVisible ? (
+                          <EyeIcon size={24} color="#000" />
+                        ) : (
+                          <EyeOffIcon size={24} color="#000" />
+                        )
+                      ) : null}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.proceedButton,
+                    {
+                      backgroundColor:
+                        apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                    },
+                  ]}
+                  onPress={initiateAuth}
+                  disabled={!(apiKey && secretKey)}>
+                  {loading ? (
+                    <ActivityIndicator size={27} color="#fff" />
+                  ) : (
+                    <Text style={styles.proceedButtonText}>Connect ICICI</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        )}
+
+        {/* WebView Section */}
+        {shouldRenderContent && showWebView && (
+          <View style={styles.webViewWrapper}>
+            {/* Header */}
+            <View style={styles.webViewHeader}>
+              <TouchableOpacity
+                onPress={onClose}
+                style={{flexDirection: 'row', alignItems: 'center'}}>
+                <ChevronLeft size={24} color="black" />
+                <Text style={{marginLeft: 5, color: '#000'}}>Back</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* WebView */}
+            <WebView
+              source={{uri: authUrl}}
+              style={styles.webView}
+              javaScriptEnabled
+              domStorageEnabled
+              startInLoadingState
+              renderLoading={() => (
+                <ActivityIndicator
+                  size="large"
+                  color="#0056B7"
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    marginLeft: -15,
+                    marginTop: -15,
+                  }}
+                />
+              )}
+              onNavigationStateChange={handleWebViewNavigationStateChange}
+            />
+          </View>
+        )}
+      </SafeAreaView>
+
+      {/* Help Modal */}
+      <HelpModal
+        broker="ICICI"
+        visible={helpVisible}
+        onClose={() => setHelpVisible(false)}
+      />
+    </Modal>
+  );
+};
+
+export default ICICIConnectUI;
+
+const styles = StyleSheet.create({
+  modal: {justifyContent: 'flex-end', margin: 0},
+  modalContent: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  backButton: {
+    padding: 4,
+    borderRadius: 5,
+    backgroundColor: '#fff',
+    elevation: 4,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderColor: '#E8E9EC',
+    paddingVertical: 13,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#fff',
+    marginLeft: 20,
+  },
+  guideBox: {
+    margin: 10,
+    borderWidth: 1,
+    borderColor: '#E8E9EC',
+    borderRadius: 8,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    padding: 5,
+  },
+  toggleText: {fontSize: 14, fontFamily: 'Poppins-SemiBold', color: '#0056B7'},
+  inputCard: {
+    padding: 0,
+    marginHorizontal: 15,
+    borderWidth: 0.3,
+    borderRadius: 8,
+    borderColor: '#c8c8c8',
+  },
+  connectRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 10,
+    borderRadius: 3,
+    marginBottom: 10,
+  },
+  connectLabel: {fontSize: 16, fontWeight: '700', color: '#000'},
+  headerLabel: {
+    fontSize: 14,
+    marginVertical: 5,
+    color: 'black',
+    fontFamily: 'Poppins-Medium',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    borderColor: '#ccc',
+    marginBottom: 10,
+  },
+  proceedButton: {
+    padding: 10,
+    borderRadius: 8,
+    height: commonHeight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  proceedButtonText: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Medium',
+    color: 'white',
+  },
+  webViewWrapper: {flex: 1, backgroundColor: '#fff'},
+  webViewHeader: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E9EC',
+  },
+  webView: {flex: 1},
+  content: {paddingBottom: 20},
+  toggleIconContainer: {
+    backgroundColor: '#fff',
+    elevation: 3,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  inputStyles: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+    paddingVertical: 5,
+  },
+});

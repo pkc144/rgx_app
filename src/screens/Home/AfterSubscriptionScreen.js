@@ -1,0 +1,780 @@
+import React, {useState, useEffect} from 'react';
+import {
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+  FlatList,
+  Dimensions,
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import {ChevronLeft, Bookmark} from 'lucide-react-native';
+import {getAuth} from '@react-native-firebase/auth';
+import {TabView, SceneMap, TabBar} from 'react-native-tab-view';
+import {useNavigation} from '@react-navigation/native';
+import axios from 'axios';
+import Config from 'react-native-config';
+import moment from 'moment';
+
+import server from '../../utils/serverConfig';
+import {generateToken} from '../../utils/SecurityTokenManager';
+import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
+
+import PriceText from '../../components/AdviceScreenComponents/DynamicText/PriceText';
+import PortfolioPercentage from '../../components/AdviceScreenComponents/DynamicText/PortfolioPercentage';
+import ReviewTradeText from '../../components/AdviceScreenComponents/ReviewTradeText';
+
+import RebalanceTimeLineModal from '../../components/ModelPortfolioComponents/RebalanceTimelineModal';
+import ModifyInvestment from './ModifyInvestment1';
+import TerminateStrategyModal from './TerminateStrategyModal';
+import defaultImage from '../../assets/default.png';
+import CustomTabBarMPPerformance from '../Drawer/CustomTabbarMPPerformance';
+import EmptyStateInfoMP from '../Drawer/EmptyStateMP';
+import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
+import DistributionGrid from '../Drawer/DistributionRowGrid';
+import {useTrade} from '../TradeContext';
+
+const screenWidth = Dimensions.get('window').width;
+const ScreenHeight = Dimensions.get('window').height;
+const InfoPill = ({title, value, accent}) => (
+  <View style={[styles.infoPill, accent && styles.infoPillAccent]}>
+    <Text style={styles.infoPillTitle}>{title}</Text>
+    <Text style={[styles.infoPillValue, accent && styles.infoPillValueAccent]}>
+      {value}
+    </Text>
+  </View>
+);
+
+const DistributionRow = ({label, percent}) => (
+  <View style={styles.distRow}>
+    <Text style={styles.distLabel}>{label}</Text>
+    <Text style={styles.distPercent}>{percent}%</Text>
+    <View style={styles.progressTrack}>
+      <View style={[styles.progressFill, {width: `${percent}%`}]} />
+    </View>
+  </View>
+);
+
+const AfterSubscriptionScreen = ({route}) => {
+  const {configData} = useTrade();
+  const {fileName} = route.params;
+  const auth = getAuth();
+  const user = auth.currentUser;
+  const userEmail = user && user.email;
+  const navigation = useNavigation();
+  const [index, setIndex] = useState(0);
+  const [userDetails, setUserDetails] = useState();
+  const [strategyDetails, setStrategyDetails] = useState(null);
+  const [latestRebalance, setLatestRebalance] = useState(null);
+  const [subscriptionAmount, setSubscrptionAmount] = useState();
+  const [showRebalanceTimelineModal, setShowRebalanceTimelineModal] =
+    useState(false);
+  const [terminateModal, setTerminateModal] = useState(false);
+  const [modifyInvestmentModal, setModifyInvestmentModal] = useState(false);
+  const [tabHeights, setTabHeights] = useState([0, 0, 0]);
+  const [routes] = useState([
+    {key: 'portfolio', title: 'Portfolio'},
+    {key: 'overview', title: 'OverView'},
+  ]);
+  const handleTabLayout = index => event => {
+    const {height} = event.nativeEvent.layout;
+    setTabHeights(prev => {
+      const newHeights = [...prev];
+      newHeights[index] = height;
+
+      return newHeights;
+    });
+  };
+  // Fetch User
+  const getUserDeatils = () => {
+    axios
+      .get(`${server.server.baseUrl}api/user/getUser/${userEmail}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'aq-encrypted-key': generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        },
+      })
+      .then(res => setUserDetails(res.data.User))
+      .catch(err => console.log(err));
+  };
+  useEffect(() => {
+    getUserDeatils();
+  }, [userEmail]);
+
+  // Fetch Strategy
+  const getStrategyDetails = () => {
+    if (fileName) {
+      axios
+        .get(
+          `${
+            server.server.baseUrl
+          }api/model-portfolio/portfolios/strategy/${fileName?.replaceAll(
+            /_/g,
+            ' ',
+          )}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        )
+        .then(res => {
+          const portfolioData = res.data[0].originalData;
+          setStrategyDetails(portfolioData);
+          if (portfolioData?.model?.rebalanceHistory?.length > 0) {
+            const latest = portfolioData.model.rebalanceHistory.sort(
+              (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
+            )[0];
+            setLatestRebalance(latest);
+          }
+        })
+        .catch(err => console.log(err));
+    }
+  };
+  useEffect(() => {
+    getStrategyDetails();
+  }, [fileName]);
+
+  // Subscription Amount
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const getSubscriptionData = async () => {
+    if (!userEmail || !strategyDetails) return;
+
+    try {
+      setPortfolioLoading(true);
+      const response = await axios.get(
+        `${
+          server.server.baseUrl
+        }api/model-portfolio-db-update/subscription-raw-amount?email=${encodeURIComponent(
+          userEmail,
+        )}&modelName=${encodeURIComponent(
+          strategyDetails?.model_name,
+        )}&user_broker=${encodeURIComponent(
+          userDetails?.user_broker ? userDetails?.user_broker : 'DummyBroker',
+        )}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      setSubscrptionAmount(response.data.data);
+      setPortfolioLoading(false);
+    } catch (error) {
+      setPortfolioLoading(false);
+      console.error('Error fetching subscription data:', error);
+    }
+  };
+  useEffect(() => {
+    if (strategyDetails) {
+      getSubscriptionData();
+    }
+  }, [strategyDetails]);
+
+  const sortedRebalances =
+    subscriptionAmount?.subscription_amount_raw?.sort(
+      (a, b) => new Date(b.dateTime) - new Date(a.dateTime),
+    ) || [];
+
+  const net_portfolio_updated = subscriptionAmount?.user_net_pf_model?.sort(
+    (a, b) => new Date(b.execDate) - new Date(a.execDate),
+  )?.[0];
+
+  const {getLTPForSymbol} = useWebSocketCurrentPrice(
+    net_portfolio_updated?.order_results,
+  );
+
+  const totalUpdatedQty =
+    net_portfolio_updated?.order_results?.reduce(
+      (total, ele) => total + (ele?.quantity || 0),
+      0,
+    ) || 0;
+
+  const totalInvested =
+    net_portfolio_updated?.order_results?.reduce((total, stock) => {
+      return total + stock.averagePrice * stock.quantity;
+    }, 0) || 0;
+
+  const totalCurrent =
+    net_portfolio_updated?.order_results?.reduce((total, stock) => {
+      return total + getLTPForSymbol(stock.symbol) * stock.quantity;
+    }, 0) || 0;
+
+  const tableData =
+    net_portfolio_updated?.order_results?.map(stock => ({
+      symbol: stock.symbol,
+      currentPrice: getLTPForSymbol(stock?.symbol)
+        ? getLTPForSymbol(stock?.symbol)
+        : 0,
+      avgBuyPrice: stock?.averagePrice,
+      returns:
+        ((getLTPForSymbol(stock?.symbol) - stock?.averagePrice) /
+          stock?.averagePrice) *
+        100,
+      weights: (stock?.quantity / totalUpdatedQty) * 100,
+      shares: stock?.quantity,
+    })) || [];
+
+  const [singleStrategyDetails, setSingleStrategyDetails] = useState();
+  const getSingleStrategyDetails = () => {
+    if (fileName !== null) {
+      axios
+        .get(
+          `${
+            server.server.baseUrl
+          }api/model-portfolio/portfolios/strategy/${fileName?.replaceAll(
+            /_/g,
+            ' ',
+          )}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        )
+        .then(res => {
+          const portfolioData = res.data[0].originalData;
+          console.log('Inside :', portfolioData);
+          setSingleStrategyDetails(portfolioData);
+          if (
+            portfolioData &&
+            portfolioData.model &&
+            portfolioData.model.rebalanceHistory.length > 0
+          ) {
+            const latest = portfolioData.model.rebalanceHistory.sort(
+              (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
+            )[0];
+            setLatestRebalance(latest);
+          }
+        })
+        .catch(err => console.log(err));
+    }
+  };
+
+  useEffect(() => {
+    getSingleStrategyDetails();
+  }, [fileName]);
+
+  return (
+    <LinearGradient
+      colors={['#002651', '#0056B7']}
+      start={{x: 0, y: 0}}
+      end={{x: 0, y: 1}}
+      style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor="#002651" />
+
+        <ScrollView contentContainerStyle={styles.content}>
+          {/* Header Card */}
+          <LinearGradient
+            colors={['#0056B7', '#002651']}
+            style={styles.headerCard}>
+            <View style={styles.headerRow}>
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}>
+                <ChevronLeft size={24} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>{fileName}</Text>
+            </View>
+
+            <View style={styles.zcInfraSection}>
+              <View style={styles.circlesWrap} pointerEvents="none">
+                <View style={styles.circle1} />
+                <View style={styles.circle2} />
+                <View style={styles.circle3} />
+              </View>
+              <View style={styles.balanceRow}>
+                <View style={{flex: 1}}>
+                  <Text style={styles.caption}>Current Investment</Text>
+                  <PortfolioPercentage
+                    type={'totalcurrent'}
+                    totalInvested={totalInvested}
+                    net_portfolio_updated={net_portfolio_updated}
+                  />
+                </View>
+                <View style={styles.plSection}>
+                  <Text style={styles.totalReturnsLabel}>Total Returns</Text>
+                  <PortfolioPercentage
+                    type={'totalnet'}
+                    totalInvested={totalInvested}
+                    net_portfolio_updated={net_portfolio_updated}
+                  />
+                </View>
+              </View>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaText}>
+                  Invested ₹{totalInvested?.toFixed(2)}
+                </Text>
+                <Text style={styles.metaText}>
+                  Exp. Date{' '}
+                  {moment(strategyDetails?.nextRebalanceDate).format(
+                    'DD MMM YYYY',
+                  )}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.pillsRow}>
+              <InfoPill
+                title="Next Rebalance"
+                value={moment(strategyDetails?.nextRebalanceDate).format(
+                  'DD MMM, YYYY',
+                )}
+                accent
+              />
+              <InfoPill
+                title="Last Rebalance"
+                value={moment(strategyDetails?.last_updated).format(
+                  'DD MMM, YYYY',
+                )}
+              />
+              <InfoPill title="Rebalance" value={strategyDetails?.frequency} />
+            </View>
+          </LinearGradient>
+
+          {/* Holdings Distribution */}
+          <View style={{}}>
+            <View style={styles.tabViewContainer}>
+              <TabView
+                navigationState={{index, routes}}
+                renderScene={SceneMap({
+                  portfolio: () => (
+                    <View
+                      style={{flex: 1, width: '100%', paddingHorizontal: 16}}>
+                      {latestRebalance?.adviceEntries?.length ? (
+                        <DistributionGrid
+                          adviceEntries={latestRebalance.adviceEntries}
+                          holdings={net_portfolio_updated?.order_results}
+                          getLTPForSymbol={getLTPForSymbol}
+                          totalCurrent={totalCurrent}
+                        />
+                      ) : (
+                        <EmptyStateInfoMP />
+                      )}
+                    </View>
+                  ),
+
+                  overview: () => (
+                    <SafeAreaView style={{flex: 1, backgroundColor: '#fff'}}>
+                      <ScrollView
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={{
+                          alignItems: 'center',
+                          paddingHorizontal: 16,
+                          paddingTop: 0,
+                          paddingBottom: 0, // give breathing space
+                        }}>
+                        <View style={{flex: 1}}>
+                          <PerformanceChart modelName={fileName} />
+                        </View>
+
+                        <View style={{paddingTop: 0, width: '100%'}}>
+                          <Text style={styles.methodTextHead}>
+                            Defining the universe
+                          </Text>
+                          <Text style={styles.methodText}>
+                            {singleStrategyDetails?.definingUniverse}
+                          </Text>
+
+                          <Text style={styles.methodTextHead}>Research</Text>
+                          <Text style={styles.methodText}>
+                            {singleStrategyDetails?.researchOverView}
+                          </Text>
+
+                          <Text style={styles.methodTextHead}>
+                            Constituent Screening
+                          </Text>
+                          <Text style={styles.methodText}>
+                            {singleStrategyDetails?.constituentScreening}
+                          </Text>
+
+                          <Text style={styles.methodTextHead}>Weighting</Text>
+                          <Text style={styles.methodText}>
+                            {singleStrategyDetails?.weighting}
+                          </Text>
+
+                          <Text style={styles.methodTextHead}>Rebalance</Text>
+                          <Text style={styles.methodText}>
+                            {singleStrategyDetails?.rebalanceMethodologyText}
+                          </Text>
+
+                          <Text style={styles.methodTextHead}>
+                            Asset Allocation
+                          </Text>
+                          <Text style={styles.methodText}>
+                            {singleStrategyDetails?.assetAllocationText}
+                          </Text>
+                        </View>
+                      </ScrollView>
+                    </SafeAreaView>
+                  ),
+                })}
+                onIndexChange={setIndex}
+                initialLayout={{width: screenWidth}}
+                onLayout={handleTabLayout(2)}
+                renderTabBar={props => (
+                  <CustomTabBarMPPerformance
+                    isSubscriptionActive={false} // pass to show lock icon
+                    {...props}
+                  />
+                )}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          paddingHorizontal: 10,
+          gap: 10,
+          backgroundColor: '#fff',
+          paddingBottom: 10,
+          borderWidth: 0.3,
+          borderColor: '#c8c8c8',
+          // Shadow / Elevation
+          shadowColor: '#000', // iOS
+          shadowOffset: {width: 0, height: 2}, // iOS
+          shadowOpacity: 0.15, // iOS
+          shadowRadius: 4, // iOS
+          elevation: 4,
+        }}>
+        <TouchableOpacity
+          onPress={() => setTerminateModal(true)}
+          style={styles.exitBtn}>
+          <Text style={styles.exitBtnText}>Exit Model Portfolio</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setModifyInvestmentModal(true)}
+          style={styles.investBtn}>
+          <Text style={styles.investBtnText}>Modify Investment</Text>
+        </TouchableOpacity>
+      </View>
+      {/* Exit & Modify */}
+
+      {modifyInvestmentModal && (
+        <ModifyInvestment
+          modifyInvestmentModal={modifyInvestmentModal}
+          setModifyInvestmentModal={setModifyInvestmentModal}
+          userEmail={userEmail}
+          strategyDetails={strategyDetails}
+          getStrategyDetails={getStrategyDetails}
+          amount={sortedRebalances[0]?.amount || 0}
+          latestRebalance={latestRebalance}
+          userBroker={userDetails?.user_broker}
+        />
+      )}
+
+      {terminateModal && (
+        <TerminateStrategyModal
+          setTerminateModal={setTerminateModal}
+          terminateModal={terminateModal}
+          userEmail={userEmail}
+          strategyDetails={strategyDetails}
+          userDetails={userDetails}
+          getStrategyDetails={getStrategyDetails}
+          tableData={tableData}
+          totalInvested={totalInvested}
+          totalCurrent={totalCurrent}
+        />
+      )}
+
+      {showRebalanceTimelineModal && (
+        <RebalanceTimeLineModal
+          closeRebalanceTimelineModal={() =>
+            setShowRebalanceTimelineModal(false)
+          }
+          strategyDetails={strategyDetails}
+        />
+      )}
+    </LinearGradient>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {flex: 1},
+  safeArea: {flex: 1},
+  content: {paddingBottom: 32, backgroundColor: '#F6F8FB'},
+
+  headerCard: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 0,
+    paddingVertical: 16,
+    paddingHorizontal: 30,
+    borderColor: 'rgba(255,255,255,0.15)',
+    marginHorizontal: -16,
+  },
+  tabViewContainer: {
+    flex: 1,
+    height: ScreenHeight,
+    width: screenWidth,
+    paddingHorizontal: 0,
+    // Make TabView container flexible
+    marginTop: 10, // Added margin for spacing
+  },
+  headerOverlay: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 0,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    padding: 4,
+    backgroundColor: '#FFF',
+    color: '#000',
+    borderRadius: 5,
+  },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    marginLeft: 16,
+  },
+  headerRight: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  iconButton: {padding: 4},
+  avatar: {width: 28, height: 28, borderRadius: 14},
+
+  zcInfraSection: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 3,
+    padding: 16,
+    marginTop: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  subHeaderRow: {flexDirection: 'row', alignItems: 'center'},
+  portfolioContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconTile: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    marginRight: 8,
+  },
+  portfolioBadgeText: {color: '#FFFFFF', fontSize: 12, fontWeight: '700'},
+  activeBadge: {
+    marginLeft: 'auto',
+    backgroundColor: '#2ECC71',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  activeBadgeText: {color: '#FFFFFF', fontSize: 12, fontWeight: '700'},
+
+  balanceRow: {flexDirection: 'row', alignItems: 'flex-start', marginTop: 16},
+  caption: {color: 'rgba(255,255,255,0.9)', fontSize: 11},
+  amount: {color: '#FFFFFF', fontSize: 32, fontWeight: '800', marginTop: 4},
+  plSection: {alignItems: 'center', justifyContent: 'center', marginLeft: 16},
+
+  statItem: {alignItems: 'flex-end'},
+  statLabel: {color: 'rgba(255,255,255,0.8)', fontSize: 11},
+  statValue: {color: '#FFFFFF', fontSize: 13, fontWeight: '700'},
+
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  metaText: {color: 'rgba(255,255,255,0.85)', fontSize: 11},
+  methodTextHead: {
+    color: 'rgba(0, 0, 0, 0.85)',
+    fontSize: 11,
+    fontFamily: 'Poppins-Bold',
+    marginTop: 20,
+  },
+  methodText: {color: 'rgba(0, 0, 0, 1)', fontSize: 11},
+  pillsRow: {flexDirection: 'row', gap: 8, marginTop: 12},
+  infoPill: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.30)',
+    borderRadius: 2,
+    padding: 8,
+  },
+  infoPillAccent: {backgroundColor: 'rgba(255,255,255,0.30)'},
+  infoPillTitle: {color: '#fff', fontSize: 10},
+  infoPillValue: {color: '#FFFFFF', fontSize: 12, marginTop: 4},
+  infoPillValueAccent: {color: '#85F500', fontSize: 12, marginTop: 4},
+
+  tabsRow: {flexDirection: 'row', marginTop: 12, gap: 8},
+  tabBtn: {
+    flex: 1,
+    backgroundColor: '#E6EEF9',
+    borderRadius: 4,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  tabBtnActive: {backgroundColor: '#29A400'},
+  tabText: {color: '#0E2746', fontSize: 12, fontWeight: '600'},
+  tabTextActive: {color: '#FFFFFF'},
+
+  plPill: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  plPillText: {color: '#FFFFFF', fontSize: 12, fontWeight: '700'},
+  totalReturnsLabel: {color: 'rgba(255,255,255,0.9)', fontSize: 11},
+  totalReturnsValue: {
+    color: '#2ECC71',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+
+  circlesWrap: {
+    position: 'absolute',
+    right: -40,
+    top: -10,
+    width: 180,
+    height: 180,
+  },
+  circle1: {
+    position: 'absolute',
+    right: 0,
+    top: 30,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  circle2: {
+    position: 'absolute',
+    right: 20,
+    top: 60,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+
+  splitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E6EEF9',
+    paddingBottom: 12,
+  },
+  splitTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  splitTabActive: {
+    color: '#0E66FF',
+    fontSize: 14,
+  },
+  splitTabInactive: {
+    color: '#0E2746',
+    fontSize: 14,
+  },
+  activeUnderline: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: '#0E66FF',
+    borderRadius: 1.5,
+  },
+  cardContainer: {
+    backgroundColor: '#FFFFFF',
+    opacity: 0.1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F3',
+    padding: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.0,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 3,
+    zIndex: 0,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#E6EEF9',
+  },
+  distRow: {marginBottom: 0},
+  distLabel: {color: '#0E2746', fontSize: 12, fontWeight: '600'},
+  distPercent: {
+    color: '#0E66FF',
+    fontSize: 12,
+    fontWeight: '700',
+    alignSelf: 'flex-end',
+  },
+  progressTrack: {
+    height: 12,
+    backgroundColor: '#E6EEF9',
+    borderRadius: 6,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  progressFill: {height: 12, backgroundColor: '#2D7DFD', borderRadius: 6},
+
+  investBtn: {
+    backgroundColor: '#0E66FF',
+    flex: 1,
+    borderRadius: 4,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  investBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '700'},
+
+  exitBtn: {
+    backgroundColor: '#e89a69ff',
+    borderRadius: 4,
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  exitBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '700'},
+
+  handleWrap: {alignItems: 'center', marginTop: 14},
+  handle: {width: 120, height: 4, borderRadius: 2, backgroundColor: '#0E2746'},
+});
+
+export default AfterSubscriptionScreen;
