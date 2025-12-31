@@ -1,6 +1,8 @@
 # OSX
 #
 .DS_Store
+.env
+.env.*
 
 # Xcode
 #
@@ -71,3 +73,4 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+.env
