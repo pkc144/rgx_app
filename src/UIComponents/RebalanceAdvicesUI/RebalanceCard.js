@@ -29,15 +29,16 @@ import {XIcon, Calendar, Check, X, Info} from 'lucide-react-native';
 import APP_VARIANTS from '../../utils/Config';
 import MPStatusModal from '../../components/AdviceScreenComponents/MPStatusModal';
 import logo from '../../assets/fadedlogo.png';
-const selectedVariant = Config.APP_VARIANT;
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
 const {
   logo: LogoComponent,
-  mainColor,
-  themeColor,
-  CardborderWidth,
-  cardElevation,
-  cardverticalmargin,
-} = APP_VARIANTS[selectedVariant];
+  mainColor = '#4CAAA0',
+  themeColor = '#0056B7',
+  CardborderWidth = 0,
+  cardElevation = 3,
+  cardverticalmargin = 3,
+} = variantConfig;
 
 import {generateToken} from '../../utils/SecurityTokenManager';
 import RebalancePreferenceModal from './RebalancePreferenceModal';
@@ -250,7 +251,7 @@ const RebalanceCard = ({
         setBrokerModel(true);
         setLoading(false);
         return;
-      } else if (funds?.status === false || funds?.status === 1) {
+      } else if (funds?.status === 1 || funds?.status === 2 || funds === null) {
         setOpenTokenExpireModel(true);
         setLoading(false);
         return;

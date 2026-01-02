@@ -552,6 +552,7 @@ const RebalanceModal = ({
 
         return axios.post(
           `${server.server.baseUrl}api/model-portfolio-db-update`,
+          updateData,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -562,7 +563,29 @@ const RebalanceModal = ({
               ),
             },
           },
-          updateData,
+        );
+      })
+      .then(() => {
+        // Add user to status check queue for async order status polling (matching web frontend)
+        const statusCheckData = {
+          userEmail: userEmail,
+          modelName: filteredData[0]['model_name'],
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+          broker: broker,
+        };
+        return axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          statusCheckData,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
         );
       })
       .then(() => {

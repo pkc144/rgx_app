@@ -42,22 +42,23 @@ import CustomTabBar from '../Drawer/CustomTabbar';
 import CustomTabBarOrder from '../Drawer/CustomTabbarOrder';
 import LinearGradient from 'react-native-linear-gradient';
 import {useTrade} from '../TradeContext';
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
 const {
   logo: LogoComponent,
-  themeColor,
-  CardborderWidth,
-  bottomTabbg,
-  mainColor,
-  secondaryColor,
-  gradient1,
-  bottomTabBorderTopWidth,
-  gradient2,
-  cardElevation,
-  cardverticalmargin,
-  placeholderText,
-  tabIconColor,
-} = APP_VARIANTS[selectedVariant];
+  themeColor = '#0056B7',
+  CardborderWidth = 0,
+  bottomTabbg = '#fff',
+  mainColor = '#4CAAA0',
+  secondaryColor = '#F0F0F0',
+  gradient1 = '#F0F0F0',
+  bottomTabBorderTopWidth = 1.5,
+  gradient2 = '#F0F0F0',
+  cardElevation = 3,
+  cardverticalmargin = 3,
+  placeholderText = '#FFFFFF',
+  tabIconColor = '#000',
+} = variantConfig;
 
 export default function OrderScreen() {
   const {configData} = useTrade();

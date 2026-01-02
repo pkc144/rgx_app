@@ -52,7 +52,7 @@ import IIFLModal from '../iiflmodal';
 import AliceBlueConnect from '../BrokerConnectionModal/AliceBlueConnect';
 import FyersConnect from '../BrokerConnectionModal/FyersConnect';
 import {generateToken} from '../../utils/SecurityTokenManager';
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
 import {useModal} from '../ModalContext';
 import MotilalModal from '../BrokerConnectionModal/MotilalModal';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
@@ -60,13 +60,14 @@ import BrokerSelectionModal from '../BrokerSelectionModal';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
 import CartFullAmountText from './DynamicText/CartFullAmountText';
 import TotalAmountText from './DynamicText/totalAmount';
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
 const {
   logo: LogoComponent,
-  themeColor,
-  mainColor,
-  secondaryColor,
+  themeColor = '#0056B7',
+  mainColor = '#4CAAA0',
+  secondaryColor = '#F0F0F0',
   toolbarlogo: Toolbarlogo1,
-} = APP_VARIANTS[selectedVariant];
+} = variantConfig;
 const AddToCartModal = ({
   isVisible,
   onClose,
@@ -359,7 +360,7 @@ const AddToCartModal = ({
   const handleTrade = async () => {
     setTradeClickCount(prevCount => prevCount + 1);
 
-    const isFundsEmpty = funds?.status === false;
+    const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
 
     const currentBrokerRejectedCount = await getRejectedCount();
     if (broker === 'Zerodha') {

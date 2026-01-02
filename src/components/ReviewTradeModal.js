@@ -34,18 +34,19 @@ const {height: screenHeight} = Dimensions.get('window');
 import APP_VARIANTS from '../utils/Config';
 import useLTPStore from './AdviceScreenComponents/DynamicText/useLtpStore';
 import TotalAmountText from './AdviceScreenComponents/DynamicText/totalAmount';
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
 const {
   logo: LogoComponent,
-  themeColor,
-  mainColor,
-  secondaryColor,
-  basket1,
-  basket2,
+  themeColor = '#0056B7',
+  mainColor = '#4CAAA0',
+  secondaryColor = '#F0F0F0',
+  basket1 = '#9D2115',
+  basket2 = '#6B1207',
   toolbarlogo: Toolbarlogo1,
-  gradient1,
-  gradient2,
-} = APP_VARIANTS[selectedVariant];
+  gradient1 = '#F0F0F0',
+  gradient2 = '#F0F0F0',
+} = variantConfig;
 const ReviewTradeModal = ({
   visible,
   onClose,

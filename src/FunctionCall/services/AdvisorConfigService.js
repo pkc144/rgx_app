@@ -84,10 +84,12 @@
  * bespokePlansEnabled: boolean (default: true)
  *
  * --- PAYMENT CONFIGURATION ---
- * paymentPlatform: enum('razorpay', 'cashfree') - Payment gateway
+ * paymentPlatform: enum('razorpay', 'cashfree', 'payu') - Payment gateway
  * razorpayKey: string - Razorpay API key
  * cashfreeAppId: string - Cashfree App ID
  * cashfreeSecretKey: string - Cashfree secret (encrypted)
+ * payuMerchantKey: string - PayU merchant key
+ * payuMerchantSalt: string - PayU merchant salt (encrypted)
  *
  * --- API KEYS ---
  * advisorSpecificTag: string - Advisor tag for API calls
@@ -257,10 +259,12 @@ const DEFAULT_ADVISOR_CONFIG = {
   // ============================================================================
   // PAYMENT CONFIGURATION
   // ============================================================================
-  paymentPlatform: 'cashfree', // 'razorpay' or 'cashfree'
+  paymentPlatform: 'cashfree', // 'razorpay', 'cashfree', or 'payu'
   razorpayKey: '',
   cashfreeAppId: '',
   cashfreeSecretKey: '',
+  payuMerchantKey: '',
+  payuMerchantSalt: '',
 
   // ============================================================================
   // API KEYS
@@ -785,8 +789,8 @@ export const updatePaymentConfig = async (subdomain, paymentConfig) => {
     }
 
     // Validate payment platform
-    if (paymentConfig.paymentPlatform && !['razorpay', 'cashfree'].includes(paymentConfig.paymentPlatform)) {
-      throw new Error('Payment platform must be either "razorpay" or "cashfree"');
+    if (paymentConfig.paymentPlatform && !['razorpay', 'cashfree', 'payu'].includes(paymentConfig.paymentPlatform)) {
+      throw new Error('Payment platform must be "razorpay", "cashfree", or "payu"');
     }
 
     const updateData = {
@@ -795,6 +799,8 @@ export const updatePaymentConfig = async (subdomain, paymentConfig) => {
       razorpayKey: paymentConfig.razorpayKey,
       cashfreeAppId: paymentConfig.cashfreeAppId,
       cashfreeSecretKey: paymentConfig.cashfreeSecretKey,
+      payuMerchantKey: paymentConfig.payuMerchantKey,
+      payuMerchantSalt: paymentConfig.payuMerchantSalt,
       updatedAt: new Date().toISOString(),
     };
 
@@ -911,8 +917,8 @@ export const validateAdvisorConfig = configData => {
     errors.push('Digio check must be either "beforePayment" or "afterPayment"');
   }
 
-  if (configData.paymentPlatform && !['razorpay', 'cashfree'].includes(configData.paymentPlatform)) {
-    errors.push('Payment platform must be either "razorpay" or "cashfree"');
+  if (configData.paymentPlatform && !['razorpay', 'cashfree', 'payu'].includes(configData.paymentPlatform)) {
+    errors.push('Payment platform must be "razorpay", "cashfree", or "payu"');
   }
 
   return {

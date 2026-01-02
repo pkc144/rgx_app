@@ -9,12 +9,16 @@ import {
   AlertCircle,
   XCircle,
 } from 'lucide-react-native';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
 import moment from 'moment';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import logo from '../../assets/fadedlogo.png';
 import BasketRunningProfit from '../../components/AdviceScreenComponents/DynamicText/BasketRunningProfit';
+import {useTrade} from '../../screens/TradeContext';
+import {reconcileBasket, isClosureTrade} from '../../services/ReconciliationService';
+import PendingOrderWarningModal from '../../components/PendingOrderWarningModal';
+import {cancelOrder} from '../../services/BrokerOrderBookAPI';
 
 const BasketCard = ({
   basket,
@@ -31,6 +35,20 @@ const BasketCard = ({
   console.log("Basket i Have ------",basket);
   const [showMore, setShowMore] = useState(false);
   const [expandedTrades, setExpandedTrades] = useState({});
+
+  // Get trade context for reconciliation
+  const {
+    userDetails,
+    broker,
+    fetchBrokerOrderBook,
+    configData,
+  } = useTrade();
+
+  // Reconciliation state
+  const [isCheckingReconciliation, setIsCheckingReconciliation] = useState(false);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [reconciliationResult, setReconciliationResult] = useState(null);
+  const [pendingStockDetails, setPendingStockDetails] = useState(null);
 
   // Determine basket status
   const isEdited = basket?.trades?.some(t => t.isEdited === true) || false;
@@ -79,37 +97,177 @@ const BasketCard = ({
   const firstThreeTrades = showMore ? basket?.trades || [] : (basket?.trades || []).slice(0, 3);
   const remainingCount = basket?.trades?.length > 3 ? basket.trades.length - 3 : 0;
 
-  const mapBasketToStockDetails = (basket) => ({
-    exchange: basket.Exchange || 'NFO',
-    orderType: basket.OrderType || 'MARKET',
-    productType: basket.ProductType || 'CARRYFORWARD',
-    quantity: basket.Quantity || 1,
-    segment: basket.Segment || 'OPTIONS',
-    tradeId: basket.tradeId || '',
-    priority: basket.Priority || 0,
-    trade_given_by: basket.trade_given_by || '',
-    tradingSymbol: basket.Symbol || '',
-    transactionType: basket.Type || 'BUY',
-    user_broker: basket.user_broker || '',
-    user_email: basket.user_email || '',
-    zerodhaTradeId: basket.zerodhaTradeId || 'NA',
-    price: basket.Price || basket.LimitPrice || null,
-    stopLoss: basket.stopLoss || basket.sl || null,
-    target: basket.profitTarget || basket.Target || null,
-  });
+  const mapBasketToStockDetails = (basketItem) => {
+    // Detect if this is a closure trade (matching web implementation)
+    const isRecommend = basketItem.trade_place_status === "recommend" || basketItem.trade_place_status === "RECOMMEND";
+    const hasToTradeQty = basketItem.toTradeQty !== undefined && basketItem.toTradeQty !== null && basketItem.toTradeQty !== 0;
+    const hasClosureStatus = basketItem.closurestatus && basketItem.closurestatus !== "";
+    const isClosure = basketItem.isClosure === true || hasClosureStatus || (hasToTradeQty && !isRecommend);
 
-  const handleTradeNowBasket = () => {
+    // For closure trades, currentHolding is opposite sign of toTradeQty
+    const currentHolding = isClosure
+      ? (basketItem.currentHolding !== undefined ? basketItem.currentHolding : Math.abs(basketItem.toTradeQty || 0))
+      : 0;
+
+    return {
+      exchange: basketItem.Exchange || 'NFO',
+      orderType: basketItem.OrderType || basketItem.orderType || basketItem.order_type || 'MARKET',
+      productType: basketItem.ProductType || 'CARRYFORWARD',
+      quantity: basketItem.Quantity || 1,
+      segment: basketItem.Segment || 'OPTIONS',
+      tradeId: basketItem.tradeId || '',
+      priority: basketItem.Priority || 0,
+      trade_given_by: basketItem.trade_given_by || '',
+      tradingSymbol: basketItem.Symbol || '',
+      transactionType: basketItem.Type || 'BUY',
+      user_broker: broker || basketItem.user_broker || '',
+      user_email: basketItem.user_email || '',
+      zerodhaTradeId: basketItem.zerodhaTradeId || 'NA',
+      price: basketItem.Price || basketItem.LimitPrice || null,
+      stopLoss: basketItem.stopLoss || basketItem.sl || null,
+      target: basketItem.profitTarget || basketItem.Target || null,
+      // Closure-specific fields
+      searchSymbol: basketItem.searchSymbol || basketItem.search_symbol,
+      closurestatus: basketItem.closurestatus || (isClosure ? 'fullClose' : undefined),
+      basketId: basketItem.basketId,
+      basketName: basketItem.basketName,
+      Lots: basketItem.Lots || basketItem.lots || 1,
+      isClosure: isClosure,
+      toTradeQty: basketItem.toTradeQty,
+      currentHolding: currentHolding,
+    };
+  };
+
+  /**
+   * Check if basket has closure trades
+   */
+  const hasClosureTrades = () => {
+    return basket?.trades?.some(trade => isClosureTrade(trade));
+  };
+
+  /**
+   * Proceed with trade after reconciliation checks
+   */
+  const proceedWithTrade = (stockDetails) => {
     setbasketId(basketId);
     setbasketName(basketName);
     setisBasket(true);
     fullsetBasketData(basket?.trades);
+    setStockDetails(stockDetails);
+    handleTradeBasket();
+  };
 
+  /**
+   * Handle user's resolution choices from warning modal
+   */
+  const handleWarningModalConfirm = async (userChoices) => {
+    try {
+      setIsCheckingReconciliation(true);
+
+      // Import and use applyUserResolutions
+      const {applyUserResolutions} = require('../../services/ReconciliationService');
+      const resolvedResult = applyUserResolutions(reconciliationResult, userChoices);
+
+      // Cancel pending orders if user chose to
+      if (resolvedResult.ordersToCancel?.length > 0 && userDetails) {
+        const credentials = {
+          clientCode: userDetails.clientCode,
+          apiKey: userDetails.apiKey,
+          jwtToken: userDetails.jwtToken,
+          secretKey: userDetails.secretKey,
+          sid: userDetails.sid,
+          viewToken: userDetails.viewToken,
+          serverId: userDetails.serverId,
+        };
+
+        for (const orderToCancel of resolvedResult.ordersToCancel) {
+          console.log('[BasketCard] Cancelling order:', orderToCancel.orderId);
+          await cancelOrder(broker, credentials, orderToCancel.orderId, {
+            variety: orderToCancel.variety,
+          }, configData);
+        }
+      }
+
+      // Update stock details with trades to place (excluding skipped)
+      const tradesToPlaceDetails = resolvedResult.tradesToPlace.map(trade => ({
+        ...mapBasketToStockDetails(trade),
+        quantity: trade.quantity || trade.Quantity,
+        wasAdjusted: trade.wasAdjusted,
+        needsRefresh: trade.needsRefresh,
+      }));
+
+      setShowWarningModal(false);
+      setReconciliationResult(null);
+
+      // Proceed with trades to place
+      if (tradesToPlaceDetails.length > 0) {
+        proceedWithTrade(tradesToPlaceDetails);
+      } else {
+        console.log('[BasketCard] All trades skipped, no orders to place');
+      }
+    } catch (error) {
+      console.error('[BasketCard] Error applying resolutions:', error);
+    } finally {
+      setIsCheckingReconciliation(false);
+    }
+  };
+
+  /**
+   * Handle cancel all from warning modal
+   */
+  const handleWarningModalCancelAll = () => {
+    setShowWarningModal(false);
+    setReconciliationResult(null);
+    setPendingStockDetails(null);
+    console.log('[BasketCard] User cancelled all trades');
+  };
+
+  const handleTradeNowBasket = async () => {
+    // Prepare stock details
     const stockDetails = basket?.trades?.map((item) => ({
       ...mapBasketToStockDetails(item),
     })) || [];
-    setStockDetails(stockDetails);
 
-    handleTradeBasket();
+    // Check if basket has closure trades and broker is connected
+    const basketHasClosures = hasClosureTrades();
+
+    if (basketHasClosures && broker) {
+      // Need to check for conflicts with pending orders
+      setIsCheckingReconciliation(true);
+
+      try {
+        // Fetch ALL orders from broker (includes pending, rejected, completed)
+        const {orders: allOrders} = await fetchBrokerOrderBook(true);
+
+        console.log('[BasketCard] Fetched', allOrders?.length || 0, 'orders for reconciliation');
+
+        // Run reconciliation for closure baskets
+        const result = reconcileBasket(stockDetails, allOrders || []);
+
+        if (result.hasConflicts) {
+          // Show warning modal
+          console.log('[BasketCard] Conflicts detected:', result.conflicts.length);
+          result.conflicts.forEach(c => console.log('[BasketCard] Conflict:', c.type, c.closureTrade?.symbol));
+          setReconciliationResult(result);
+          setPendingStockDetails(stockDetails);
+          setShowWarningModal(true);
+          setIsCheckingReconciliation(false);
+          return;
+        }
+
+        // No conflicts, proceed normally
+        setIsCheckingReconciliation(false);
+        proceedWithTrade(stockDetails);
+      } catch (error) {
+        console.error('[BasketCard] Reconciliation check error:', error);
+        setIsCheckingReconciliation(false);
+        // Proceed anyway on error (fail open)
+        proceedWithTrade(stockDetails);
+      }
+    } else {
+      // No closures or no broker connected, proceed normally
+      proceedWithTrade(stockDetails);
+    }
   };
 
   const date = basket?.trades?.[0]?.date || new Date();
@@ -343,19 +501,41 @@ const BasketCard = ({
         <TouchableOpacity
           style={[
             styles.acceptButton,
-            isExpired && styles.acceptButtonDisabled
+            (isExpired || isCheckingReconciliation) && styles.acceptButtonDisabled
           ]}
           onPress={handleTradeNowBasket}
-          disabled={isExpired}
+          disabled={isExpired || isCheckingReconciliation}
         >
-          <Text style={[
-            styles.acceptButtonText,
-            isExpired && styles.acceptButtonTextDisabled
-          ]}>
-            {isExpired ? 'Basket Expired' : (isClosureBasket ? 'Close Positions' : 'View More Detail/Trade')}
-          </Text>
-          {!isExpired && <ArrowRight size={12} color={isClosureBasket ? 'rgba(139, 0, 0, 1)' : 'rgba(41, 164, 0, 1)'} />}
+          {isCheckingReconciliation ? (
+            <>
+              <ActivityIndicator size="small" color="rgba(41, 164, 0, 1)" style={{marginRight: 8}} />
+              <Text style={styles.acceptButtonText}>Checking orders...</Text>
+            </>
+          ) : (
+            <>
+              <Text style={[
+                styles.acceptButtonText,
+                isExpired && styles.acceptButtonTextDisabled
+              ]}>
+                {isExpired ? 'Basket Expired' : (isClosureBasket ? 'Close Positions' : 'View More Detail/Trade')}
+              </Text>
+              {!isExpired && <ArrowRight size={12} color={isClosureBasket ? 'rgba(139, 0, 0, 1)' : 'rgba(41, 164, 0, 1)'} />}
+            </>
+          )}
         </TouchableOpacity>
+
+        {/* Pending Order Warning Modal */}
+        <PendingOrderWarningModal
+          visible={showWarningModal}
+          conflicts={reconciliationResult?.conflicts || []}
+          onClose={() => {
+            setShowWarningModal(false);
+            setReconciliationResult(null);
+          }}
+          onConfirm={handleWarningModalConfirm}
+          onCancelAll={handleWarningModalCancelAll}
+          isLoading={isCheckingReconciliation}
+        />
       </View>
     </LinearGradient>
   );

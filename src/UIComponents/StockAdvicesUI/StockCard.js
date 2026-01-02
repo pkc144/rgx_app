@@ -93,14 +93,15 @@ const StockCard = React.memo(
       );
     }, [price, advisedRangeHigher, advisedRangeLower]);
 
-    const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+    const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
+    const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
     const {
       logo: LogoComponent,
-      themeColor,
-      CardborderWidth,
-      cardElevation,
-      cardverticalmargin,
-    } = APP_VARIANTS[selectedVariant];
+      themeColor = '#0056B7',
+      CardborderWidth = 0,
+      cardElevation = 3,
+      cardverticalmargin = 3,
+    } = variantConfig;
 
     const [loadingcart, setloadingcart] = useState(false);
     const navigation = useNavigation();

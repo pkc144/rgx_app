@@ -194,13 +194,14 @@ const UserStrategySubscribeModal = ({
       setBrokerModel(true);
       fetchBrokerStatusModal();
       setCalculateLoading(false);
-    } else if (funds?.status === false) {
-      console.log('this got hit:');
+    } else if (funds?.status === 1 || funds?.status === 2 || funds === null) {
+      // Funds check matching web frontend: status 1/2 = token issue, null = error
+      console.log('Funds status check failed:', funds?.status);
       setOpenTokenExpireModel(true);
       setCalculateLoading(false);
-    } else if (isMarketHours) {
+    } else if (!isMarketHours) {
+      // Block orders outside market hours (matching web frontend logic)
       setCalculateLoading(false);
-
       showToast();
       return;
     } else {
@@ -245,10 +246,10 @@ const UserStrategySubscribeModal = ({
       } else if (broker === 'Angel One') {
         payload = {
           ...payload,
-          apiKey: 'EfkDdJMH',
+          apiKey: configData?.config?.REACT_APP_ANGEL_ONE_API_KEY,
           jwtToken: jwtToken,
         };
-      } else if (broker === 'kotak') {
+      } else if (broker === 'Kotak') {
         payload = {
           ...payload,
           consumerKey: checkValidApiAnSecret(apiKey),
@@ -263,6 +264,44 @@ const UserStrategySubscribeModal = ({
           ...payload,
           apiKey: checkValidApiAnSecret(apiKey),
           accessToken: jwtToken,
+        };
+      } else if (broker === 'Zerodha') {
+        payload = {
+          ...payload,
+          apiKey: checkValidApiAnSecret(apiKey),
+          SecretKey: checkValidApiAnSecret(secretKey),
+          accessToken: jwtToken,
+        };
+      } else if (broker === 'Fyers') {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+        };
+      } else if (broker === 'AliceBlue') {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+          apiKey: checkValidApiAnSecret(apiKey),
+        };
+      } else if (broker === 'Dhan') {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+        };
+      } else if (broker === 'Groww') {
+        payload = {
+          ...payload,
+          accessToken: jwtToken,
+        };
+      } else if (broker === 'Motilal Oswal') {
+        payload = {
+          ...payload,
+          clientCode: clientCode,
+          accessToken: jwtToken,
+          apiKey: checkValidApiAnSecret(apiKey),
         };
       }
       let config = {
@@ -309,15 +348,17 @@ const UserStrategySubscribeModal = ({
       ? [
           ...calculatedPortfolioData?.buy.map(item => ({
             symbol: item.symbol,
-            qty: item.quantity, // Adjust according to the API response
+            token: item?.token ? item?.token : '',
+            qty: item.quantity,
             orderType: 'BUY',
-            exchange: item.exchange, // Use directly from the API response
+            exchange: item.exchange,
           })),
           ...calculatedPortfolioData?.sell.map(item => ({
             symbol: item.symbol,
-            qty: item.quantity, // Adjust according to the API response
+            token: item?.token ? item?.token : '',
+            qty: item.quantity,
             orderType: 'SELL',
-            exchange: item.exchange, // Based on your condition
+            exchange: item.exchange,
           })),
         ]
       : [];
@@ -340,6 +381,7 @@ const UserStrategySubscribeModal = ({
         orderType: 'MARKET',
         price: 0,
         tradingSymbol: item.symbol,
+        token: item?.token ? item?.token : '',
         quantity: item.qty,
         priority: 0,
         user_broker: broker,
@@ -375,7 +417,11 @@ const UserStrategySubscribeModal = ({
     const getBrokerSpecificPayload = () => {
       switch (broker) {
         case 'IIFL Securities':
-          return {clientCode};
+          return {
+            clientCode,
+            user_broker: 'IIFL Securities',
+            accessToken: jwtToken,
+          };
         case 'ICICI Direct':
         case 'Upstox':
           return {
@@ -403,6 +449,27 @@ const UserStrategySubscribeModal = ({
             viewToken: viewToken,
             sid: sid,
             serverId: serverId,
+          };
+        case 'Fyers':
+          return {
+            clientId: clientCode,
+            accessToken: jwtToken,
+          };
+        case 'AliceBlue':
+          return {
+            clientId: clientCode,
+            accessToken: jwtToken,
+            apiKey: checkValidApiAnSecret(apiKey),
+          };
+        case 'Groww':
+          return {
+            accessToken: jwtToken,
+          };
+        case 'Motilal Oswal':
+          return {
+            clientCode: clientCode,
+            accessToken: jwtToken,
+            apiKey: checkValidApiAnSecret(apiKey),
           };
         default:
           return {};
@@ -443,6 +510,29 @@ const UserStrategySubscribeModal = ({
         return axios.post(
           `${server.server.baseUrl}api/model-portfolio-db-update`,
           updateData,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        );
+      })
+      .then(() => {
+        // Add user to status check queue for async order status polling (matching web frontend)
+        const statusCheckData = {
+          userEmail: userEmail,
+          modelName: strategyDetails?.model_name,
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+          broker: broker,
+        };
+        return axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          statusCheckData,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -775,7 +865,29 @@ const UserStrategySubscribeModal = ({
 
             data: JSON.stringify({user_email: userEmail}),
           };
-          return await axios.request(config);
+          await axios.request(config);
+
+          // Add user to status check queue for async order status polling (matching web frontend)
+          const statusCheckData = {
+            userEmail: userEmail,
+            modelName: zerodhaAdditionalPayload.modelName,
+            advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+            broker: 'Zerodha',
+          };
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+            statusCheckData,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            },
+          );
         } catch (error) {
           console.error(`Error updating portfolio for`, error);
         }

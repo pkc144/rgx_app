@@ -38,10 +38,11 @@ import APP_VARIANTS from '../../utils/Config';
 import RebalanceNotificationComponent from './RebalanceNotificationComponent';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
-const selectedVariant = Config.APP_VARIANT// Default to "arfs" if not set
-const { logo: LogoComponent, themeColor,mainColor,secondaryColor,   gradient1,
-  gradient2,
-  placeholderText } = APP_VARIANTS[selectedVariant];
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
+const { logo: LogoComponent, themeColor = '#0056B7', mainColor = '#4CAAA0', secondaryColor = '#F0F0F0', gradient1 = '#F0F0F0',
+  gradient2 = '#F0F0F0',
+  placeholderText = '#FFFFFF' } = variantConfig;
 const PushNotificationScreen = () => {
   const {
     allNotifications,

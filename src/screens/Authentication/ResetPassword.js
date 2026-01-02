@@ -18,14 +18,13 @@ import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import {Image} from 'react-native-elements';
-import Config from 'react-native-config';
-import APP_VARIANTS from '../../utils/Config';
+import {useConfig} from '../../context/ConfigContext';
 // --- ASSETS ---
 const AlphaQuarkLogo = require('../../assets/logo.png');
 
 const ResetPasswordScreen = () => {
-  const selectedVariant = Config.APP_VARIANT;
-  const {logo: LogoComponent, themeColor} = APP_VARIANTS[selectedVariant];
+  const config = useConfig();
+  const {logo: LogoComponent, themeColor} = config || {};
 
   const navigation = useNavigation();
   const [email, setEmail] = useState('');

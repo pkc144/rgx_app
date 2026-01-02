@@ -319,11 +319,11 @@ export const setConfigData = async configData => {
         ],
         [
           STORAGE_KEYS.MODEL_PORTFOLIO,
-          JSON.stringify(config.REACT_APP_MODEL_PORTFOLIO_STATUS === 'true' || config.REACT_APP_MODEL_PORTFOLIO_STATUS === true || config.REACT_APP_MODEL_PORTFOLIO_STATUS === 'enabled'),
+          JSON.stringify(config.REACT_APP_MODEL_PORTFOLIO_STATUS ?? false),
         ],
         [
           STORAGE_KEYS.BESPOKE_PLANS,
-          JSON.stringify(config.REACT_APP_BESPOKE_PLANS_STATUS === 'true' || config.REACT_APP_BESPOKE_PLANS_STATUS === true || config.REACT_APP_BESPOKE_PLANS_STATUS === 'enabled'),
+          JSON.stringify(config.REACT_APP_BESPOKE_PLANS_STATUS ?? false),
         ],
         // Digio configuration - dynamically configurable per advisor
         [

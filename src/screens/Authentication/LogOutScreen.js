@@ -10,14 +10,12 @@ import LinearGradient from 'react-native-linear-gradient';
 import {getAuth, signOut} from '@react-native-firebase/auth';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
 import {useTrade} from '../TradeContext';
-import Config from 'react-native-config';
-import APP_VARIANTS from '../../utils/Config';
+import {useConfig} from '../../context/ConfigContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
-const {themeColor, mainColor} = APP_VARIANTS[selectedVariant];
-
 const LogoutScreen = ({navigation}) => {
+  const config = useConfig();
+  const {themeColor, mainColor} = config || {};
   const {
     setUserDetails,
     setIsProfileCompleted,

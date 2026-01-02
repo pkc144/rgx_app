@@ -12,9 +12,10 @@ import { Dropdown } from 'react-native-element-dropdown';
 import server from '../../utils/serverConfig';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { useTrade } from '../TradeContext';
-const selectedVariant = Config.APP_VARIANT// Default to "arfs" if not set
-const { logo: LogoComponent, themeColor,  gradient1,
-  gradient2,mainColor} = APP_VARIANTS[selectedVariant];
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
+const { logo: LogoComponent, themeColor = '#0056B7', gradient1 = '#F0F0F0',
+  gradient2 = '#F0F0F0', mainColor = '#4CAAA0'} = variantConfig;
 const WishSearch = ({ searchQuery, onBackPress, onQueryChange, onBookmark, currentTab, watchlists }) => {
   const {configData}=useTrade();
   const [results, setResults] = useState([]);

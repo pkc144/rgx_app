@@ -61,6 +61,14 @@ import {
   CashFreeRecurringPayment,
 } from '../../FunctionCall/services/CashFreeOneTimePayment';
 import {
+  createPayUOrder,
+  registerPayUSI,
+  verifyPayUPayment,
+  PayUOneTimePayment,
+  PayUSIPayment,
+} from '../../FunctionCall/services/PayUService';
+import PayUWebView from '../PayUWebView';
+import {
   checkCashfreePaymentStatus,
   checkSubscriptionStatus,
   pollPaymentStatus,
@@ -354,8 +362,15 @@ const MPInvestNowModal = ({
 
   const cashfree =
     String(adminpaymentPlatform).trim().toLowerCase() === 'cashfree';
+  const payu =
+    String(adminpaymentPlatform).trim().toLowerCase() === 'payu';
 
-  console.log('Cashfreee-------', cashfree, adminpaymentPlatform);
+  console.log('Payment Platform-------', adminpaymentPlatform, { cashfree, payu });
+
+  // PayU WebView state
+  const [showPayUWebView, setShowPayUWebView] = useState(false);
+  const [payuFormData, setPayuFormData] = useState(null);
+  const [payuIsSI, setPayuIsSI] = useState(false);
   const [showCoupon, setShowCoupon] = useState(false);
   const handledOrderIdsRef = { current: new Set() };
   const animatedHeight = useRef(new Animated.Value(0)).current;
@@ -1921,8 +1936,311 @@ const MPInvestNowModal = ({
 
   //END CF RECURRING
 
+  // ============================================================================
+  // PAYU PAYMENT FUNCTIONS
+  // ============================================================================
+
+  /**
+   * Initiate PayU one-time payment
+   * Creates order and opens WebView for payment
+   */
+  const initiatePayUPayment = async (plandata, amount) => {
+    console.log('[PayU] Initiating one-time payment:', {
+      amount,
+      plan_id: plandata?._id,
+      user_email: userEmail,
+      name,
+      phone: mobileNumber,
+    });
+
+    try {
+      setLoading(true);
+
+      // Create PayU order via backend
+      const response = await createPayUOrder({
+        amount,
+        user_email: userEmail,
+        name,
+        phone: mobileNumber,
+        plan_id: plandata?._id,
+        duration: oneTimeDurationPlan || 30,
+        couponId: appliedCouponId,
+        productinfo: plandata?.name || 'Subscription',
+        countryCode,
+        panNumber,
+        birthDate,
+        telegramId,
+        capital: invetAmount,
+        configData,
+      });
+
+      console.log('[PayU] Order created:', response);
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to create PayU order');
+      }
+
+      // Save pending payment for recovery
+      const pendingPaymentData = createPendingPaymentData({
+        orderId: response.data.txnid,
+        userEmail,
+        planId: plandata?._id,
+        paymentType: PaymentType.ONE_TIME,
+        amount,
+        planDetails: plandata,
+        userDetails: {
+          name,
+          email: userEmail,
+          pan: panNumber,
+          phone: mobileNumber,
+          countryCode,
+        },
+        digioRequired: isDigioEnabled,
+        gateway: 'payu',
+      });
+      await savePendingPayment(pendingPaymentData);
+      console.log('[PayU] Saved pending payment for recovery:', response.data.txnid);
+
+      // Set form data and open WebView
+      setPayuFormData(response);
+      setPayuIsSI(false);
+      setShowPayUWebView(true);
+      setLoading(false);
+
+    } catch (error) {
+      console.error('[PayU] Payment initiation error:', error);
+      setLoading(false);
+      Alert.alert(
+        'Payment Error',
+        error?.message || 'Failed to initialize payment. Please try again.',
+      );
+    }
+  };
+
+  /**
+   * Initiate PayU Standing Instructions (recurring) payment
+   * Creates SI mandate and opens WebView for payment
+   */
+  const initiatePayUSIPayment = async (plandata, frequency) => {
+    console.log('[PayU SI] Initiating recurring payment:', {
+      frequency,
+      plan_id: plandata?._id,
+      user_email: userEmail,
+      name,
+      phone: mobileNumber,
+    });
+
+    try {
+      setLoadingmp(true);
+
+      const amount = plandata?.pricing?.[frequency] || 0;
+
+      // Register PayU Standing Instructions via backend
+      const response = await registerPayUSI({
+        amount,
+        user_email: userEmail,
+        name,
+        phone: mobileNumber,
+        plan_id: plandata?._id,
+        frequency,
+        duration: 12, // Default 12 billing cycles
+        productinfo: plandata?.name || 'Subscription',
+        countryCode,
+        panNumber,
+        birthDate,
+        telegramId,
+        capital: invetAmount,
+        couponId: appliedCouponId,
+        configData,
+      });
+
+      console.log('[PayU SI] SI registration response:', response);
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to register PayU SI');
+      }
+
+      // Save pending payment for recovery
+      const pendingPaymentData = createPendingPaymentData({
+        orderId: response.data.txnid,
+        subscriptionId: response.data.udf2, // SI subscription ID stored in udf2
+        userEmail,
+        planId: plandata?._id,
+        paymentType: PaymentType.RECURRING,
+        amount,
+        planDetails: plandata,
+        userDetails: {
+          name,
+          email: userEmail,
+          pan: panNumber,
+          phone: mobileNumber,
+          countryCode,
+        },
+        digioRequired: isDigioEnabled,
+        gateway: 'payu',
+        frequency,
+      });
+      await savePendingPayment(pendingPaymentData);
+      console.log('[PayU SI] Saved pending payment for recovery:', response.data.txnid);
+
+      // Set form data and open WebView
+      setPayuFormData(response);
+      setPayuIsSI(true);
+      setShowPayUWebView(true);
+      setLoadingmp(false);
+
+    } catch (error) {
+      console.error('[PayU SI] SI initiation error:', error);
+      setLoadingmp(false);
+      Alert.alert(
+        'Payment Error',
+        error?.message || 'Failed to initialize recurring payment. Please try again.',
+      );
+    }
+  };
+
+  /**
+   * Handle PayU payment success callback from WebView
+   */
+  const handlePayUSuccess = async (txnid, callbackDetails) => {
+    console.log('[PayU] Payment success callback:', { txnid, callbackDetails });
+
+    try {
+      setLoading(true);
+      setShowPayUWebView(false);
+
+      // Verify payment with backend
+      const verifyResult = await verifyPayUPayment(txnid, configData);
+      console.log('[PayU] Verification result:', verifyResult);
+
+      if (!verifyResult.success) {
+        throw new Error(verifyResult.error || 'Payment verification failed');
+      }
+
+      const paymentStatus = verifyResult.transaction?.status?.toLowerCase();
+      if (paymentStatus !== 'success' && paymentStatus !== 'captured') {
+        throw new Error(`Payment status: ${paymentStatus}. Please contact support.`);
+      }
+
+      // Complete the payment based on type
+      if (payuIsSI) {
+        // Recurring payment completion
+        await PayUSIPayment({
+          paymentDetails: txnid,
+          email: userEmail,
+          name,
+          panNumber,
+          mobileNumber,
+          countryCode,
+          specificPlan: plandata,
+          telegramId,
+          birthDate,
+          invetAmount,
+          singleStrategyDetails: strategyDetails,
+          selectedCard,
+          panCategory: userDetails?.panCategory,
+          couponId: appliedCouponId,
+          configData,
+        });
+      } else {
+        // One-time payment completion
+        await PayUOneTimePayment({
+          paymentDetails: txnid,
+          email: userEmail,
+          name,
+          panNumber,
+          mobileNumber,
+          countryCode,
+          specificPlan: plandata,
+          telegramId,
+          birthDate,
+          invetAmount,
+          singleStrategyDetails: strategyDetails,
+          oneTimeDurationPlan,
+          onetimeamount,
+          panCategory: userDetails?.panCategory,
+          couponId: appliedCouponId,
+          configData,
+        });
+      }
+
+      // Clear pending payment on success
+      await clearPendingPayment();
+
+      // Log payment success
+      await logPayment('PAYMENT_SUCCESS', {
+        amount: payuIsSI ? plandata?.pricing?.[selectedCard] : onetimeamount,
+        clientName: name,
+        email: userEmail,
+        plan: plandata?.name,
+        phoneNumber: mobileNumber,
+        panNumber,
+        countryCode: countryCode || '+91',
+        gateway: 'payu',
+        paymentType: payuIsSI ? 'recurring' : 'onetime',
+      });
+
+      setLoading(false);
+
+      // Handle success with Telegram collection if needed
+      handlePaymentSuccessWithTelegram();
+
+    } catch (error) {
+      console.error('[PayU] Payment completion error:', error);
+      setLoading(false);
+      setShowPaymentFail(true);
+      setPaymentSuccess(false);
+      Alert.alert(
+        'Payment Error',
+        error?.message || 'Payment verification failed. Please contact support.',
+      );
+    }
+  };
+
+  /**
+   * Handle PayU payment failure callback from WebView
+   */
+  const handlePayUFailure = async (error) => {
+    console.log('[PayU] Payment failure:', error);
+
+    setShowPayUWebView(false);
+    setLoading(false);
+    setLoadingmp(false);
+
+    // Clear pending payment on explicit cancellation
+    await clearPendingPayment();
+
+    setShowPaymentFail(true);
+    setPaymentSuccess(false);
+
+    // Log payment failure
+    await logPayment('PAYMENT_FAILED', {
+      error: error || 'Payment cancelled or failed',
+      clientName: name,
+      email: userEmail,
+      plan: plandata?.name,
+      gateway: 'payu',
+    });
+
+    Toast.show({
+      type: 'error',
+      text1: 'Payment Failed',
+      text2: error || 'Payment was cancelled or failed. Please try again.',
+    });
+  };
+
+  // END PAYU PAYMENT FUNCTIONS
+
   const handlePaymentType = async () => {
-    if (cashfree) {
+    if (payu) {
+      // PayU payment flow
+      if (selectedPlanType === 'recurring') {
+        initiatePayUSIPayment(plandata, selectedCard);
+      } else {
+        initiatePayUPayment(plandata, onetimeamount);
+      }
+    } else if (cashfree) {
+      // Cashfree payment flow
       if (selectedPlanType === 'recurring') {
         initiateCashfreeRecurringPayment(plandata, selectedCard, inputValue);
       } else {
@@ -1930,6 +2248,7 @@ const MPInvestNowModal = ({
         initiateCashfreePayment(plandata, onetimeamount);
       }
     } else {
+      // Razorpay payment flow (default)
       handlePayment();
     }
   };
@@ -1976,7 +2295,7 @@ const MPInvestNowModal = ({
   };
 
   const handleDigioPayment = async () => {
-    updateLeadUser();
+    await updateLeadUser();
 
     // If Digio is disabled for this advisor, skip Digio entirely
     if (!isDigioEnabled) {
@@ -4150,6 +4469,19 @@ const MPInvestNowModal = ({
           }}
         />
       ) : null}
+
+      {/* PayU WebView Modal */}
+      <PayUWebView
+        visible={showPayUWebView}
+        paymentData={payuFormData}
+        isSI={payuIsSI}
+        onSuccess={handlePayUSuccess}
+        onFailure={handlePayUFailure}
+        onClose={() => {
+          setShowPayUWebView(false);
+          setPayuFormData(null);
+        }}
+      />
 
       {/* Digio Success Modal - Anti-drop-off mechanism */}
       {digioSuccessModal && (
