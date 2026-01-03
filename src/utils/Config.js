@@ -118,7 +118,7 @@ const APP_VARIANTS = {
     basketsymbolbg: '#8D2952',
     basket1: '#9D2115',
     basket2: '#6B1207',
-    subdomain: 'prod',
+    subdomain: 'rgxresearch',
     // Payment Modal Colors
     paymentModal: {
       headerBg: '#0056B7',

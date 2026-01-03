@@ -12,7 +12,7 @@ export const useConfig = () => {
 };
 
 export const ConfigProvider = ({ children }) => {
-    const selectedVariant = Config.APP_VARIANT || 'arfs'; // Default to "arfs" if not set
+    const selectedVariant = Config.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
     const initialConfig = { ...APP_VARIANTS[selectedVariant], selectedVariant };
     const [config, setConfig] = useState(initialConfig);
     const [loading, setLoading] = useState(true);
@@ -22,7 +22,7 @@ export const ConfigProvider = ({ children }) => {
             try {
                 // Get base URL and subdomain from environment variables
                 const baseUrl = Config.REACT_APP_NODE_SERVER_API_URL || 'http://localhost:8001/';
-                const subdomain = Config.REACT_APP_ADVISOR_SUBDOMAIN || Config.REACT_APP_HEADER_NAME || 'zamzamcapital';
+                const subdomain = Config.REACT_APP_ADVISOR_SUBDOMAIN || Config.REACT_APP_HEADER_NAME || 'rgxresearch';
 
                 // Construct the API URL
                 const apiUrl = `${baseUrl}api/app-advisor/get?appSubdomain=${subdomain}`;

@@ -58,7 +58,7 @@ const AccountSettingsScreen = ({navigation}) => {
           label: 'My Subscription',
           onPress: () => handleMenuPress('Model Portfolio'),
         },
-        ...(Config?.ADVISOR_RA_CODE !== 'ZAMZAMCAPITAL'
+        ...(!['ZAMZAMCAPITAL', 'RGXRESEARCH', 'rgxresearch'].includes(Config?.ADVISOR_RA_CODE) && Config?.REACT_APP_HIDE_CHANGE_MANAGER !== 'true'
           ? [
               {
                 icon: Tags,

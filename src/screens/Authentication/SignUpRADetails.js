@@ -36,7 +36,7 @@ import {
 const SignUpRADetails = ({route}) => {
   const {reloadConfigData} = useTrade();
   const navigation = useNavigation();
-  const [raId, setRaId] = useState('JAPFINSERVE'); // Default to ALPHAQUARK
+  const [raId, setRaId] = useState('RGXRESEARCH'); // Default to rgxresearch
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
 
