@@ -78,9 +78,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.arpint.alphaquark"
+    namespace "com.rgx"
     defaultConfig {
-        applicationId "com.arpint.alphaquark"
+        applicationId "com.rgx"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 11
