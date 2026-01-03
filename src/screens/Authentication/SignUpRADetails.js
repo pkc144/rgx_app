@@ -13,11 +13,13 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Image,
 } from 'react-native';
-const AlphaQuarkLogo = require('../../assets/logo.png');
 import LinearGradient from 'react-native-linear-gradient';
-import {Image} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
+import Config from 'react-native-config';
+import {useConfig} from '../../context/ConfigContext';
+import APP_VARIANTS from '../../utils/Config';
 import {Key} from 'lucide-react-native';
 import {getAuth} from '@react-native-firebase/auth';
 
@@ -36,6 +38,14 @@ import {
 const SignUpRADetails = ({route}) => {
   const {reloadConfigData} = useTrade();
   const navigation = useNavigation();
+  const config = useConfig();
+  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+
+  // Get logo and app name from config (S3) or fallback
+  const logo = config?.logo || fallbackConfig.logo;
+  const appName = config?.appName || Config.REACT_APP_WHITE_LABEL_TEXT || 'RGX Research';
+
   const [raId, setRaId] = useState('RGXRESEARCH'); // Default to rgxresearch
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -205,14 +215,28 @@ const SignUpRADetails = ({route}) => {
 
           {/* Content */}
           <View style={styles.content}>
-            {/* Logo */}
+            {/* Logo - Dynamic from S3/Config */}
             <View style={styles.logoContainer}>
-              <Image
-                source={AlphaQuarkLogo}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-              <Text style={styles.logoText}>ALPHAQUARK</Text>
+              {logo && typeof logo === 'string' ? (
+                <Image
+                  source={{uri: logo}}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+              ) : logo && typeof logo === 'function' ? (
+                (() => {
+                  const LogoComponent = logo;
+                  return <LogoComponent width={180} height={50} />;
+                })()
+              ) : logo ? (
+                <Image
+                  source={logo}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Text style={styles.logoText}>{appName}</Text>
+              )}
             </View>
 
             {/* Status Message */}
@@ -407,6 +431,10 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     marginRight: 8,
+  },
+  logoImage: {
+    width: 180,
+    height: 50,
   },
   logoText: {
     color: '#fff',

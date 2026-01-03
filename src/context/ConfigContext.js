@@ -126,6 +126,8 @@ export const ConfigProvider = ({ children }) => {
                         themeColor: apiData.themeColor || initialConfig.themeColor,
                         logo: apiData.logo || initialConfig.logo,
                         toolbarlogo: apiData.toolbarlogo || initialConfig.toolbarlogo,
+                        backgroundLogo: apiData.backgroundLogo || null,
+                        showBackgroundLogo: apiData.showBackgroundLogo !== undefined ? apiData.showBackgroundLogo : true,
                         mainColor: apiData.mainColor || initialConfig.mainColor,
                         secondaryColor: apiData.secondaryColor || initialConfig.secondaryColor,
                         gradient1: apiData.gradient1 || initialConfig.gradient1,

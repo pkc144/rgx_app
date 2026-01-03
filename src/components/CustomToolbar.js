@@ -33,7 +33,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import formatCurrency from '../utils/formatcurrency';
 import BrokerSelectionModal from './BrokerSelectionModal';
 import IIFLReviewTradeModal from './IIFLReviewTradeModal';
-import logoTool from '../assets/logo.png';
+import {useConfig} from '../context/ConfigContext';
 import moment from 'moment';
 
 import ICICIUPModal from './BrokerConnectionModal/icicimodal';
@@ -59,6 +59,12 @@ const {width, height} = Dimensions.get('window');
 
 const CustomToolbar = React.memo(({count, currentRoute}) => {
   const {configData, configLoading} = useTrade();
+  const config = useConfig();
+  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+
+  // Get toolbarlogo from config (S3) or fallback
+  const toolbarLogo = config?.toolbarlogo || fallbackConfig.toolbarlogo || config?.logo || fallbackConfig.logo;
 
   const {
     userDetails,
@@ -190,20 +196,27 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
               backgroundColor: '#fff',
               marginRight: 10, // spacing between logo and text
             }}>
-            <Image
-              source={
-                configData?.config?.REACT_APP_HEADER_NAME
-                  ? {
-                      uri: `https://ccxtprod.alphaquark.in/static/images/${configData.config.REACT_APP_HEADER_NAME}.png`,
-                    }
-                  : logoTool
-              }
-              style={{
-                width: 30,
-                height: 30,
-                resizeMode: 'cover',
-              }}
-            />
+            {toolbarLogo && typeof toolbarLogo === 'string' ? (
+              <Image
+                source={{uri: toolbarLogo}}
+                style={{
+                  width: 30,
+                  height: 30,
+                  resizeMode: 'cover',
+                }}
+              />
+            ) : toolbarLogo ? (
+              <Image
+                source={toolbarLogo}
+                style={{
+                  width: 30,
+                  height: 30,
+                  resizeMode: 'cover',
+                }}
+              />
+            ) : (
+              <View style={{width: 30, height: 30, backgroundColor: '#ddd'}} />
+            )}
           </View>
 
           <Text style={styles.toolbarText}>Hello, {name}</Text>

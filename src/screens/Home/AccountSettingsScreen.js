@@ -9,7 +9,8 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
-import logo from '../../assets/fadedlogo.png';
+import {useConfig} from '../../context/ConfigContext';
+import APP_VARIANTS from '../../utils/Config';
 import {
   ChevronLeft,
   ChevronRight,
@@ -32,6 +33,14 @@ import {useTrade} from '../TradeContext';
 
 const AccountSettingsScreen = ({navigation}) => {
   const {userDetails} = useTrade();
+  const config = useConfig();
+  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+
+  // Get background logo from config (S3) or fallback
+  // showBackgroundLogo: true/false - controls visibility (default: true for backwards compatibility)
+  const showBackgroundLogo = config?.showBackgroundLogo !== false; // Show by default unless explicitly set to false
+  const backgroundLogo = config?.backgroundLogo || config?.logo || fallbackConfig.logo;
 
   const userProfile = {
     name: userDetails?.name,
@@ -190,13 +199,23 @@ const AccountSettingsScreen = ({navigation}) => {
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor="#002651" />
 
-        <View style={styles.logoContainer} pointerEvents="none">
-          <Image
-            source={logo}
-            style={[styles.logo, {tintColor: '#FFFFFF'}]}
-            resizeMode="contain"
-          />
-        </View>
+        {showBackgroundLogo && backgroundLogo && (
+          <View style={styles.logoContainer} pointerEvents="none">
+            {typeof backgroundLogo === 'string' ? (
+              <Image
+                source={{uri: backgroundLogo}}
+                style={[styles.logo, {tintColor: '#FFFFFF', opacity: 0.15}]}
+                resizeMode="contain"
+              />
+            ) : (
+              <Image
+                source={backgroundLogo}
+                style={[styles.logo, {tintColor: '#FFFFFF', opacity: 0.15}]}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        )}
 
         {/* Header */}
         <View style={styles.header}>
