@@ -31,6 +31,7 @@ const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');
 import { useModal } from '../ModalContext';
 import LinearGradient from 'react-native-linear-gradient';
+import { useConfig } from '../../context/ConfigContext';
 
 const CheckedIcon = require('../../assets/checked.png');
 const FailureIcon = require('../../assets/cross.png');
@@ -41,6 +42,10 @@ const RecommendationSuccessModal = ({
   setOpenSucessModal,
   orderPlacementResponse,
 }) => {
+  // Get dynamic colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || 'rgba(0, 86, 183, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 38, 81, 1)';
   const getProgressBarWidth = (executed, total) => {
     return (executed / total) * 100 + '%';
   };
@@ -225,7 +230,7 @@ const RecommendationSuccessModal = ({
         <View style={styles.modalContent}>
           {/* Header Section */}
           <LinearGradient
-            colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+            colors={[gradient1, gradient2]}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={styles.headerGradient}>

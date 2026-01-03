@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { X } from "lucide-react-native";
+import { useConfig } from "../../context/ConfigContext";
 
 const DigioModal = ({
   authenticationUrl,
@@ -20,6 +21,11 @@ const DigioModal = ({
   onError,
   onVerificationComplete,
 }) => {
+  // Get dynamic colors from config
+  const config = useConfig();
+  const mainColor = config?.mainColor || '#0076FB';
+  const gradient2 = config?.gradient2 || '#002651';
+
   const webviewRef = useRef(null);
   const hasTriggeredRef = useRef(false);
 
@@ -100,10 +106,10 @@ const DigioModal = ({
   return (
     <Modal animationType="slide" transparent={false} visible={digioModalOpen}>
       <SafeAreaView style={styles.fullScreen}>
-        <StatusBar backgroundColor="#002651" barStyle="light-content" />
+        <StatusBar backgroundColor={gradient2} barStyle="light-content" />
 
         {/* Header with Close Button */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: gradient2 }]}>
           <Text style={styles.headerTitle}>Digio Authentication</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
             <X size={24} color="#fff" />
@@ -243,7 +249,7 @@ const DigioModal = ({
           />
         ) : (
           <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#0076FB" />
+            <ActivityIndicator size="large" color={mainColor} />
             <Text style={styles.loaderText}>Loading authentication...</Text>
           </View>
         )}

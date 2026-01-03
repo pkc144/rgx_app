@@ -2,6 +2,7 @@ import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, {Circle} from 'react-native-svg';
+import {useConfig} from '../../context/ConfigContext';
 
 const PortfolioCard = ({
   allHoldingsData,
@@ -9,6 +10,11 @@ const PortfolioCard = ({
   profitAndLoss,
   pnlPercentage,
 }) => {
+  // Get dynamic colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || 'rgba(0, 38, 81, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 86, 183, 1)';
+
   const invested = Number(allHoldingsData?.totalinvvalue) || 0;
   const pnl = Number(profitAndLoss) || 0;
   const returns = Number(pnlPercentage) || 0;
@@ -31,7 +37,7 @@ const PortfolioCard = ({
   return (
     <View style={portfolioCardStyles.pcWrapper}>
       <LinearGradient
-        colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+        colors={[gradient1, gradient2]}
         start={{x: 0, y: 0}}
         end={{x: 1, y: 1}}
         style={portfolioCardStyles.pcGradientCard}>

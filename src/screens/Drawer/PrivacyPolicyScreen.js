@@ -11,11 +11,18 @@ import {ChevronLeft} from 'lucide-react-native';
 import WebView from 'react-native-webview';
 import {useTrade} from '../TradeContext';
 import LinearGradient from 'react-native-linear-gradient';
+import {useConfig} from '../../context/ConfigContext';
 
 const PrivacyPolicyScreen = () => {
   const {configData} = useTrade();
   const navigation = useNavigation();
   const privacyURL = configData?.config?.REACT_APP_ADVISOR_PRIVACY_POLICY;
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || '#0056B7';
+  const gradient2 = config?.gradient2 || '#002651';
+  const mainColor = config?.mainColor || '#0056B7';
   const [isValidUrl, setIsValidUrl] = useState(true);
 
   // ✅ Regex-based URL validation
@@ -34,7 +41,7 @@ const PrivacyPolicyScreen = () => {
     <View style={{flex: 1}}>
       {/* Header */}
       <LinearGradient
-        colors={['#0056B7', '#002651']}
+        colors={[gradient1, gradient2]}
         start={{x: 0, y: 0}}
         end={{x: 0, y: 1}}
         style={styles.headerContainer}>
@@ -55,15 +62,15 @@ const PrivacyPolicyScreen = () => {
           startInLoadingState={true}
           renderLoading={() => (
             <View style={styles.loaderOverlay}>
-              <ActivityIndicator size="large" color="#0056B7" />
-              <Text style={styles.loaderText}>Loading...</Text>
+              <ActivityIndicator size="large" color={mainColor} />
+              <Text style={[styles.loaderText, { color: mainColor }]}>Loading...</Text>
             </View>
           )}
           style={{flex: 1, backgroundColor: '#fff'}}
         />
       ) : (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorTitle}>Invalid or Missing URL</Text>
+          <Text style={[styles.errorTitle, { color: mainColor }]}>Invalid or Missing URL</Text>
           <Text style={styles.errorText}>
             The Privacy Policy page couldn’t be loaded. Please check your
             configuration or try again later.

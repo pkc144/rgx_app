@@ -26,6 +26,7 @@ import eventEmitter from '../EventEmitter';
 import useLTPStore from './DynamicText/useLtpStore';
 import APP_VARIANTS from '../../utils/Config';
 import LinearGradient from 'react-native-linear-gradient';
+import { useConfig } from '../../context/ConfigContext';
 
 const StockAdviceContent = React.memo(
   ({
@@ -74,6 +75,12 @@ const StockAdviceContent = React.memo(
     } = useTrade();
     const scrollX = useRef(new Animated.Value(0)).current;
     const navigation = useNavigation();
+
+    // Get dynamic colors from config
+    const config = useConfig();
+    const gradient1 = config?.gradient1 || '#0076FB';
+    const gradient2 = config?.gradient2 || '#002651';
+    const mainColor = config?.mainColor || 'rgba(0, 86, 183, 1)';
     const animationRef = useRef(null);
     const [refreshing, setRefreshing] = useState(false);
     const [selectedTab, setSelectedTab] = useState('Bespoke');
@@ -426,7 +433,7 @@ const StockAdviceContent = React.memo(
             // </View>
             type === 'OSrejected' ? (
               <LinearGradient
-                colors={['#0076FB', '#002651']} // blue faded gradient
+                colors={[gradient1, gradient2]}
                 style={{
                   flex: 1,
                   alignItems: 'center',
@@ -465,7 +472,7 @@ const StockAdviceContent = React.memo(
 
                 {/* Icon container */}
                 <LinearGradient
-                  colors={['#4FA6FF', '#003B8B']}
+                  colors={[gradient1, gradient2]}
                   style={{
                     width: 90,
                     height: 90,
@@ -546,7 +553,7 @@ const StockAdviceContent = React.memo(
             ) : (
               // Original Bespoke Advice Empty State
               <LinearGradient
-                colors={['#0056B7', '#002651']}
+                colors={[gradient1, gradient2]}
                 start={{x: 0, y: 1}}
                 end={{x: 1, y: 1}}
                 style={{
@@ -581,7 +588,7 @@ const StockAdviceContent = React.memo(
 
                 {/* Icon container */}
                 <LinearGradient
-                  colors={['#4F9CF9', '#003C9E']}
+                  colors={[gradient1, gradient2]}
                   style={{
                     width: 80,
                     height: 80,
@@ -722,6 +729,7 @@ const StockAdviceContent = React.memo(
               <TouchableOpacity
                 style={[
                   styles.Addbutton,
+                  { backgroundColor: mainColor },
                   stockDetails.length === 0 && styles.disabledButton,
                 ]}
                 onPress={handleTradeNow}

@@ -48,6 +48,8 @@ const SubscriptionScreen = () => {
   // Get dynamic config from API
   const config = useConfig();
   const themeColor = config?.themeColor || '#0056B7';
+  const gradient1 = config?.gradient1 || 'rgba(0, 86, 183, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 38, 81, 1)';
 
   const [loading, setLoading] = useState(true);
   const [brokername, setBrokerName] = useState('');
@@ -215,7 +217,7 @@ const SubscriptionScreen = () => {
     <View style={styles.container}>
       {/* Header */}
       <LinearGradient
-        colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+        colors={[gradient1, gradient2]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.headerGradient}>
@@ -265,7 +267,7 @@ const SubscriptionScreen = () => {
             brokerStatus === 'Disconnected'
           ) ? (
             <LinearGradient
-              colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+              colors={[gradient1, gradient2]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.brokerStatusCard}>
@@ -310,7 +312,7 @@ const SubscriptionScreen = () => {
 
         {/* Broker & Funds Info Card */}
         <LinearGradient
-          colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+          colors={[gradient1, gradient2]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.infoCard}>

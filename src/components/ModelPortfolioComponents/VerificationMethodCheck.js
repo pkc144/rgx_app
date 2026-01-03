@@ -1,16 +1,20 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Check, Shield } from "lucide-react-native";
+import { useConfig } from "../../context/ConfigContext";
 
 const otpBasedMethod = process.env.REACT_APP_OTP_BASED_AUTHENTICATION;
 const aadharBasedMethod = process.env.REACT_APP_AADHAR_BASED_AUTHENTICATION;
 
 const VerificationMethodCheck = ({ authMethod, setAuthMethod }) => {
+  // Get dynamic colors from config
+  const config = useConfig();
+  const mainColor = config?.mainColor || '#2563EB';
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { borderColor: `${mainColor}40` }]}>
       <View>
         <View style={styles.header}>
-          <Shield size={16} color="#2563EB" style={{ marginRight: 6 }} />
+          <Shield size={16} color={mainColor} style={{ marginRight: 6 }} />
           <Text style={styles.headerText}>Choose Authentication Method</Text>
         </View>
 
@@ -19,12 +23,12 @@ const VerificationMethodCheck = ({ authMethod, setAuthMethod }) => {
             <TouchableOpacity
               style={[
                 styles.optionCard,
-                authMethod === "otp" && styles.optionSelected,
+                authMethod === "otp" && [styles.optionSelected, { borderColor: mainColor }],
               ]}
               onPress={() => setAuthMethod("otp")}
             >
-              <View style={styles.radioCircle}>
-                {authMethod === "otp" && <View style={styles.selectedRb} />}
+              <View style={[styles.radioCircle, { borderColor: mainColor }]}>
+                {authMethod === "otp" && <View style={[styles.selectedRb, { backgroundColor: mainColor }]} />}
               </View>
               <View style={styles.optionContent}>
                 <View style={styles.optionHeader}>
@@ -42,12 +46,12 @@ const VerificationMethodCheck = ({ authMethod, setAuthMethod }) => {
             <TouchableOpacity
               style={[
                 styles.optionCard,
-                authMethod === "aadhaar" && styles.optionSelected,
+                authMethod === "aadhaar" && [styles.optionSelected, { borderColor: mainColor }],
               ]}
               onPress={() => setAuthMethod("aadhaar")}
             >
-              <View style={styles.radioCircle}>
-                {authMethod === "aadhaar" && <View style={styles.selectedRb} />}
+              <View style={[styles.radioCircle, { borderColor: mainColor }]}>
+                {authMethod === "aadhaar" && <View style={[styles.selectedRb, { backgroundColor: mainColor }]} />}
               </View>
               <View style={styles.optionContent}>
                 <View style={styles.optionHeader}>

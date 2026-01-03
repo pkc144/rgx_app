@@ -9,8 +9,12 @@ import {
 } from 'react-native';
 import { CheckCircle, AlertTriangle, CreditCard } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
+import { useConfig } from '../../context/ConfigContext';
 
 const DigioSuccessModal = ({ visible, onClose, onProceedToPayment }) => {
+    // Get dynamic colors from config
+    const config = useConfig();
+    const mainColor = config?.mainColor || '#2563EB';
     // 15-second reminder toast (anti-drop-off mechanism)
     useEffect(() => {
         if (visible) {
@@ -101,10 +105,10 @@ const DigioSuccessModal = ({ visible, onClose, onProceedToPayment }) => {
 
                                 {/* Step 3 - Current (Payment) */}
                                 <View style={styles.stepContainer}>
-                                    <View style={[styles.stepCircle, styles.stepCurrent]}>
+                                    <View style={[styles.stepCircle, styles.stepCurrent, { backgroundColor: mainColor }]}>
                                         <Text style={styles.stepCurrentText}>3</Text>
                                     </View>
-                                    <Text style={[styles.stepLabel, styles.stepCurrentLabel]}>
+                                    <Text style={[styles.stepLabel, styles.stepCurrentLabel, { color: mainColor }]}>
                                         Payment{'\n'}(Mandatory)
                                     </Text>
                                 </View>
@@ -134,7 +138,7 @@ const DigioSuccessModal = ({ visible, onClose, onProceedToPayment }) => {
 
                             <TouchableOpacity
                                 onPress={onProceedToPayment}
-                                style={[styles.button, styles.paymentButton]}>
+                                style={[styles.button, styles.paymentButton, { backgroundColor: mainColor, shadowColor: mainColor }]}>
                                 <CreditCard size={20} color="#fff" />
                                 <Text style={styles.paymentButtonText}>
                                     Proceed to Payment →

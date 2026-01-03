@@ -29,6 +29,7 @@ const Alpha100 = require('../../assets/alpha-100.png');
 import Icon1 from 'react-native-vector-icons/Feather';
 import { ScreenWidth } from 'react-native-elements/dist/helpers';
 import moment from 'moment';
+import { useConfig } from '../../context/ConfigContext';
 
 const MPCardBespoke = ({
   modelName,
@@ -51,6 +52,12 @@ const MPCardBespoke = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [animation] = useState(new Animated.Value(0)); // Initial height is 0
   const navigation = useNavigation();
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const mainColor = config?.mainColor || '#2053DB';
+  const gradient1 = config?.gradient1 || '#3B82F6';
+  const gradient2 = config?.gradient2 || '#1E3A8A';
 
   const animatedHeight = useRef(new Animated.Value(0)).current; // Initialize with height 0
 
@@ -425,9 +432,9 @@ const MPCardBespoke = ({
                   paddingVertical: 2,
                   paddingHorizontal: 16,
                   borderRadius: 999,
-                  backgroundColor: isSelected ? '#E6F0FF' : '#FFFFFF',
+                  backgroundColor: isSelected ? `${mainColor}15` : '#FFFFFF',
                   borderWidth: 1,
-                  borderColor: isSelected ? '#3B82F6' : '#E5E7EB', // blue-500 when selected, gray-200 otherwise
+                  borderColor: isSelected ? mainColor : '#E5E7EB',
                   marginRight: 8,
                   marginBottom: 8,
                   shadowColor: '#000',
@@ -439,7 +446,7 @@ const MPCardBespoke = ({
               >
                 <Text
                   style={{
-                    color: isSelected ? '#1E3A8A' : '#374151',
+                    color: isSelected ? mainColor : '#374151',
                     fontSize: 10,
                     marginTop: 2,
                     fontFamily: 'Poppins-Medium',
@@ -460,12 +467,12 @@ const MPCardBespoke = ({
           </TouchableOpacity>
 
           {isActive ? (
-            <TouchableOpacity onPress={InvestNow} style={styles.investButton}>
+            <TouchableOpacity onPress={InvestNow} style={[styles.investButton, { backgroundColor: mainColor }]}>
               <ArrowRight size={10} color={'white'} />
               <Text style={styles.investButtonText}>Renew Now</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity onPress={InvestNow} style={styles.investButton}>
+            <TouchableOpacity onPress={InvestNow} style={[styles.investButton, { backgroundColor: mainColor }]}>
               <Text style={styles.investButtonText}>Subscribe Now</Text>
             </TouchableOpacity>
           )}

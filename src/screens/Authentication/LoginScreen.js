@@ -50,6 +50,10 @@ const LoginScreen = () => {
   const config = useConfig();
   const {logo: LogoComponent, themeColor, configLoading} = config;
 
+  // Get dynamic gradient colors from config
+  const gradient1 = config?.gradient1 || 'rgba(0, 38, 81, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 86, 183, 1)';
+
   console.log('LoginScreen config logo:', LogoComponent);
   console.log('LoginScreen logo type:', typeof LogoComponent);
 
@@ -368,7 +372,7 @@ const LoginScreen = () => {
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={dismissKeyboard}>
         <LinearGradient
-          colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+          colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
           style={styles.container}>

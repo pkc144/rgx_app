@@ -965,7 +965,7 @@ const getUnreadCount = () => {
         style={{flex: 1}}>
         <SafeAreaView style={{flex: 1}}>
              <LinearGradient
-          colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+          colors={[gradient1, gradient2]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={{ paddingHorizontal: 15, paddingVertical: 10, borderBottomLeftRadius: 15, borderBottomRightRadius: 15, }}
@@ -1003,7 +1003,7 @@ const getUnreadCount = () => {
       style={{flex: 1}}>
       <SafeAreaView style={{flex: 1}}>
         <LinearGradient
-          colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+          colors={[gradient1, gradient2]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={{ paddingHorizontal: 15, paddingVertical: 10, borderBottomLeftRadius: 15, borderBottomRightRadius: 15, }}

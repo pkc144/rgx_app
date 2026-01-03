@@ -536,7 +536,7 @@ export default function OrderScreen() {
               </View>
             ) : (
               <LinearGradient
-                colors={['#0076FB', '#002651']}
+                colors={[gradient1, gradient2]}
                 style={{
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -574,7 +574,7 @@ export default function OrderScreen() {
 
                 {/* Icon container */}
                 <LinearGradient
-                  colors={['#4FA6FF', '#003B8B']}
+                  colors={[gradient1, gradient2]}
                   style={{
                     width: 90,
                     height: 90,

@@ -27,6 +27,7 @@ import WebSocketManager from '../../components/AdviceScreenComponents/DynamicTex
 import PortfolioPositionText from '../../components/AdviceScreenComponents/DynamicText/PortfolioPositionText';
 import HoldingDynamicText from '../../components/AdviceScreenComponents/DynamicText/HoldingDynamicText';
 import RenderEmptyMessage from './EmptyMessageCard';
+import {useConfig} from '../../context/ConfigContext';
 
 const PortfolioScreen = () => {
   const {
@@ -38,6 +39,10 @@ const PortfolioScreen = () => {
     getAllHoldings,
     configData,
   } = useTrade();
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const mainColor = config?.mainColor || '#1264D4';
 
   const [tabIndex, setTabIndex] = useState(2);
   const tabIndexRef = useRef(tabIndex);
@@ -1207,7 +1212,7 @@ const PortfolioScreen = () => {
                       style={[
                         styles.toggleBtnButton,
                         selectedInnerTab === 1
-                          ? styles.toggleBtnSelectedButton
+                          ? [styles.toggleBtnSelectedButton, { backgroundColor: mainColor }]
                           : styles.toggleBtnUnselectedButton,
                       ]}
                       onPress={() => setSelectedInnerTab(1)}
@@ -1227,7 +1232,7 @@ const PortfolioScreen = () => {
                     style={[
                       styles.toggleBtnButton,
                       selectedInnerTab === 0
-                        ? styles.toggleBtnSelectedButton
+                        ? [styles.toggleBtnSelectedButton, { backgroundColor: mainColor }]
                         : styles.toggleBtnUnselectedButton,
                     ]}
                     onPress={() => setSelectedInnerTab(0)}

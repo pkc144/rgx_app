@@ -15,7 +15,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LogoutScreen = ({navigation}) => {
   const config = useConfig();
-  const {themeColor, mainColor} = config || {};
+  const gradient1 = config?.gradient1 || '#002651';
+  const gradient2 = config?.gradient2 || '#0056B7';
   const {
     setUserDetails,
     setIsProfileCompleted,
@@ -60,7 +61,7 @@ const LogoutScreen = ({navigation}) => {
 
   return (
     <LinearGradient
-      colors={['#002651', '#0056B7']}
+      colors={[gradient1, gradient2]}
       start={{x: 0, y: 0}}
       end={{x: 0, y: 1}}
       style={styles.container}>

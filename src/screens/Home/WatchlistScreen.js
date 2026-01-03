@@ -52,6 +52,8 @@ const WatchlistScreen = props => {
   // Get dynamic config from API
   const config = useConfig();
   const themeColor = config?.themeColor || '#0056B7';
+  const gradient1 = config?.gradient1 || 'rgba(0, 38, 81, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 86, 183, 1)';
   const {configData}=useTrade();
   const route = useRoute();
   const navigation = props.navigation;
@@ -575,7 +577,7 @@ const WatchlistScreen = props => {
             zIndex: 1,
             borderTopWidth: 0,
           }}>
-               <LinearGradient  colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']} 
+               <LinearGradient  colors={[gradient1, gradient2]}
         start={{ x: 0, y: 0 }}
   end={{ x: 0, y: 1 }}
    style={styles.headerGradient}>

@@ -2,12 +2,20 @@ import {View, Text, TouchableOpacity} from 'react-native';
 import {CandlestickChartIcon} from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {useNavigation} from '@react-navigation/native';
+import {useConfig} from '../../context/ConfigContext';
 
 const RenderEmptyMessageCard = ({value}) => {
   const navigation = useNavigation();
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || '#0076FB';
+  const gradient2 = config?.gradient2 || '#002651';
+  const mainColor = config?.mainColor || '#0056B7';
+
   return (
     <LinearGradient
-      colors={['#0076FB', '#002651']}
+      colors={[gradient1, gradient2]}
       style={{
         alignItems: 'center',
         justifyContent: 'center',
@@ -45,7 +53,7 @@ const RenderEmptyMessageCard = ({value}) => {
 
       {/* Icon container */}
       <LinearGradient
-        colors={['#4FA6FF', '#003B8B']}
+        colors={[gradient1, gradient2]}
         style={{
           width: 90,
           height: 90,
@@ -53,7 +61,7 @@ const RenderEmptyMessageCard = ({value}) => {
           justifyContent: 'center',
           alignItems: 'center',
           marginBottom: 20,
-          shadowColor: '#001A40',
+          shadowColor: gradient2,
           shadowOffset: {width: 0, height: 4},
           shadowOpacity: 0.25,
           shadowRadius: 8,
@@ -77,7 +85,7 @@ const RenderEmptyMessageCard = ({value}) => {
               justifyContent: 'center',
               alignItems: 'center',
             }}>
-            <CandlestickChartIcon size={28} color={'#0056B7'} />
+            <CandlestickChartIcon size={28} color={mainColor} />
           </View>
         </View>
       </LinearGradient>

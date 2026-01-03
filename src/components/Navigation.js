@@ -139,7 +139,7 @@ const {
   placeholderText = '#FFFFFF',
   tabIconColor = '#000',
 } = variantConfig;
-const CustomTabBarIcon = ({name, focused}) => {
+const CustomTabBarIcon = ({name, focused, iconColor = '#000'}) => {
   let IconComponent;
   if (name === 'Home') {
     IconComponent = Home;
@@ -165,7 +165,7 @@ const CustomTabBarIcon = ({name, focused}) => {
         paddingTop: 8,
       }}>
       <View>
-        <IconComponent size={22} color={focused ? tabIconColor : 'gray'} />
+        <IconComponent size={22} color={focused ? iconColor : 'gray'} />
       </View>
 
       <View
@@ -177,7 +177,7 @@ const CustomTabBarIcon = ({name, focused}) => {
         }}>
         <Text
           style={{
-            color: focused ? tabIconColor : 'gray', // Changes color based on focus
+            color: focused ? iconColor : 'gray', // Changes color based on focus
             fontSize: 10, // Sets font size for text
             marginTop: 2,
             textAlign: 'center',
@@ -207,6 +207,10 @@ const MainTabNavigator = () => {
   const dynamicSecondaryColor = config?.secondaryColor || secondaryColor;
   const dynamicGradient1 = config?.gradient1 || gradient1;
   const dynamicGradient2 = config?.gradient2 || gradient2;
+  const dynamicBottomTabbg = config?.bottomTabbg || bottomTabbg;
+  const dynamicBottomTabBorderTopWidth = config?.bottomTabBorderTopWidth ?? bottomTabBorderTopWidth;
+  const dynamicTabIconColor = config?.tabIconColor || tabIconColor;
+  const dynamicSelectedTabcolor = config?.selectedTabcolor || '#000';
 
   const translateY = useRef(new Animated.Value(screenHeight)).current;
   const [cartCount, setCartCount1] = useState(0);
@@ -320,12 +324,12 @@ const currentName = currentTabRoute?.name || "";
         initialRouteName="Home"
         screenOptions={({route}) => ({
           tabBarIcon: ({focused}) => (
-            <CustomTabBarIcon name={route.name} focused={focused} />
+            <CustomTabBarIcon name={route.name} focused={focused} iconColor={dynamicTabIconColor} />
           ),
           tabBarStyle: {
             borderTopLeftRadius: 15,
             borderTopRightRadius: 15,
-            backgroundColor: bottomTabbg,
+            backgroundColor: dynamicBottomTabbg,
 
             height: 60,
             zIndex: 99,
@@ -333,7 +337,7 @@ const currentName = currentTabRoute?.name || "";
             marginBottom: 0,
             paddingBottom: 0,
             borderTopColor: '#e9e9e9',
-            borderTopWidth: bottomTabBorderTopWidth,
+            borderTopWidth: dynamicBottomTabBorderTopWidth,
           },
           tabBarItemStyle: {
             padding: 0,

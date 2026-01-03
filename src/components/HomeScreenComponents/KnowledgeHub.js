@@ -28,9 +28,16 @@ import { useTrade } from "../../screens/TradeContext";
 import LinkOpeningWeb from "../../screens/Home/NewsScreen/LinkOpeningWeb";
 import FileViewer from 'react-native-file-viewer';
 import LinearGradient from "react-native-linear-gradient";
+import { useConfig } from "../../context/ConfigContext";
 
 const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
     const {configData}=useTrade();
+
+    // Get dynamic gradient colors from config
+    const config = useConfig();
+    const gradient1 = config?.gradient1 || '#0076FB';
+    const gradient2 = config?.gradient2 || '#002651';
+    const mainColor = config?.mainColor || '#0056B7';
     const navigation = props.navigation || useNavigation();
     const { blogs, pdf, videos } = useTrade();
     const [activeTab, setActiveTab] = useState("Videos");
@@ -425,7 +432,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
 
         return (
             <LinearGradient
-                colors={["#0076FB", "#002651"]}
+                colors={[gradient1, gradient2]}
                 style={{
                     flex: 1,
                     alignItems: "center",
@@ -465,7 +472,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
 
                 {/* Icon container */}
                 <LinearGradient
-                    colors={["#3399FF", "#003366"]}
+                    colors={[gradient1, gradient2]}
                     style={{
                         width: 90,
                         height: 90,
@@ -473,7 +480,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                         justifyContent: "center",
                         alignItems: "center",
                         marginBottom: 20,
-                        shadowColor: "#003366",
+                        shadowColor: gradient2,
                         shadowOffset: { width: 0, height: 4 },
                         shadowOpacity: 0.25,
                         shadowRadius: 8,
@@ -674,17 +681,18 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                                 return (
                                     <TouchableOpacity
                                         key={tab.id}
-                                        style={[styles.tabouter, activeTab === tab.id && styles.activeTabouter]}
+                                        style={[styles.tabouter, activeTab === tab.id && { backgroundColor: mainColor, borderColor: mainColor }]}
                                         onPress={() => handleTabPress(tab.id)}
                                     >
                                         <IconComponent
                                             size={14}
-                                            color={activeTab === tab.id ? "#FFFFFF" : "#0056B7"}
+                                            color={activeTab === tab.id ? "#FFFFFF" : mainColor}
                                             style={styles.tabIconStyleouter}
                                         />
                                         <Text
                                             style={[
                                                 styles.tabTextouter,
+                                                { color: mainColor },
                                                 activeTab === tab.id && styles.activeTabTextouter,
                                             ]}
                                         >
@@ -700,7 +708,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
 
             {!(type === "home") && (
                 <LinearGradient
-                    colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+                    colors={[gradient1, gradient2]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 0, y: 1 }}
                     style={{ paddingHorizontal: 15, paddingTop: 10, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 10, }}
@@ -726,7 +734,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                             return (
                                 <TouchableOpacity
                                     key={tab.id}
-                                    style={[styles.tab, activeTab === tab.id && styles.activeTab]}
+                                    style={[styles.tab, activeTab === tab.id && { backgroundColor: mainColor, borderColor: mainColor }]}
                                     onPress={() => handleTabPress(tab.id)}
                                 >
                                     <IconComponent

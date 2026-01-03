@@ -6,6 +6,7 @@ import { Gauge, TrendingUp } from 'lucide-react-native';
 import { Item } from 'react-native-paper/lib/typescript/components/Drawer/Drawer';
 import moment from 'moment';
 import ConsentPopup from './ConsentPopUp';
+import { useConfig } from '../../context/ConfigContext';
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 const Alpha100 = require('../../assets/alpha-100.png');
 
@@ -27,6 +28,12 @@ const MPCard = ({
   const navigation = useNavigation();
   const [globalConsent, setGlobalConsent] = useState(false);
   const [isConsentPopupOpen, setIsConsentPopupOpen] = useState(false); // initially open
+
+  // Get dynamic gradient colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || '#002651';
+  const gradient2 = config?.gradient2 || '#0076fb';
+  const mainColor = config?.mainColor || 'rgba(0, 86, 183, 1)';
 
   const handleConsentAccept = () => {
     setGlobalConsent(true);
@@ -279,7 +286,7 @@ const MPCard = ({
     <View style={styles.container}>
       <View activeOpacity={0.9}>
         <LinearGradient
-          colors={['#002651', '#0076fb']}
+          colors={[gradient1, gradient2]}
           start={{ x: 0, y: 1 }}
           end={{ x: 1, y: 1 }}
           style={[
@@ -386,7 +393,7 @@ const MPCard = ({
               <View style={{ flexDirection: 'row', gap: 12, alignContent: 'center', alignItems: 'center', alignSelf: 'flex-start', }}>
                 <Text style={styles.statLabel}>Volatility</Text>
                 <View style={styles.statIconContainer}>
-                  <Gauge style={{ alignContent: 'center', alignItems: 'center', alignSelf: 'center' }} size={11} color={"rgba(0, 86, 183, 1)"} />
+                  <Gauge style={{ alignContent: 'center', alignItems: 'center', alignSelf: 'center' }} size={11} color={mainColor} />
                 </View>
               </View>
 

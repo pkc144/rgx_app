@@ -32,11 +32,18 @@ import CustomTabBar from './CustomTabbar';
 import RenderHTML from 'react-native-render-html';
 import LinearGradient from 'react-native-linear-gradient';
 import {ScreenWidth} from 'react-native-elements/dist/helpers';
+import {useConfig} from '../../context/ConfigContext';
 
 const {width} = Dimensions.get('window');
 
 const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const {userDetails, broker, getUserDeatils, configData} = useTrade();
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || 'rgba(0, 86, 183, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 38, 81, 1)';
+  const mainColor = config?.mainColor || '#2563EB';
   const [allStrategy, setAllStrategy] = useState([]);
   const [allBespoke, setAllBespoke] = useState([]);
   const auth = getAuth();
@@ -674,7 +681,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
               {/* Close Button */}
               <TouchableOpacity
                 onPress={() => setModalVisible(false)}
-                style={styles.modalCloseButton}>
+                style={[styles.modalCloseButton, { backgroundColor: mainColor }]}>
                 <Text style={styles.modalCloseButtonText}>Close</Text>
               </TouchableOpacity>
             </View>
@@ -688,7 +695,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     <SafeAreaView style={{flex: 1, backgroundColor: '#FBFBFB'}}>
       {!(type === 'tab') && (
         <LinearGradient
-          colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+          colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 0, y: 1}}
           style={{
@@ -922,7 +929,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
             {/* Close Button */}
             <TouchableOpacity
               onPress={() => setModalVisible(false)}
-              style={styles.modalCloseButton}>
+              style={[styles.modalCloseButton, { backgroundColor: mainColor }]}>
               <Text style={styles.modalCloseButtonText}>Close</Text>
             </TouchableOpacity>
           </View>

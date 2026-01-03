@@ -16,8 +16,15 @@ import { generateToken } from '../../utils/SecurityTokenManager';
 import { useTrade } from '../TradeContext';
 import LinearGradient from 'react-native-linear-gradient';
 import FileViewer from 'react-native-file-viewer';
+import { useConfig } from '../../context/ConfigContext';
+
 const PaymentHistoryScreen = () => {
   const {configData}=useTrade();
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || 'rgba(0, 86, 183, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 38, 81, 1)';
   const navigation = useNavigation();
   const [InvoiceData,setInvoiceData]=useState([]);
   
@@ -197,7 +204,7 @@ const completeDownloadStatement = async (pdfData) => {
       return (
         <View style={styles.container}>
             <LinearGradient
-                      colors={['rgba(0, 86, 183, 1)', 'rgba(0, 38, 81, 1)']}
+                      colors={[gradient1, gradient2]}
                       start={{x: 0, y: 0}}
                       end={{x: 0, y: 1}}
                       style={{

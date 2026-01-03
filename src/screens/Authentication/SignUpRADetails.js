@@ -46,6 +46,10 @@ const SignUpRADetails = ({route}) => {
   const logo = config?.logo || fallbackConfig.logo;
   const appName = config?.appName || Config.REACT_APP_WHITE_LABEL_TEXT || 'RGX Research';
 
+  // Get dynamic gradient colors from config
+  const gradient1 = config?.gradient1 || fallbackConfig.gradient1 || '#03275B';
+  const gradient2 = config?.gradient2 || fallbackConfig.gradient2 || '#0156B7';
+
   const [raId, setRaId] = useState('RGXRESEARCH'); // Default to rgxresearch
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -201,7 +205,7 @@ const SignUpRADetails = ({route}) => {
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <LinearGradient
-          colors={['#03275B', '#0156B7']}
+          colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
           style={styles.container}>

@@ -10,6 +10,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { X, MessageCircle, CheckCircle } from 'lucide-react-native';
+import { useConfig } from '../../context/ConfigContext';
 
 const TelegramCollectionModal = ({
     visible,
@@ -19,6 +20,10 @@ const TelegramCollectionModal = ({
     onSave,
     validateTelegramId,
 }) => {
+    // Get dynamic colors from config
+    const config = useConfig();
+    const mainColor = config?.mainColor || '#2563EB';
+
     const [showInstructions, setShowInstructions] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -53,8 +58,8 @@ const TelegramCollectionModal = ({
                         contentContainerStyle={styles.scrollContent}>
                         {/* Header */}
                         <View style={styles.header}>
-                            <View style={styles.iconContainer}>
-                                <MessageCircle size={32} color="#2563EB" />
+                            <View style={[styles.iconContainer, { backgroundColor: `${mainColor}20` }]}>
+                                <MessageCircle size={32} color={mainColor} />
                             </View>
                             <Text style={styles.title}>Connect with Telegram! 📱</Text>
                             <Text style={styles.subtitle}>
@@ -67,19 +72,19 @@ const TelegramCollectionModal = ({
                             <Text style={styles.benefitsTitle}>Why add Telegram ID?</Text>
                             <View style={styles.benefitsList}>
                                 <View style={styles.benefitItem}>
-                                    <CheckCircle size={16} color="#2563EB" />
+                                    <CheckCircle size={16} color={mainColor} />
                                     <Text style={styles.benefitText}>
                                         Receive real-time trade alerts instantly
                                     </Text>
                                 </View>
                                 <View style={styles.benefitItem}>
-                                    <CheckCircle size={16} color="#2563EB" />
+                                    <CheckCircle size={16} color={mainColor} />
                                     <Text style={styles.benefitText}>
                                         Get portfolio updates directly on your phone
                                     </Text>
                                 </View>
                                 <View style={styles.benefitItem}>
-                                    <CheckCircle size={16} color="#2563EB" />
+                                    <CheckCircle size={16} color={mainColor} />
                                     <Text style={styles.benefitText}>
                                         Never miss important market updates
                                     </Text>
@@ -103,7 +108,7 @@ const TelegramCollectionModal = ({
                             {showInstructions && (
                                 <View style={styles.instructionsContent}>
                                     <View style={styles.instructionStep}>
-                                        <View style={styles.stepNumber}>
+                                        <View style={[styles.stepNumber, { backgroundColor: mainColor }]}>
                                             <Text style={styles.stepNumberText}>1</Text>
                                         </View>
                                         <View style={styles.stepContent}>
@@ -116,7 +121,7 @@ const TelegramCollectionModal = ({
                                     </View>
 
                                     <View style={styles.instructionStep}>
-                                        <View style={styles.stepNumber}>
+                                        <View style={[styles.stepNumber, { backgroundColor: mainColor }]}>
                                             <Text style={styles.stepNumberText}>2</Text>
                                         </View>
                                         <View style={styles.stepContent}>
@@ -130,7 +135,7 @@ const TelegramCollectionModal = ({
                                     </View>
 
                                     <View style={styles.instructionStep}>
-                                        <View style={styles.stepNumber}>
+                                        <View style={[styles.stepNumber, { backgroundColor: mainColor }]}>
                                             <Text style={styles.stepNumberText}>3</Text>
                                         </View>
                                         <View style={styles.stepContent}>
@@ -142,7 +147,7 @@ const TelegramCollectionModal = ({
                                     </View>
 
                                     <View style={styles.instructionStep}>
-                                        <View style={styles.stepNumber}>
+                                        <View style={[styles.stepNumber, { backgroundColor: mainColor }]}>
                                             <Text style={styles.stepNumberText}>4</Text>
                                         </View>
                                         <View style={styles.stepContent}>
@@ -200,6 +205,7 @@ const TelegramCollectionModal = ({
                                 style={[
                                     styles.button,
                                     styles.saveButton,
+                                    { backgroundColor: mainColor, shadowColor: mainColor },
                                     (!isValid || isSaving) && styles.saveButtonDisabled,
                                 ]}>
                                 {isSaving ? (

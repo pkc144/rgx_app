@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useConfig } from '../../context/ConfigContext';
 
 const PricingCard = ({ pricingOptions = [], discount = 0, configGst = "false" }) => {
+  // Get dynamic colors from config
+  const config = useConfig();
+  const mainColor = config?.mainColor || '#2563EB';
+
   const [selectedPricing, setSelectedPricing] = useState(pricingOptions[0]?.period || '');
 
   // Get current and original price based on selected period
@@ -10,7 +15,7 @@ const PricingCard = ({ pricingOptions = [], discount = 0, configGst = "false" })
   const originalPrice = Math.round(currentPrice / (1 - discount / 100));
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: `${mainColor}15`, borderColor: `${mainColor}30` }]}>
       {pricingOptions.length > 1 && (
         <View style={{ marginBottom: 12 }}>
           <View style={styles.buttonContainer}>
@@ -20,7 +25,7 @@ const PricingCard = ({ pricingOptions = [], discount = 0, configGst = "false" })
                 onPress={() => setSelectedPricing(option.period)}
                 style={[
                   styles.optionButton,
-                  selectedPricing === option.period && styles.optionButtonActive
+                  selectedPricing === option.period && [styles.optionButtonActive, { backgroundColor: mainColor, borderColor: mainColor }]
                 ]}
               >
                 <Text

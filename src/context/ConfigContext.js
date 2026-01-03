@@ -27,7 +27,7 @@ export const ConfigProvider = ({ children }) => {
                 // Construct the API URL
                 const apiUrl = `${baseUrl}api/app-advisor/get?appSubdomain=${subdomain}`;
 
-                console.log('Fetching config from:', apiUrl);
+                console.log('🔍 Fetching config from:', apiUrl);
 
                 // Prepare headers with authentication
                 const headers = {
@@ -38,6 +38,11 @@ export const ConfigProvider = ({ children }) => {
                         Config.REACT_APP_AQ_SECRET
                     ),
                 };
+
+                console.log('🔍 Request headers:', {
+                    'X-Advisor-Subdomain': headers['X-Advisor-Subdomain'],
+                    'aq-encrypted-key': headers['aq-encrypted-key'] ? 'SET' : 'MISSING',
+                });
 
                 const response = await axios.get(apiUrl, { headers });
 
@@ -50,6 +55,10 @@ export const ConfigProvider = ({ children }) => {
                         appName: apiData.appName,
                         subdomain: apiData.subdomain,
                         themeColor: apiData.themeColor,
+                        mainColor: apiData.mainColor,
+                        gradient1: apiData.gradient1,
+                        gradient2: apiData.gradient2,
+                        secondaryColor: apiData.secondaryColor,
                         hasApiKeys: !!apiData.apiKeys,
                         advisorSpecificTag: apiData.apiKeys?.advisorSpecificTag,
                         advisorRaCode: apiData.apiKeys?.advisorRaCode,
@@ -222,7 +231,13 @@ export const ConfigProvider = ({ children }) => {
                     setConfig(newConfig);
                 }
             } catch (error) {
-                console.error('Error fetching app config:', error);
+                console.error('❌ Error fetching app config:', error);
+                console.error('❌ Error details:', {
+                    message: error.message,
+                    status: error.response?.status,
+                    statusText: error.response?.statusText,
+                    responseData: error.response?.data,
+                });
                 // Fallback to default config is already set in initial state
             } finally {
                 setLoading(false);

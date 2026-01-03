@@ -9,9 +9,16 @@ import Config from 'react-native-config';
 import { getAuth } from '@react-native-firebase/auth';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTrade } from '../TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 
 const ResearchReportScreen = () => {
   const {configData}=useTrade();
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || 'rgba(0, 38, 81, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 86, 183, 1)';
+  const mainColor = config?.mainColor || '#045DFF';
   const navigation = useNavigation();
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolsWithLTP, setSymbolsWithLTP] = useState([]);
@@ -220,13 +227,13 @@ const ResearchReportScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <LinearGradient   colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']} 
+      <LinearGradient   colors={[gradient1, gradient2]}
         start={{ x: 0, y: 0 }}
   end={{ x: 1, y: 1 }}
    style={styles.headerGradient}>
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-      <ChevronLeft size={24} color="#000" /> 
+      <ChevronLeft size={24} color="#000" />
     </TouchableOpacity>
           <Text style={styles.headerTitle}>Research Report</Text>
         </View>
@@ -247,7 +254,7 @@ const ResearchReportScreen = () => {
             <Filter size={18} color="#93AAD2" />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.dateFilterBtn} onPress={toggleDateFilter}>
+        <TouchableOpacity style={[styles.dateFilterBtn, { backgroundColor: mainColor }]} onPress={toggleDateFilter}>
           <Calendar size={17} color="#fff" />
           <Text style={styles.dateFilterText}>Date</Text>
         </TouchableOpacity>

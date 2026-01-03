@@ -1,7 +1,12 @@
 import React, { memo } from "react";
 import { View, TouchableOpacity, StyleSheet, Text } from "react-native";
+import { useConfig } from "../../context/ConfigContext";
 
 const CustomTabBar = memo(({ navigationState, jumpTo }) => {
+  // Get dynamic colors from config
+  const config = useConfig();
+  const mainColor = config?.mainColor || "rgba(0, 86, 183, 1)";
+
   return (
     <View style={tabStyles.tabBarWrapper}>
       {navigationState.routes.map((route, idx) => {
@@ -11,7 +16,7 @@ const CustomTabBar = memo(({ navigationState, jumpTo }) => {
             key={route.key}
             style={[
               tabStyles.tabItem,
-              { backgroundColor: isActive ? "rgba(0, 86, 183, 1)" : "#F4F4F4" },
+              { backgroundColor: isActive ? mainColor : "#F4F4F4" },
             ]}
             activeOpacity={0.9}
             onPress={() => jumpTo(route.key)}

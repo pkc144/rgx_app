@@ -43,6 +43,7 @@ import APP_VARIANTS from '../../utils/Config';
 import RNFS from 'react-native-fs';
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 import { useTrade } from '../../screens/TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 import FormatDateTime, { FormatDate } from '../../utils/formatDateTime';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CFPaymentGatewayService } from 'react-native-cashfree-pg-sdk';
@@ -178,7 +179,7 @@ const CouponCodeInput = React.memo(
 );
 
 // Step Progress Component - Web Style
-const StepProgressBar = ({ steps, currentStep, currentAppVariant }) => {
+const StepProgressBar = ({ steps, currentStep, currentAppVariant, mainColor }) => {
   const completedSteps = currentStep;
   const progressPercentage = (completedSteps / (steps.length - 1)) * 100;
 
@@ -186,7 +187,7 @@ const StepProgressBar = ({ steps, currentStep, currentAppVariant }) => {
     <View style={styles.progressContainer}>
       <View style={styles.progressHeader}>
         <View style={styles.progressTitleContainer}>
-          <Shield size={16} color="#0056B7" />
+          <Shield size={16} color={mainColor || '#0056B7'} />
           <Text style={styles.progressTitle}>Progress</Text>
         </View>
         <View style={styles.progressBadge}>
@@ -326,6 +327,13 @@ const MPInvestNowModal = ({
   getAllBespoke
 }) => {
   const { configData } = useTrade();
+
+  // Get dynamic colors from config
+  const config = useConfig();
+  const mainColor = config?.mainColor || '#0056B7';
+  const gradient1 = config?.gradient1 || '#002651';
+  const gradient2 = config?.gradient2 || '#0076FB';
+
   // API configuration from your Postman
   const PDF_API_CONFIG = {
     url: `${server.ccxtServer.baseUrl}misc/pdf/s3/digio/download`,
@@ -4043,7 +4051,7 @@ const MPInvestNowModal = ({
                               style={[
                                 styles.cardContainer,
                                 isSelected
-                                  ? styles.cardSelected
+                                  ? [styles.cardSelected, { borderColor: mainColor }]
                                   : styles.cardUnselected,
                               ]}
                               onPress={() => {
@@ -4080,7 +4088,7 @@ const MPInvestNowModal = ({
                                           alignItems: 'center',
                                           alignSelf: 'center',
                                         }}>
-                                        <Text style={styles.lineThroughBlue}>
+                                        <Text style={[styles.lineThroughBlue, { color: mainColor }]}>
                                           ₹{item.amountWithoutGst}
                                         </Text>
                                         <Text style={styles.greenPrice}>
@@ -4117,7 +4125,7 @@ const MPInvestNowModal = ({
                                             (1 + discountPercentage / 100),
                                           )}
                                         </Text>
-                                        <Text style={styles.bluePrice}>
+                                        <Text style={[styles.bluePrice, { color: mainColor }]}>
                                           ₹{item.amountWithoutGst}{' '}
                                           {configGst === 'true' ? '+ GST' : ''}
                                         </Text>
@@ -4127,7 +4135,7 @@ const MPInvestNowModal = ({
                                       </Text>
                                     </>
                                   ) : (
-                                    <Text style={styles.bluePrice}>
+                                    <Text style={[styles.bluePrice, { color: mainColor }]}>
                                       ₹{item.amountWithoutGst}{' '}
                                       {configGst === 'true' ? '+ GST' : ''}
                                     </Text>
@@ -4138,7 +4146,7 @@ const MPInvestNowModal = ({
                                   style={[
                                     styles.radioButton,
                                     isSelected
-                                      ? styles.radioSelected
+                                      ? [styles.radioSelected, { borderColor: mainColor, backgroundColor: mainColor }]
                                       : styles.radioUnselected,
                                   ]}>
                                   {isSelected && (
@@ -4196,7 +4204,7 @@ const MPInvestNowModal = ({
                                   style={[
                                     styles.cardContainer,
                                     isSelected
-                                      ? styles.cardSelected
+                                      ? [styles.cardSelected, { borderColor: mainColor }]
                                       : styles.cardUnselected,
                                   ]}
                                   onPress={() => {
@@ -4269,7 +4277,7 @@ const MPInvestNowModal = ({
                                                   100),
                                               )}
                                             </Text>
-                                            <Text style={styles.bluePrice}>
+                                            <Text style={[styles.bluePrice, { color: mainColor }]}>
                                               ₹
                                               {
                                                 planDetails.pricingWithoutGst?.[
@@ -4288,7 +4296,7 @@ const MPInvestNowModal = ({
                                           </Text>
                                         </>
                                       ) : (
-                                        <Text style={styles.bluePrice}>
+                                        <Text style={[styles.bluePrice, { color: mainColor }]}>
                                           ₹
                                           {
                                             planDetails.pricingWithoutGst?.[
@@ -4304,7 +4312,7 @@ const MPInvestNowModal = ({
                                       style={[
                                         styles.radioButton,
                                         isSelected
-                                          ? styles.radioSelected
+                                          ? [styles.radioSelected, { borderColor: mainColor, backgroundColor: mainColor }]
                                           : styles.radioUnselected,
                                       ]}>
                                       {isSelected && (
@@ -4396,7 +4404,7 @@ const MPInvestNowModal = ({
         <SafeAreaView style={styles.container}>
           <View style={styles.headerContainer}>
             <LinearGradient
-              colors={['#002651', '#0076FB']} //002651 0076FB
+              colors={[gradient1, gradient2]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.alphaQuarkBanner}>
@@ -4424,6 +4432,7 @@ const MPInvestNowModal = ({
             steps={steps}
             currentStep={currentStep}
             currentAppVariant={currentAppVariant}
+            mainColor={mainColor}
           />
 
           {/* Content */}
