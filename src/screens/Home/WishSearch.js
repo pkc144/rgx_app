@@ -7,17 +7,21 @@ import debounce from 'lodash.debounce';
 import MissedGainText from '../../components/AdviceScreenComponents/DynamicText/BestPerformerGainText';
 import Loader from '../../utils/Loader';
 import Config from 'react-native-config';
-import APP_VARIANTS from '../../utils/Config';
 import { Dropdown } from 'react-native-element-dropdown';
 import server from '../../utils/serverConfig';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { useTrade } from '../TradeContext';
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-const { logo: LogoComponent, themeColor = '#0056B7', gradient1 = '#F0F0F0',
-  gradient2 = '#F0F0F0', mainColor = '#4CAAA0'} = variantConfig;
+import { useConfig } from '../../context/ConfigContext';
+
 const WishSearch = ({ searchQuery, onBackPress, onQueryChange, onBookmark, currentTab, watchlists }) => {
   const {configData}=useTrade();
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#0056B7';
+  const gradient1 = config?.gradient1 || '#0056B7';
+  const gradient2 = config?.gradient2 || '#002651';
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -588,7 +592,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   dropdownFocussymbol: {
-    borderColor: gradient1,
+    borderColor: '#0056B7',
     borderWidth: 1.5,
     shadowColor: '#4B75F2',
     shadowOpacity: 0.2,
@@ -596,14 +600,14 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   dropdownFocusstrike: {
-    borderColor: gradient1,
+    borderColor: '#0056B7',
     borderWidth: 1.5,
     shadowColor: '#4B75F2',
     shadowOpacity: 0.2,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
   },  dropdownFocuscepe: {
-    borderColor: gradient1,
+    borderColor: '#0056B7',
     borderWidth: 1.5,
     shadowColor: '#4B75F2',
     shadowOpacity: 0.2,

@@ -101,6 +101,7 @@ import {useTrade} from '../screens/TradeContext';
 import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
 import APP_VARIANTS from '../utils/Config';
+import { useConfig } from '../context/ConfigContext';
 import {style} from 'twrnc';
 import VideosScreen from './HomeScreenComponents/KnowledgeHubScreen/VideoScreen';
 import PDFsScreen from './HomeScreenComponents/KnowledgeHubScreen/PdfScreen';
@@ -198,6 +199,15 @@ const MainTabNavigator = () => {
     setsuccessclosemodel,
     successclosemodel,
   } = useModal();
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const dynamicThemeColor = config?.themeColor || themeColor;
+  const dynamicMainColor = config?.mainColor || mainColor;
+  const dynamicSecondaryColor = config?.secondaryColor || secondaryColor;
+  const dynamicGradient1 = config?.gradient1 || gradient1;
+  const dynamicGradient2 = config?.gradient2 || gradient2;
+
   const translateY = useRef(new Animated.Value(screenHeight)).current;
   const [cartCount, setCartCount1] = useState(0);
   const navigation = useNavigation();

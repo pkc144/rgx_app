@@ -26,19 +26,9 @@ import {useNavigation} from '@react-navigation/native';
 const Alpha100 = require('../../assets/mpf_1.png');
 const screenWidth = Dimensions.get('window').width;
 import {XIcon, Calendar, Check, X, Info} from 'lucide-react-native';
-import APP_VARIANTS from '../../utils/Config';
+import { useConfig } from '../../context/ConfigContext';
 import MPStatusModal from '../../components/AdviceScreenComponents/MPStatusModal';
 import logo from '../../assets/fadedlogo.png';
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-const {
-  logo: LogoComponent,
-  mainColor = '#4CAAA0',
-  themeColor = '#0056B7',
-  CardborderWidth = 0,
-  cardElevation = 3,
-  cardverticalmargin = 3,
-} = variantConfig;
 
 import {generateToken} from '../../utils/SecurityTokenManager';
 import RebalancePreferenceModal from './RebalancePreferenceModal';
@@ -92,6 +82,14 @@ const RebalanceCard = ({
   const {configData} = useTrade();
   const angelOneApiKey = configData?.config.REACT_APP_ANGEL_ONE_API_KEY;
   const zerodhaApiKey = configData?.config.REACT_APP_ZERODHA_API_KEY;
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#4CAAA0';
+  const CardborderWidth = config?.CardborderWidth || 0;
+  const cardElevation = config?.cardElevation || 3;
+  const cardverticalmargin = config?.cardverticalmargin || 3;
   const navigation = useNavigation();
   const [allRebalanceHoldingData, setallRebalanceHoldingData] = useState(null);
   const [isChangeModal, setisChangeModal] = useState(false);

@@ -4,7 +4,8 @@ import LinearGradient from "react-native-linear-gradient";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import Config from "react-native-config";
-import APP_VARIANTS from "../../utils/Config";
+import { useConfig } from "../../context/ConfigContext";
+// Note: APP_VARIANTS removed - using dynamic config from useConfig()
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -16,6 +17,10 @@ const ExploreSection = ({
 }) => {
   const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
   const navigate = useNavigation();
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
 
   const exploreItems = [
     { 
@@ -62,9 +67,6 @@ const ExploreSection = ({
       navigate.navigate("News");
     }
   };
-
-  const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-  const { themeColor = '#0056B7' } = variantConfig;
 
   return (
     <View style={styles.container}>

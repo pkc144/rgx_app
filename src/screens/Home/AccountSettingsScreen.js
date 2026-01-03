@@ -190,14 +190,18 @@ const AccountSettingsScreen = ({navigation}) => {
     </TouchableOpacity>
   );
 
+  // Get gradient colors from config
+  const gradientStart = config?.gradient1 || '#002651';
+  const gradientEnd = config?.gradient2 || '#0056B7';
+
   return (
     <LinearGradient
-      colors={['#002651', '#0056B7']}
+      colors={[gradientStart, gradientEnd]}
       start={{x: 0, y: 0}}
       end={{x: 0, y: 1}}
       style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor="#002651" />
+        <StatusBar barStyle="light-content" backgroundColor={gradientStart} />
 
         {showBackgroundLogo && backgroundLogo && (
           <View style={styles.logoContainer} pointerEvents="none">

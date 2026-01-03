@@ -40,7 +40,7 @@ import {FyersTpinModal} from '../DdpiModal';
 import {OtherBrokerModel} from '../DdpiModal';
 import CryptoJS from 'react-native-crypto-js';
 import Config from 'react-native-config';
-import APP_VARIANTS from '../../utils/Config';
+import { useConfig } from '../../context/ConfigContext';
 import ICICIUPModal from '../BrokerConnectionModal/icicimodal';
 import UpstoxModal from '../BrokerConnectionModal/upstoxModal';
 import AngleOneBookingModal from '../BrokerConnectionModal/AngleoneBookingModal';
@@ -52,7 +52,6 @@ import IIFLModal from '../iiflmodal';
 import AliceBlueConnect from '../BrokerConnectionModal/AliceBlueConnect';
 import FyersConnect from '../BrokerConnectionModal/FyersConnect';
 import {generateToken} from '../../utils/SecurityTokenManager';
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
 import {useModal} from '../ModalContext';
 import MotilalModal from '../BrokerConnectionModal/MotilalModal';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
@@ -60,14 +59,6 @@ import BrokerSelectionModal from '../BrokerSelectionModal';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
 import CartFullAmountText from './DynamicText/CartFullAmountText';
 import TotalAmountText from './DynamicText/totalAmount';
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-const {
-  logo: LogoComponent,
-  themeColor = '#0056B7',
-  mainColor = '#4CAAA0',
-  secondaryColor = '#F0F0F0',
-  toolbarlogo: Toolbarlogo1,
-} = variantConfig;
 const AddToCartModal = ({
   isVisible,
   onClose,
@@ -89,6 +80,13 @@ const AddToCartModal = ({
     brokerStatus,
     configData,
   } = useTrade();
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#4CAAA0';
+  const secondaryColor = config?.secondaryColor || '#F0F0F0';
+
   const [openReviewTrade, setOpenReviewTrade] = useState(false);
   const [openZerodhaReviewModal, setOpenZerodhaModel] = useState(false);
   const [openSuccessModal, setOpenSucessModal] = useState(false);

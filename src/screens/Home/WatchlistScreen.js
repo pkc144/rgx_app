@@ -46,8 +46,12 @@ import {generateToken} from '../../utils/SecurityTokenManager';
 import server from '../../utils/serverConfig';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTrade } from '../TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 
 const WatchlistScreen = props => {
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
   const {configData}=useTrade();
   const route = useRoute();
   const navigation = props.navigation;
@@ -678,7 +682,7 @@ const WatchlistScreen = props => {
               style={{
                 paddingHorizontal: 12,
                 paddingVertical: 6,
-                backgroundColor: '#0056B7',
+                backgroundColor: themeColor,
                 borderRadius: 3,
                 marginLeft: 12,
                 height: 35,

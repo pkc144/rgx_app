@@ -34,16 +34,19 @@ import {
 import server from '../../utils/serverConfig';
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
-import APP_VARIANTS from '../../utils/Config';
+import {useConfig} from '../../context/ConfigContext';
 import RebalanceNotificationComponent from './RebalanceNotificationComponent';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-const { logo: LogoComponent, themeColor = '#0056B7', mainColor = '#4CAAA0', secondaryColor = '#F0F0F0', gradient1 = '#F0F0F0',
-  gradient2 = '#F0F0F0',
-  placeholderText = '#FFFFFF' } = variantConfig;
+
 const PushNotificationScreen = () => {
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#0056B7';
+  const secondaryColor = config?.secondaryColor || '#F0F0F0';
+  const gradient1 = config?.gradient1 || '#0056B7';
+  const gradient2 = config?.gradient2 || '#002651';
   const {
     allNotifications,
     getAllNotifcations,
@@ -1118,7 +1121,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 8,
-    backgroundColor: secondaryColor,
+    backgroundColor: '#F0F0F0',
   },
   headerActions: {
     flexDirection: 'row',

@@ -37,6 +37,7 @@ import EmptyStateInfoMP from '../Drawer/EmptyStateMP';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
 import DistributionGrid from '../Drawer/DistributionRowGrid';
 import {useTrade} from '../TradeContext';
+import {useConfig} from '../../context/ConfigContext';
 
 const screenWidth = Dimensions.get('window').width;
 const ScreenHeight = Dimensions.get('window').height;
@@ -61,6 +62,9 @@ const DistributionRow = ({label, percent}) => (
 
 const AfterSubscriptionScreen = ({route}) => {
   const {configData} = useTrade();
+  const config = useConfig();
+  const gradientStart = config?.gradient1 || '#002651';
+  const gradientEnd = config?.gradient2 || '#0056B7';
   const {fileName} = route.params;
   const auth = getAuth();
   const user = auth.currentUser;
@@ -280,17 +284,17 @@ const AfterSubscriptionScreen = ({route}) => {
 
   return (
     <LinearGradient
-      colors={['#002651', '#0056B7']}
+      colors={[gradientStart, gradientEnd]}
       start={{x: 0, y: 0}}
       end={{x: 0, y: 1}}
       style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor="#002651" />
+        <StatusBar barStyle="light-content" backgroundColor={gradientStart} />
 
         <ScrollView contentContainerStyle={styles.content}>
           {/* Header Card */}
           <LinearGradient
-            colors={['#0056B7', '#002651']}
+            colors={[gradientEnd, gradientStart]}
             style={styles.headerCard}>
             <View style={styles.headerRow}>
               <TouchableOpacity

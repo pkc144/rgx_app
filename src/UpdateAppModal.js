@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import VersionCheck from 'react-native-version-check';
+import { useConfig } from './context/ConfigContext';
 import DeviceInfo from 'react-native-device-info';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import semver from 'semver';
@@ -91,6 +92,11 @@ const UpdateAppModal = ({visible, onClose}) => {
   const [showModal, setShowModal] = useState(false);
   const [latestVersion, setLatestVersion] = useState('');
 
+  // Get dynamic config from API
+  const config = useConfig();
+  const gradientStart = config?.gradient2 || '#0076FB';
+  const gradientEnd = config?.gradient1 || '#002651';
+
   const checkUpdate = useCallback(async () => {
     const shouldShow = await shouldShowUpdatePrompt();
     if (!shouldShow) return;
@@ -129,7 +135,7 @@ const UpdateAppModal = ({visible, onClose}) => {
     <Modal visible={showModal} transparent animationType="fade">
       <View style={styles.overlay}>
         <LinearGradient
-          colors={['#0076FB', '#002651']}
+          colors={[gradientStart, gradientEnd]}
           style={styles.container}>
           <Text style={styles.heading}>Update Available!</Text>
           <Text style={styles.message}>

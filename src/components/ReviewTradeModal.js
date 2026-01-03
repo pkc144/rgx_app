@@ -31,22 +31,9 @@ import Config from 'react-native-config';
 import SliderButton from './SliderButton';
 import LinearGradient from 'react-native-linear-gradient';
 const {height: screenHeight} = Dimensions.get('window');
-import APP_VARIANTS from '../utils/Config';
+import { useConfig } from '../context/ConfigContext';
 import useLTPStore from './AdviceScreenComponents/DynamicText/useLtpStore';
 import TotalAmountText from './AdviceScreenComponents/DynamicText/totalAmount';
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-const {
-  logo: LogoComponent,
-  themeColor = '#0056B7',
-  mainColor = '#4CAAA0',
-  secondaryColor = '#F0F0F0',
-  basket1 = '#9D2115',
-  basket2 = '#6B1207',
-  toolbarlogo: Toolbarlogo1,
-  gradient1 = '#F0F0F0',
-  gradient2 = '#F0F0F0',
-} = variantConfig;
 const ReviewTradeModal = ({
   visible,
   onClose,
@@ -67,6 +54,15 @@ const ReviewTradeModal = ({
   broker,
 }) => {
   //console.log("stock Detailss ----> ",stockDetails);
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#4CAAA0';
+  const secondaryColor = config?.secondaryColor || '#F0F0F0';
+  const gradient1 = config?.gradient1 || '#F0F0F0';
+  const gradient2 = config?.gradient2 || '#F0F0F0';
+
   const isMarketHours = IsMarketHours();
   const {width} = useWindowDimensions();
   const [multiplier, setMultiplier] = useState('1');

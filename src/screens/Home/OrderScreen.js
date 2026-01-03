@@ -36,32 +36,24 @@ import eventEmitter from '../../components/EventEmitter';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 
 const {width} = Dimensions.get('window');
-import APP_VARIANTS from '../../utils/Config';
+import { useConfig } from '../../context/ConfigContext';
 
 import CustomTabBar from '../Drawer/CustomTabbar';
 import CustomTabBarOrder from '../Drawer/CustomTabbarOrder';
 import LinearGradient from 'react-native-linear-gradient';
 import {useTrade} from '../TradeContext';
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-const {
-  logo: LogoComponent,
-  themeColor = '#0056B7',
-  CardborderWidth = 0,
-  bottomTabbg = '#fff',
-  mainColor = '#4CAAA0',
-  secondaryColor = '#F0F0F0',
-  gradient1 = '#F0F0F0',
-  bottomTabBorderTopWidth = 1.5,
-  gradient2 = '#F0F0F0',
-  cardElevation = 3,
-  cardverticalmargin = 3,
-  placeholderText = '#FFFFFF',
-  tabIconColor = '#000',
-} = variantConfig;
 
 export default function OrderScreen() {
   const {configData} = useTrade();
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#4CAAA0';
+  const secondaryColor = config?.secondaryColor || '#F0F0F0';
+  const gradient1 = config?.gradient1 || '#F0F0F0';
+  const gradient2 = config?.gradient2 || '#F0F0F0';
+
   const [index, setIndex] = useState(0);
   const [routes] = useState([
     {key: 'placed', title: 'Orders Placed'},
@@ -916,11 +908,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#EFF0EE',
     overflow: 'hidden',
   },
-  tabBar: {
+  tabBarGradient: {
     flexDirection: 'row',
     height: 48,
     position: 'relative',
-    backgroundColor: gradient1,
+    backgroundColor: '#F0F0F0', // Default, override with inline style using gradient1
     borderBottomRightRadius: 20,
     borderBottomLeftRadius: 20,
   },

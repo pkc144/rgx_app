@@ -23,7 +23,7 @@ import useLTPStore from '../../components/AdviceScreenComponents/DynamicText/use
 import BlurredComponent from '../../components/GlassmorphicText';
 import Config from 'react-native-config';
 import {useNavigation} from '@react-navigation/native';
-import APP_VARIANTS from '../../utils/Config';
+import { useConfig } from '../../context/ConfigContext';
 import PriceTextAdvice from '../../components/AdviceScreenComponents/DynamicText/PriceTextAdvice';
 const StockCard = React.memo(
   ({
@@ -93,15 +93,12 @@ const StockCard = React.memo(
       );
     }, [price, advisedRangeHigher, advisedRangeLower]);
 
-    const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
-    const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-    const {
-      logo: LogoComponent,
-      themeColor = '#0056B7',
-      CardborderWidth = 0,
-      cardElevation = 3,
-      cardverticalmargin = 3,
-    } = variantConfig;
+    // Get dynamic config from API
+    const config = useConfig();
+    const themeColor = config?.themeColor || '#0056B7';
+    const CardborderWidth = config?.CardborderWidth || 0;
+    const cardElevation = config?.cardElevation || 3;
+    const cardverticalmargin = config?.cardverticalmargin || 3;
 
     const [loadingcart, setloadingcart] = useState(false);
     const navigation = useNavigation();

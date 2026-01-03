@@ -20,6 +20,7 @@ import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { black } from 'react-native-paper/lib/typescript/styles/themes/v2/colors';
 import { useTrade } from '../TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 
 const ModifyInvestment = ({
     modifyInvestmentModal,
@@ -32,6 +33,11 @@ const ModifyInvestment = ({
     userBroker
 }) => {
   const {configData}=useTrade();
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#002651';
     const [portfolioAmount, setPortfolioAmount] = useState("");
     const [subscriptionAmountLoading, setSubscriptionAmountLoading] = useState(false);
     const [selectedOption, setSelectedOption] = useState("topup");
@@ -208,7 +214,7 @@ const ModifyInvestment = ({
           showsVerticalScrollIndicator={false}
         >
           {/* Header */}
-          <Text style={styles.headerText}>
+          <Text style={[styles.headerText, {color: mainColor}]}>
             Modify Your Investment Allocation
           </Text>
 
@@ -245,12 +251,14 @@ const ModifyInvestment = ({
               onPress={() => setSelectedOption("topup")}
               style={[
                 styles.toggleButton,
-                selectedOption === "topup" && styles.toggleActive,
+                {borderColor: themeColor},
+                selectedOption === "topup" && {backgroundColor: themeColor},
               ]}
             >
               <Text
                 style={[
                   styles.toggleText,
+                  {color: themeColor},
                   selectedOption === "topup" && styles.toggleTextActive,
                 ]}
               >
@@ -262,12 +270,14 @@ const ModifyInvestment = ({
               onPress={() => setSelectedOption("full")}
               style={[
                 styles.toggleButton,
-                selectedOption === "full" && styles.toggleActive,
+                {borderColor: themeColor},
+                selectedOption === "full" && {backgroundColor: themeColor},
               ]}
             >
               <Text
                 style={[
                   styles.toggleText,
+                  {color: themeColor},
                   selectedOption === "full" && styles.toggleTextActive,
                 ]}
               >
@@ -291,7 +301,7 @@ const ModifyInvestment = ({
 
           {/* Amount Input */}
           <View style={styles.inputContainer}>
-            <Text style={styles.inputPrefix}>₹</Text>
+            <Text style={[styles.inputPrefix, {color: mainColor}]}>₹</Text>
             <TextInput
               placeholder="Enter amount"
               value={portfolioAmount}
@@ -312,13 +322,14 @@ const ModifyInvestment = ({
               onPress={() => setModifyInvestmentModal(false)}
               style={styles.cancelButton}
             >
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={[styles.cancelText, {color: mainColor}]}>Cancel</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={modifyInvestmentModalPortfolio}
               style={[
                 styles.confirmButton,
+                {backgroundColor: themeColor},
                 isConfirmDisabled() && styles.disabledButton,
               ]}
               disabled={isConfirmDisabled()}

@@ -57,6 +57,7 @@ import axios from 'axios';
 import { useSocialProof } from '../../components/SocialProofProvider';
 import { useTrade } from '../TradeContext';
 import { generateToken } from '../../utils/SecurityTokenManager';
+import { useConfig } from '../../context/ConfigContext';
 import APP_VARIANTS from '../../utils/Config';
 import Icon1 from 'react-native-vector-icons/Fontisto';
 import moment from 'moment';
@@ -71,17 +72,7 @@ import ModelPortfolioScreen from '../Drawer/ModelPortfolioScreen';
 import UpdateAppModal, {checkForAppUpdate} from '../../UpdateAppModal';
 
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
-const {
-  logo: LogoComponent,
-  themeColor = '#0056B7',
-  mainColor = '#4CAAA0',
-  secondaryColor = '#F0F0F0',
-  gradient1 = '#F0F0F0',
-  gradient2 = '#F0F0F0',
-  placeholderText = '#FFFFFF',
-} = variantConfig;
+const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
 
 const pdfcicon = require('../../assets/pdf.png');
 
@@ -125,6 +116,15 @@ const HomeScreen = ({ }) => {
     configData,
   } = useTrade();
   // console.log('configData', configData);
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
+  const mainColor = config?.mainColor || '#0056B7';
+  const secondaryColor = config?.secondaryColor || '#F0F0F0';
+  const gradient1 = config?.gradient1 || '#0056B7';
+  const gradient2 = config?.gradient2 || '#002651';
+
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;

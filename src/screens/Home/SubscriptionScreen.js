@@ -18,6 +18,7 @@ import { FadeLoading } from 'react-native-fade-loading';
 import ThinkingSvg from '../../assets/thinking.svg';
 import BrokerSelectionModal from '../../components/BrokerSelectionModal';
 import { useTrade } from '../TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 import server from '../../utils/serverConfig';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
@@ -43,6 +44,10 @@ const SubscriptionScreen = () => {
     getAllBrokerSpecificHoldings,
     getAllHoldings,
   } = useTrade();
+
+  // Get dynamic config from API
+  const config = useConfig();
+  const themeColor = config?.themeColor || '#0056B7';
 
   const [loading, setLoading] = useState(true);
   const [brokername, setBrokerName] = useState('');
@@ -294,10 +299,10 @@ const SubscriptionScreen = () => {
                 </View>
               </View>
               <TouchableOpacity
-                style={styles.changeButtonDis}
+                style={[styles.changeButtonDis, {borderColor: themeColor}]}
                 onPress={handleOpen}
                 activeOpacity={0.8}>
-                <Text style={styles.changeButtonTextDis}>Connect Broker</Text>
+                <Text style={[styles.changeButtonTextDis, {color: themeColor}]}>Connect Broker</Text>
               </TouchableOpacity>
             </View>
           )}
