@@ -58,7 +58,15 @@ const AccountSettingsScreen = ({navigation}) => {
           label: 'My Subscription',
           onPress: () => handleMenuPress('Model Portfolio'),
         },
-        ...(!['ZAMZAMCAPITAL', 'RGXRESEARCH', 'rgxresearch'].includes(Config?.ADVISOR_RA_CODE) && Config?.REACT_APP_HIDE_CHANGE_MANAGER !== 'true'
+...((() => {
+          const hideChangeManagerCodes = Config?.REACT_APP_HIDE_CHANGE_MANAGER_FOR_CODES
+            ?.split(',')
+            .map(code => code.trim().toUpperCase()) || [];
+          const currentCode = Config?.ADVISOR_RA_CODE?.toUpperCase() || '';
+          const shouldHide = Config?.REACT_APP_HIDE_CHANGE_MANAGER === 'true' ||
+            hideChangeManagerCodes.includes(currentCode);
+          return !shouldHide;
+        })()
           ? [
               {
                 icon: Tags,
