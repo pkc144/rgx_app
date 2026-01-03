@@ -322,7 +322,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         if (authToken) {
           brokerData = {
             ...brokerData,
-            apiKey: 'EfkDdJMH',
+            apiKey: angelOneApiKey,
           };
         }
 
@@ -1332,7 +1332,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     // eventEmitter.emit('OpenTradeModel');
     setTradeClickCount(prevCount => prevCount + 1);
     fetchCart();
-    const isFundsEmpty = funds.status === false;
+    const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
     const isMarketHours = IsMarketHours();
 
     const currentBroker = userDetails?.user_broker;
@@ -1446,7 +1446,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     console.log('HIIiiiiiiiiiiiiii', broker);
     // eventEmitter.emit('OpenTradeModel');
 
-    const isFundsEmpty = funds?.status === false;
+    const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
     const isMarketHours = IsMarketHours();
     if (isFundsEmpty) {
       setOpenTokenExpireModel(true);
@@ -1920,7 +1920,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     getAllFunds();
     console.log('this not----2');
     const isMarketHours = IsMarketHours();
-    const isFundsEmpty = funds?.status === false || funds?.status === 1;
+    const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
     console.log("thos called ------jjjjjjjjjjj2", isFundsEmpty, funds, brokerStatus);
     if (isFundsEmpty) {
       console.log("thos called ------jjjjjjjjjjj1");

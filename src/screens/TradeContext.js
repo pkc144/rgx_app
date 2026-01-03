@@ -14,6 +14,7 @@ import server from '../utils/serverConfig';
 import {fetchFunds} from '../FunctionCall/fetchFunds';
 import {fetchBrokerAllHoldings} from '../FunctionCall/fetchBrokerAllHoldings';
 import {fetchBrokerSpecificHoldings} from '../FunctionCall/fetchBrokerSpecificHoldings';
+import {fetchOrderBook, fetchPendingOrders} from '../services/BrokerOrderBookAPI';
 
 import {getConfigData, isUserDataComplete} from '../utils/storageUtils';
 import Config from 'react-native-config';
@@ -430,17 +431,6 @@ const getAllTrades = async () => {
 
   const planValid = await getPlanList();
 
-  // Skip fetching trades for users without an active plan/subscription
-  if (planValid === false) {
-    console.log('[Trade Fetch] Skipping - User does not have an active plan');
-    setstockRecoNotExecutedfinal([]);
-    setrecommendationStockfinal([]);
-    setrejectedTrades([]);
-    setIgnoredTrades([]);
-    setIsDatafetching(false);
-    return;
-  }
-
   const requestUrl = `${server.server.baseUrl}api/user/trade-reco-for-user?user_email=${userEmail}`;
 
   try {
@@ -769,6 +759,117 @@ const getAllTrades = async () => {
   const [userDetails, setUserDetails] = useState(null);
   const [brokerStatus, setBrokerStatus] = useState(null);
   const [funds, setFunds] = useState({});
+
+  // Broker Order Book State for reconciliation
+  const [brokerOrders, setBrokerOrders] = useState([]);
+  const [pendingOrders, setPendingOrders] = useState([]);
+  const [isOrderBookLoading, setIsOrderBookLoading] = useState(false);
+  const [lastOrderBookRefresh, setLastOrderBookRefresh] = useState(null);
+  const [orderBookError, setOrderBookError] = useState(null);
+  const autoRefreshTimerRef = useRef(null);
+
+  /**
+   * Fetch broker order book for reconciliation and status refresh
+   * @param {boolean} forceRefresh - Force a fresh fetch even if recently fetched
+   * @returns {Promise<object>} - { orders, pendingOrders, error }
+   */
+  const fetchBrokerOrderBook = useCallback(async (forceRefresh = false) => {
+    // Check if user details are available
+    if (!userDetails || !userDetails.user_broker) {
+      console.log('[TradeContext] No broker connected, skipping order book fetch');
+      return { orders: [], pendingOrders: [], error: 'No broker connected' };
+    }
+
+    // Skip if recently fetched (within 10 seconds) unless force refresh
+    if (!forceRefresh && lastOrderBookRefresh) {
+      const timeSinceLastRefresh = Date.now() - lastOrderBookRefresh.getTime();
+      if (timeSinceLastRefresh < 10000) {
+        console.log('[TradeContext] Using cached order book data');
+        return { orders: brokerOrders, pendingOrders, error: null };
+      }
+    }
+
+    setIsOrderBookLoading(true);
+    setOrderBookError(null);
+
+    try {
+      const credentials = {
+        clientCode: userDetails.clientCode,
+        apiKey: userDetails.apiKey,
+        jwtToken: userDetails.jwtToken,
+        secretKey: userDetails.secretKey,
+        sid: userDetails.sid,
+        viewToken: userDetails.viewToken,
+        serverId: userDetails.serverId,
+      };
+
+      console.log('[TradeContext] Fetching order book for:', userDetails.user_broker);
+      const orders = await fetchOrderBook(userDetails.user_broker, credentials, configData);
+
+      // Filter pending orders
+      const pending = orders.filter(order => order.normalizedStatus === 'pending');
+
+      setBrokerOrders(orders);
+      setPendingOrders(pending);
+      setLastOrderBookRefresh(new Date());
+      setOrderBookError(null);
+
+      console.log(`[TradeContext] Order book fetched: ${orders.length} total, ${pending.length} pending`);
+
+      return { orders, pendingOrders: pending, error: null };
+    } catch (error) {
+      console.error('[TradeContext] Error fetching order book:', error.message);
+      setOrderBookError(error.message);
+      return { orders: brokerOrders, pendingOrders, error: error.message };
+    } finally {
+      setIsOrderBookLoading(false);
+    }
+  }, [userDetails, brokerOrders, pendingOrders, lastOrderBookRefresh, configData]);
+
+  /**
+   * Get pending orders for a specific symbol
+   * @param {string} symbol - Trading symbol
+   * @param {string} transactionType - Optional: BUY or SELL
+   * @returns {Array} - Matching pending orders
+   */
+  const getPendingOrdersForSymbol = useCallback((symbol, transactionType = null) => {
+    return pendingOrders.filter(order => {
+      const symbolMatch = order.symbol?.toUpperCase() === symbol?.toUpperCase();
+      const typeMatch = transactionType
+        ? order.transactionType?.toUpperCase() === transactionType.toUpperCase()
+        : true;
+      return symbolMatch && typeMatch;
+    });
+  }, [pendingOrders]);
+
+  /**
+   * Start auto-refresh timer for pending orders (30 seconds)
+   */
+  const startAutoRefresh = useCallback(() => {
+    // Clear any existing timer
+    if (autoRefreshTimerRef.current) {
+      clearInterval(autoRefreshTimerRef.current);
+    }
+
+    // Only start if there are pending orders
+    if (pendingOrders.length > 0) {
+      console.log('[TradeContext] Starting auto-refresh for pending orders');
+      autoRefreshTimerRef.current = setInterval(() => {
+        fetchBrokerOrderBook(true);
+      }, 30000); // 30 seconds
+    }
+  }, [pendingOrders, fetchBrokerOrderBook]);
+
+  /**
+   * Stop auto-refresh timer
+   */
+  const stopAutoRefresh = useCallback(() => {
+    if (autoRefreshTimerRef.current) {
+      clearInterval(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+      console.log('[TradeContext] Stopped auto-refresh for pending orders');
+    }
+  }, []);
 
   const getUserDeatils = async () => {
     try {
@@ -1309,6 +1410,15 @@ const getAllTrades = async () => {
         isBasketEdited,
         isBasketExpired,
         isValidSymbolExpiry,
+        // Order Book functions for reconciliation
+        fetchBrokerOrderBook,
+        getPendingOrdersForSymbol,
+        startAutoRefresh,
+        stopAutoRefresh,
+        brokerOrders,
+        pendingOrders,
+        isOrderBookLoading,
+        orderBookError,
       }}>
       {children}
     </TradeContext.Provider>

@@ -262,6 +262,33 @@ const MPReviewTradeModal = ({
             sid: sid,
             serverId: serverId,
           };
+        case 'Fyers':
+          return {
+            clientId: clientCode,
+            accessToken: jwtToken,
+          };
+        case 'AliceBlue':
+          return {
+            clientId: clientCode,
+            accessToken: jwtToken,
+            apiKey: checkValidApiAnSecret(apiKey),
+          };
+        case 'Groww':
+          return {
+            accessToken: jwtToken,
+          };
+        case 'Motilal Oswal':
+          return {
+            clientCode: clientCode,
+            accessToken: jwtToken,
+            apiKey: checkValidApiAnSecret(apiKey),
+          };
+        case 'Zerodha':
+          return {
+            apiKey: checkValidApiAnSecret(apiKey),
+            secretKey: checkValidApiAnSecret(secretKey),
+            accessToken: jwtToken,
+          };
         default:
           return {};
       }
@@ -302,6 +329,7 @@ const MPReviewTradeModal = ({
         // console.log('yahan4');
         return axios.post(
           `${server.server.baseUrl}api/model-portfolio-db-update`,
+          updateData,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -312,7 +340,29 @@ const MPReviewTradeModal = ({
               ),
             },
           },
-          updateData,
+        );
+      })
+      .then(() => {
+        // Add user to status check queue for async order status polling (matching web frontend)
+        const statusCheckData = {
+          userEmail: userEmail,
+          modelName: strategyDetails?.model_name,
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+          broker: broker,
+        };
+        return axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          statusCheckData,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
         );
       })
       .then(() => {

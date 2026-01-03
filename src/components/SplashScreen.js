@@ -11,7 +11,7 @@ import {generateToken} from '../utils/SecurityTokenManager';
 import {useConfig} from '../context/ConfigContext';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {getRaId, getUserData, setUserData, setRaId} from '../utils/storageUtils';
+import {getRaId, getUserData} from '../utils/storageUtils';
 export default function SplashScreen() {
   const [progress, setProgress] = useState(0.0);
   const screenWidth = Dimensions.get('window').width;
@@ -71,29 +71,11 @@ export default function SplashScreen() {
             );
             const userDetails = response.data.User;
             const envAdvisorRaCode = Config.ADVISOR_RA_CODE;
-            const advisorRaCode = userDetails?.advisor_ra_code || envAdvisorRaCode;
 
-            const hasAdvisorRaCode = !!advisorRaCode;
+            const hasAdvisorRaCode = envAdvisorRaCode || !!userDetails?.advisor_ra_code;
 
             console.log('📊 API User Details: RA Code =', userDetails?.advisor_ra_code);
             console.log('📊 Has Advisor RA Code:', hasAdvisorRaCode);
-
-            // Store user data after fetching from API
-            if (userDetails) {
-              await setUserData({
-                email: email,
-                raId: advisorRaCode || null,
-                phone_number: userDetails.phone_number,
-                name: userDetails.name,
-                profileCompleted: !!(userDetails.phone_number && userDetails.name),
-              });
-
-              // Store RA ID if available
-              if (advisorRaCode) {
-                await setRaId(advisorRaCode);
-              }
-              console.log('✅ User data stored successfully');
-            }
 
             setTimeout(() => {
               navigation.replace(

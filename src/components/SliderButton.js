@@ -19,7 +19,7 @@ import Animated, {
 import Loader from '../utils/Loader';
 import {ChevronRight} from 'lucide-react-native';
 import Config from 'react-native-config';
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
 
 const SliderButton = ({
   loading,

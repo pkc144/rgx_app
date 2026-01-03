@@ -19,7 +19,7 @@ const config = {
     sourceExts: [...sourceExts, "svg"],
     resolverMainFields: ["sbmodern", "react-native", "browser", "main"],
   },
-  watchFolders: [path.resolve(__dirname, "../")],
+  // Removed: watchFolders was watching parent directory with 50+ projects
 };
 
 module.exports = mergeConfig(defaultConfig, config);

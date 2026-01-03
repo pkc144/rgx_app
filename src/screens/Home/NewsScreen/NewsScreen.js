@@ -32,13 +32,14 @@ import Coin from '../../../assets/coin.svg';
 import Icon1 from 'react-native-vector-icons/Fontisto';
 const { width: screenWidth } = Dimensions.get('window');
 import Config from "react-native-config";
-import APP_VARIANTS from "../../../utils/Config";
 import { generateToken } from "../../../utils/SecurityTokenManager";
 import { useTrade } from "../../TradeContext";
+import { useConfig } from "../../../context/ConfigContext";
+
 const NewsScreen = ({isVisible}) => {
   const {configData}=useTrade();
-  const selectedVariant = Config.APP_VARIANT// Default to "arfs" if not set
-  const { logo: LogoComponent, themeColor,CardborderWidth,mainColor,secondaryColor,gradient1,gradient2,cardElevation,selectedTabcolor,cardverticalmargin,placeholderText} = APP_VARIANTS[selectedVariant];
+  const config = useConfig();
+  const { logo: LogoComponent, themeColor, CardborderWidth, mainColor, secondaryColor, gradient1, gradient2, cardElevation, selectedTabcolor, cardverticalmargin, placeholderText } = config || {};
 
     const [searchQuery, setSearchQuery] = useState("");
     const [results, setResults] = useState([]);

@@ -2,19 +2,56 @@
 import React from 'react';
 import {View, Text, Image, StyleSheet, Dimensions} from 'react-native';
 import Config from 'react-native-config';
+import {useConfig} from '../context/ConfigContext';
+import APP_VARIANTS from '../utils/Config';
 const screenWidth = Dimensions.get('window').width;
 
-import APP_VARIANTS from '../utils/Config';
 const LogoSection = () => {
-  const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
-  const {logo: LogoComponent, themeColor} = APP_VARIANTS[selectedVariant];
-  const logo = Config.REACT_APP_WHITE_LABEL_TEXT;
+  const config = useConfig();
+  const selectedVariant = Config.APP_VARIANT || 'alphaquark';
+  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+
+  // Use config from context, fallback to static config if not available
+  const logo = config?.logo || fallbackConfig.logo;
+  const themeColor = config?.themeColor || fallbackConfig.themeColor;
+  const appName = Config.REACT_APP_WHITE_LABEL_TEXT;
+
+  // Render logo based on type: URL string, function (SVG component), or require() object
+  const renderLogo = () => {
+    if (!logo) {
+      return null;
+    }
+
+    // URL string from API
+    if (typeof logo === 'string') {
+      return (
+        <Image
+          source={{uri: logo}}
+          style={{width: screenWidth * 0.65, height: 80, resizeMode: 'contain'}}
+        />
+      );
+    }
+
+    // SVG component (function)
+    if (typeof logo === 'function') {
+      const LogoComponent = logo;
+      return <LogoComponent width={screenWidth * 0.65} height={80} />;
+    }
+
+    // require() object (PNG/JPG)
+    return (
+      <Image
+        source={logo}
+        style={{width: screenWidth * 0.65, height: 80, resizeMode: 'contain'}}
+      />
+    );
+  };
 
   return (
     <View style={styles.containerLogo}>
-      <LogoComponent width={screenWidth * 0.65} height={80} />
+      {renderLogo()}
 
-      <Text style={styles.subtitle}>Invest with {logo}</Text>
+      <Text style={styles.subtitle}>Invest with {appName}</Text>
       <Text
         style={{
           fontSize: 13,
@@ -23,7 +60,7 @@ const LogoSection = () => {
           color: '#9ca2ae',
           fontFamily: 'Satoshi-Medium',
         }}>
-        Please Login To Start Trading with {logo}
+        Please Login To Start Trading with {appName}
       </Text>
     </View>
   );

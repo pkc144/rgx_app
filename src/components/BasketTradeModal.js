@@ -105,9 +105,42 @@ const BasketTradeModal = ({
   const isMarketHours = IsMarketHours();
   const { width } = useWindowDimensions();
   const [multiplier, setMultiplier] = useState('1');
+
+  // Store base quantities for proper multiplier calculation (matching web implementation)
+  const baseQuantitiesRef = useRef({});
+
+  // Initialize base quantities and check for ImpliedMultiplier
+  useEffect(() => {
+    if (!isClosureBasket && stockDetails?.length > 0 && Object.keys(baseQuantitiesRef.current).length === 0) {
+      const baseQtys = {};
+      stockDetails.forEach(item => {
+        baseQtys[item.tradeId] = item.quantity || 1;
+      });
+      baseQuantitiesRef.current = baseQtys;
+
+      // Check for ImpliedMultiplier
+      const tradeWithImpliedMultiplier = stockDetails.find(
+        (item) =>
+          item.ImpliedMultiplier !== undefined &&
+          item.ImpliedMultiplier !== null &&
+          item.ImpliedMultiplier !== ""
+      );
+
+      if (tradeWithImpliedMultiplier && multiplier === '1') {
+        setMultiplier(tradeWithImpliedMultiplier.ImpliedMultiplier.toString());
+      }
+    }
+  }, [stockDetails, isClosureBasket]);
+
   useEffect(() => {
     // Emit the modal state
     eventEmitter.emit('MODAL_STATE', visible);
+
+    // Reset base quantities when modal closes (matching web behavior)
+    if (!visible) {
+      baseQuantitiesRef.current = {};
+      setTotalQuantity(1);
+    }
   }, [visible]);
   const handleIncreaseStockQty = (symbol, tradeId) => {
     const newData = stockDetails.map((stock) =>
@@ -140,44 +173,44 @@ const BasketTradeModal = ({
 
 
 
-  const [totalQuantity, setTotalQuantity] = useState(1);  // State to track total quantity
+  const [totalQuantity, setTotalQuantity] = useState(1);  // State to track multiplier (matching web implementation)
+
+  // Helper function to apply multiplier to base quantities (matching web implementation)
+  const applyMultiplierToStockDetails = (newMultiplier) => {
+    const newData = stockDetails.map((stock) => {
+      const baseQty = baseQuantitiesRef.current[stock.tradeId] || stock.quantity || 1;
+      return {
+        ...stock,
+        quantity: baseQty * newMultiplier,
+      };
+    });
+    setStockDetails(newData);
+  };
 
   const handleIncreaseAllStockQty = () => {
-    const newQuantity = totalQuantity + 1;  // Increase total quantity by 1
-    setTotalQuantity(newQuantity);  // Update total quantity state
-  
-    // Update stock quantities to match the total quantity
-    const newData = stockDetails.map((stock) => ({
-      ...stock,
-      quantity: newQuantity,
-    }));
-    setStockDetails(newData);
+    const newMultiplier = totalQuantity + 1;  // Increase multiplier by 1
+    setTotalQuantity(newMultiplier);  // Update multiplier state
+
+    // Apply multiplier to base quantities (matching web: quantity * multiplier)
+    applyMultiplierToStockDetails(newMultiplier);
   };
-  
+
   const handleDecreaseAllStockQty = () => {
-    if (totalQuantity > 0) {
-      const newQuantity = totalQuantity - 1;  // Decrease total quantity by 1
-      setTotalQuantity(newQuantity);  // Update total quantity state
-  
-      // Update stock quantities to match the total quantity
-      const newData = stockDetails.map((stock) => ({
-        ...stock,
-        quantity: newQuantity,
-      }));
-      setStockDetails(newData);
+    if (totalQuantity > 1) {
+      const newMultiplier = totalQuantity - 1;  // Decrease multiplier by 1
+      setTotalQuantity(newMultiplier);  // Update multiplier state
+
+      // Apply multiplier to base quantities (matching web: quantity * multiplier)
+      applyMultiplierToStockDetails(newMultiplier);
     }
   };
-  
+
   const handleQuantityInputChangeAll = (value) => {
-    const newQuantity = parseInt(value) || 0; // If invalid, fallback to 0
-    setTotalQuantity(newQuantity);  // Update total quantity state
-  
-    // Update stock quantities to match the total quantity
-    const newData = stockDetails.map((stock) => ({
-      ...stock,
-      quantity: newQuantity,
-    }));
-    setStockDetails(newData);
+    const newMultiplier = parseInt(value) || 1; // If invalid, fallback to 1
+    setTotalQuantity(newMultiplier);  // Update multiplier state
+
+    // Apply multiplier to base quantities (matching web: quantity * multiplier)
+    applyMultiplierToStockDetails(newMultiplier);
   };
 
   const [ltp, setLtp] = useState([]);

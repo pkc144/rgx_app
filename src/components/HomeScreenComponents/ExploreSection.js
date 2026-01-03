@@ -14,7 +14,7 @@ const ExploreSection = ({
   setOpenpdf,
   setOpenvideos,
 }) => {
-  const selectedVariant = Config.APP_VARIANT;
+  const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
   const navigate = useNavigation();
 
   const exploreItems = [
@@ -63,7 +63,8 @@ const ExploreSection = ({
     }
   };
 
-  const { themeColor } = APP_VARIANTS[selectedVariant];
+  const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
+  const { themeColor = '#0056B7' } = variantConfig;
 
   return (
     <View style={styles.container}>

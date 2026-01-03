@@ -71,16 +71,17 @@ import ModelPortfolioScreen from '../Drawer/ModelPortfolioScreen';
 import UpdateAppModal, {checkForAppUpdate} from '../../UpdateAppModal';
 
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
 const {
   logo: LogoComponent,
-  themeColor,
-  mainColor,
-  secondaryColor,
-  gradient1,
-  gradient2,
-  placeholderText,
-} = APP_VARIANTS[selectedVariant];
+  themeColor = '#0056B7',
+  mainColor = '#4CAAA0',
+  secondaryColor = '#F0F0F0',
+  gradient1 = '#F0F0F0',
+  gradient2 = '#F0F0F0',
+  placeholderText = '#FFFFFF',
+} = variantConfig;
 
 const pdfcicon = require('../../assets/pdf.png');
 
@@ -1239,7 +1240,7 @@ const HomeScreen = ({ }) => {
   const allTabData = [
 
     ...(!planList &&
-      configData?.config?.REACT_APP_MODEL_PORTFOLIO_STATUS === true
+      configData?.config.REACT_APP_MODEL_PORTFOLIO_STATUS === true
       ? [
         {
           key: 'AllPlanDetailsmp',

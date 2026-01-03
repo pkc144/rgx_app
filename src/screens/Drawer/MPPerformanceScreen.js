@@ -538,7 +538,8 @@ const MPPerformanceScreen = ({route}) => {
     if (broker === undefined) {
       setBrokerModel(true);
       setCalculateLoading(false);
-    } else if (funds?.status === false) {
+    } else if (funds?.status === 1 || funds?.status === 2 || funds === null) {
+      // Funds check matching web frontend: status 1/2 = token issue, null = error
       setOpenTokenExpireModel(true);
       setCalculateLoading(false);
     }
@@ -593,10 +594,10 @@ const MPPerformanceScreen = ({route}) => {
       } else if (broker === 'Angel One') {
         payload = {
           ...payload,
-          apiKey: 'EfkDdJMH',
+          apiKey: configData?.config?.REACT_APP_ANGEL_ONE_API_KEY,
           jwtToken: jwtToken,
         };
-      } else if (broker === 'kotak') {
+      } else if (broker === 'Kotak') {
         payload = {
           ...payload,
           consumerKey: checkValidApiAnSecret(apiKey),

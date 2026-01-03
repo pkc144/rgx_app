@@ -113,10 +113,12 @@ export const ConfigProvider = ({ children }) => {
 
                         // ============================================================================
                         // PAYMENT CONFIGURATION
+                        // Supported platforms: 'razorpay', 'cashfree', 'payu'
                         // ============================================================================
                         paymentPlatform: apiData.paymentPlatform || 'cashfree',
                         razorpayKey: apiData.razorpayKey || '',
                         cashfreeAppId: apiData.cashfreeAppId || '',
+                        payuMerchantKey: apiData.payuMerchantKey || '',
 
                         // ============================================================================
                         // BRANDING & THEME COLORS
@@ -168,6 +170,14 @@ export const ConfigProvider = ({ children }) => {
                             ...(initialConfig.apiKeys || {}),
                             ...(apiData.apiKeys || {}),
                         },
+
+                        // ============================================================================
+                        // BROKER API KEYS - Legacy format for backward compatibility
+                        // These are exposed at config root level for components that use
+                        // configData.config.REACT_APP_* format
+                        // ============================================================================
+                        REACT_APP_ANGEL_ONE_API_KEY: apiData.apiKeys?.angelOneApiKey || Config.REACT_APP_ANGEL_ONE_API_KEY || '',
+                        REACT_APP_ZERODHA_API_KEY: apiData.apiKeys?.zerodhaApiKey || Config.REACT_APP_ZERODHA_API_KEY || '',
 
                         // ============================================================================
                         // PAYMENT MODAL UI CUSTOMIZATION

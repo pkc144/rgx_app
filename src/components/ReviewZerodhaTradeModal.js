@@ -22,12 +22,10 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 import { getLastKnownPrice } from './AdviceScreenComponents/DynamicText/websocketPrice';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ReviewTradeText from './AdviceScreenComponents/ReviewTradeText';
-import Config from 'react-native-config';
 import { generateToken } from '../utils/SecurityTokenManager';
-import APP_VARIANTS from '../utils/Config';
 import { useTrade } from '../screens/TradeContext';
-const selectedVariant = Config.APP_VARIANT// Default to "arfs" if not set
-const { logo: LogoComponent, themeColor,mainColor,secondaryColor,toolbarlogo:Toolbarlogo1 } = APP_VARIANTS[selectedVariant];
+import { useConfig } from '../context/ConfigContext';
+
 const ReviewZerodhaTradeModal = ({
   visible,
   onClose,
@@ -64,6 +62,8 @@ const ReviewZerodhaTradeModal = ({
   broker,
 }) => {
   const {configData}=useTrade();
+  const config = useConfig();
+  const { logo: LogoComponent, themeColor, mainColor, secondaryColor, toolbarlogo: Toolbarlogo1 } = config || {};
   //console.log('trade id i am getting---',stockDetails);
   useEffect(()=>{
     if(basketData?.length>0){

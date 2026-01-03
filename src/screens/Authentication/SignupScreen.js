@@ -21,13 +21,12 @@ import {Mail, Lock, Eye, CheckIcon, User} from 'lucide-react-native';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
-import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../TradeContext';
 import TermsModal from './TermsModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment';
-import APP_VARIANTS from '../../utils/Config';
+import {useConfig} from '../../context/ConfigContext';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 // Import enhanced storage utilities
 import {
@@ -53,9 +52,8 @@ const SignupScreen = () => {
     getModelPortfolioStrategyDetails,
   } = useTrade();
 
-  const selectedVariant = Config.APP_VARIANT;
-
-  const {logo: LogoComponent, themeColor} = APP_VARIANTS[selectedVariant];
+  const config = useConfig();
+  const {logo: LogoComponent, themeColor} = config || {};
 
   const navigation = useNavigation();
   const [email, setEmail] = useState('');

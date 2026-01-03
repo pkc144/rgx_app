@@ -20,13 +20,12 @@ import {useTrade} from '../TradeContext';
 import CountryCodeDropdownPicker from 'react-native-dropdown-country-picker';
 
 import {generateToken} from '../../utils/SecurityTokenManager';
-import Config from 'react-native-config';
-import APP_VARIANTS from '../../utils/Config';
+import {useConfig} from '../../context/ConfigContext';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 
 const PhoneNumberScreen = () => {
-  const selectedVariant = Config.APP_VARIANT;
-  const {logo: LogoComponent, themeColor} = APP_VARIANTS[selectedVariant];
+  const config = useConfig();
+  const {logo: LogoComponent, themeColor} = config || {};
   const advisorName = 'ARFS';
 
   const {userEmail, setIsProfileCompleted} = useTrade();
