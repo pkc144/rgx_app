@@ -398,6 +398,51 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     setStoreModalName(storeModalName);
     setRebalanceExecutionStatus(userExecution?.status);
     setLoading(true);
+
+    // If user already chose to continue without broker, skip broker validation
+    // This prevents infinite loop when MPStatusModal calls handleAcceptRebalance on close
+    if (selectNonBroker) {
+      // User already chose "Continue without broker" - proceed with DummyBroker flow
+      let payload = {
+        userEmail: userEmail,
+        userBroker: "DummyBroker",
+        modelName: storeModalName,
+        advisor: configData?.config?.REACT_APP_ADVISOR_TAG,
+        model_id: modelPortfolioModelId,
+        userFund: "0",
+        flag: selectedOption === "option1" ? 1 : 0,
+      };
+
+      let config = {
+        method: "post",
+        url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
+        data: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "aq-encrypted-key": generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        },
+      };
+
+      axios
+        .request(config)
+        .then((response) => {
+          setCalculatedPortfolioData(response.data);
+          setOpenRebalanceModal(true);
+          setStoreModalName(storeModalName);
+          setModelObjectId(modelPortfolioModelId);
+          setLoading(false);
+        })
+        .catch((error) => {
+          console.log(error);
+          setLoading(false);
+        });
+      return;
+    }
+
     if (
       (funds?.status === 1 || funds?.status === 2 || funds === null) &&
       brokerStatus === "connected"

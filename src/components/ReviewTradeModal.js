@@ -14,15 +14,18 @@ import {
   FlatList,
 } from 'react-native';
 import {useWindowDimensions} from 'react-native';
-import { XIcon, Trash2Icon, CandlestickChartIcon, ChevronRight, ChevronDown, Minus, Plus, ShoppingBag, MinusIcon, PlusIcon } from 'lucide-react-native';
+import { XIcon, Trash2Icon, CandlestickChartIcon, ChevronRight, ChevronDown, Minus, Plus, ShoppingBag, MinusIcon, PlusIcon, AlertTriangleIcon } from 'lucide-react-native';
 import Icon1 from 'react-native-vector-icons/Feather';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import axios from 'axios';
 
 import {getLastKnownPrice} from './AdviceScreenComponents/DynamicText/websocketPrice';
 import ReviewTradeText from './AdviceScreenComponents/ReviewTradeText';
 import {useTotalAmount} from './AdviceScreenComponents/DynamicText/websocketPrice';
 import eventEmitter from './EventEmitter';
 import IsMarketHours from '../utils/isMarketHours';
+import server from '../utils/serverConfig';
+import {generateToken} from '../utils/SecurityTokenManager';
 
 import CheckBox from '@react-native-community/checkbox';
 
@@ -66,6 +69,73 @@ const ReviewTradeModal = ({
   const isMarketHours = IsMarketHours();
   const {width} = useWindowDimensions();
   const [multiplier, setMultiplier] = useState('1');
+
+  // Surveillance state for Angel One
+  const [surveillanceData, setSurveillanceData] = useState(null);
+  const [surveillanceLoading, setSurveillanceLoading] = useState(false);
+  const [surveillanceChecked, setSurveillanceChecked] = useState(false);
+
+  // Function to check surveillance for AngelOne
+  const checkAngelOneSurveillance = async (stocks) => {
+    if (broker !== 'Angel One') return null;
+    if (surveillanceLoading || surveillanceChecked) return surveillanceData;
+    if (!stocks || stocks.length === 0) return null;
+
+    const symbols = stocks.map((stock) => ({
+      symbol: stock.tradingSymbol,
+      exchange: stock.exchange,
+    }));
+
+    setSurveillanceLoading(true);
+    try {
+      const config = {
+        method: 'post',
+        url: `${server.ccxtServer.baseUrl}angelone/equity/surveillance`,
+        data: symbols,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': Config.REACT_APP_URL,
+          'aq-encrypted-key': generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        },
+      };
+
+      const response = await axios.request(config);
+      setSurveillanceData(response.data);
+      setSurveillanceChecked(true);
+      return response.data;
+    } catch (error) {
+      console.error('Error checking surveillance:', error);
+      setSurveillanceChecked(true);
+      return null;
+    } finally {
+      setSurveillanceLoading(false);
+    }
+  };
+
+  // Check surveillance when modal opens and broker is AngelOne
+  useEffect(() => {
+    if (
+      visible &&
+      broker === 'Angel One' &&
+      stockDetails.length > 0 &&
+      !surveillanceChecked &&
+      !surveillanceLoading
+    ) {
+      checkAngelOneSurveillance(stockDetails);
+    }
+  }, [visible, broker, stockDetails.length, surveillanceChecked, surveillanceLoading]);
+
+  // Reset surveillance check when modal closes or broker changes
+  useEffect(() => {
+    if (!visible || broker !== 'Angel One') {
+      setSurveillanceChecked(false);
+      setSurveillanceData(null);
+    }
+  }, [visible, broker]);
+
   useEffect(() => {
     // Emit the modal state
     eventEmitter.emit('MODAL_STATE', visible);
@@ -788,6 +858,47 @@ const ReviewTradeModal = ({
           </SafeAreaView>
 
           <View style={{borderWidth: 1, borderColor: '#E8E8E8'}}></View>
+
+          {/* Surveillance Warning for Angel One */}
+          {broker === 'Angel One' &&
+            surveillanceData?.surveillance &&
+            (() => {
+              const surveillanceStocks = surveillanceData.surveillance.filter(
+                (stock) =>
+                  stock.found === true &&
+                  stock.surveillance &&
+                  stock.surveillance !== '' &&
+                  stock.surveillance !== 'N',
+              );
+
+              if (surveillanceStocks.length > 0) {
+                return (
+                  <View style={styles.surveillanceWarning}>
+                    <View style={styles.surveillanceHeader}>
+                      <AlertTriangleIcon size={18} color="#DC2626" />
+                      <Text style={styles.surveillanceTitle}>
+                        Surveillance Alert
+                      </Text>
+                    </View>
+                    <Text style={styles.surveillanceText}>
+                      The following stocks are under Angel One surveillance measures
+                      and may be rejected via API:
+                    </Text>
+                    {surveillanceStocks.map((stock, index) => (
+                      <Text key={index} style={styles.surveillanceStock}>
+                        • <Text style={{fontFamily: 'Satoshi-Bold'}}>{stock.symbol}</Text>{' '}
+                        (Surveillance: {stock.surveillance})
+                      </Text>
+                    ))}
+                    <Text style={styles.surveillanceNote}>
+                      Please trade these stocks manually through the Angel One mobile
+                      app or web platform.
+                    </Text>
+                  </View>
+                );
+              }
+              return null;
+            })()}
 
           <FlatList
             data={stockDetails}
@@ -1633,6 +1744,47 @@ const styles = StyleSheet.create({
       color: '#000',
       fontSize: 11,
       fontFamily: 'Satoshi-Bold',
+    },
+    // Surveillance Warning Styles
+    surveillanceWarning: {
+      marginHorizontal: 10,
+      marginVertical: 8,
+      padding: 12,
+      backgroundColor: '#FEF2F2',
+      borderLeftWidth: 4,
+      borderLeftColor: '#DC2626',
+      borderRadius: 4,
+    },
+    surveillanceHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    surveillanceTitle: {
+      fontSize: 14,
+      fontFamily: 'Satoshi-Bold',
+      color: '#DC2626',
+      marginLeft: 8,
+    },
+    surveillanceText: {
+      fontSize: 12,
+      fontFamily: 'Satoshi-Regular',
+      color: '#991B1B',
+      marginBottom: 6,
+    },
+    surveillanceStock: {
+      fontSize: 12,
+      fontFamily: 'Satoshi-Regular',
+      color: '#B91C1C',
+      marginLeft: 8,
+      marginBottom: 2,
+    },
+    surveillanceNote: {
+      fontSize: 11,
+      fontFamily: 'Satoshi-Regular',
+      color: '#DC2626',
+      marginTop: 6,
+      fontStyle: 'italic',
     },
 });
 

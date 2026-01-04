@@ -77,11 +77,49 @@ const RebalanceCard = ({
   setRepairmessageModal,
   setuserExecution,
   setmatchingFailedTrades,
-  userExecutionFinal
+  userExecutionFinal,
+  getUserDetails,
 }) => {
   const {configData} = useTrade();
   const angelOneApiKey = configData?.config.REACT_APP_ANGEL_ONE_API_KEY;
   const zerodhaApiKey = configData?.config.REACT_APP_ZERODHA_API_KEY;
+
+  // Refresh and get current broker connection status from API
+  // This ensures we have the latest state even if user disconnected from another app/session
+  const refreshBrokerStatus = async () => {
+    try {
+      const response = await axios.get(
+        `${server.server.baseUrl}api/user/getUser/${userEmail}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      const freshUserDetails = response.data.User;
+      // Update parent state with fresh data
+      if (getUserDetails) {
+        getUserDetails();
+      }
+      return {
+        brokerStatus: freshUserDetails?.connect_broker_status,
+        broker: freshUserDetails?.user_broker,
+        userDetails: freshUserDetails,
+      };
+    } catch (error) {
+      console.error('Error refreshing broker status:', error);
+      return {
+        brokerStatus: brokerStatus,
+        broker: broker,
+        userDetails: null,
+      };
+    }
+  };
 
   // Get dynamic config from API
   const config = useConfig();
@@ -222,21 +260,22 @@ const RebalanceCard = ({
     handleCheckBroker();
   };
 
-  const handleCheckBroker = () => {
-    if (brokerStatus === 'Disconnected') {
+  const handleCheckBroker = async () => {
+    setLoading(true);
+
+    // Refresh broker status from API to get latest connection state
+    const freshStatus = await refreshBrokerStatus();
+    const currentBroker = freshStatus.broker || broker;
+    const currentBrokerStatus = freshStatus.brokerStatus || brokerStatus;
+
+    if (currentBrokerStatus === 'Disconnected' || !currentBroker) {
       setShowCheckboxModal(false);
       setCurrentStep(2);
-      // handleCheckStatus();
       setBrokerModel(true);
+      setLoading(false);
     } else {
       const isMarketHours = IsMarketHours();
-      setLoading(true);
-      if (!broker) {
-        setShowCheckboxModal(false);
-        setBrokerModel(true);
-        setLoading(false);
-        return;
-      } else if (funds?.status === 1 || funds?.status === 2 || funds === null) {
+      if (funds?.status === 1 || funds?.status === 2 || funds === null) {
         setOpenTokenExpireModel(true);
         setLoading(false);
         return;
