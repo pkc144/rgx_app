@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {NavigationContainer, useNavigation, useNavigationState, useRoute} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
   createBottomTabNavigator,
@@ -101,7 +102,6 @@ import {useTrade} from '../screens/TradeContext';
 import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
 import APP_VARIANTS from '../utils/Config';
-import { useConfig } from '../context/ConfigContext';
 import {style} from 'twrnc';
 import VideosScreen from './HomeScreenComponents/KnowledgeHubScreen/VideoScreen';
 import PDFsScreen from './HomeScreenComponents/KnowledgeHubScreen/PdfScreen';
@@ -113,7 +113,7 @@ import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen
 import ChangeAdvisor from '../screens/AccountSettingScreen/ChangeAdvisor';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import { useWebSocketInitializer } from '../utils/websocketInitializer';
- 
+
 
 const auth = getAuth();
 const user = auth.currentUser;
@@ -122,24 +122,23 @@ const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 const {height: screenHeight} = Dimensions.get('window');
 
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
+const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
 const {
   logo: LogoComponent,
-  themeColor = '#0056B7',
-  CardborderWidth = 0,
-  bottomTabbg = '#fff',
-  mainColor = '#4CAAA0',
-  secondaryColor = '#F0F0F0',
-  gradient1 = '#F0F0F0',
-  bottomTabBorderTopWidth = 1.5,
-  gradient2 = '#F0F0F0',
-  cardElevation = 3,
-  cardverticalmargin = 3,
-  placeholderText = '#FFFFFF',
-  tabIconColor = '#000',
-} = variantConfig;
-const CustomTabBarIcon = ({name, focused, iconColor = '#000'}) => {
+  themeColor,
+  CardborderWidth,
+  bottomTabbg,
+  mainColor,
+  secondaryColor,
+  gradient1,
+  bottomTabBorderTopWidth,
+  gradient2,
+  cardElevation,
+  cardverticalmargin,
+  placeholderText,
+  tabIconColor,
+} = APP_VARIANTS[selectedVariant];
+const CustomTabBarIcon = ({name, focused}) => {
   let IconComponent;
   if (name === 'Home') {
     IconComponent = Home;
@@ -165,7 +164,7 @@ const CustomTabBarIcon = ({name, focused, iconColor = '#000'}) => {
         paddingTop: 8,
       }}>
       <View>
-        <IconComponent size={22} color={focused ? iconColor : 'gray'} />
+        <IconComponent size={22} color={focused ? tabIconColor : 'gray'} />
       </View>
 
       <View
@@ -177,7 +176,7 @@ const CustomTabBarIcon = ({name, focused, iconColor = '#000'}) => {
         }}>
         <Text
           style={{
-            color: focused ? iconColor : 'gray', // Changes color based on focus
+            color: focused ? tabIconColor : 'gray', // Changes color based on focus
             fontSize: 10, // Sets font size for text
             marginTop: 2,
             textAlign: 'center',
@@ -199,19 +198,7 @@ const MainTabNavigator = () => {
     setsuccessclosemodel,
     successclosemodel,
   } = useModal();
-
-  // Get dynamic config from API
-  const config = useConfig();
-  const dynamicThemeColor = config?.themeColor || themeColor;
-  const dynamicMainColor = config?.mainColor || mainColor;
-  const dynamicSecondaryColor = config?.secondaryColor || secondaryColor;
-  const dynamicGradient1 = config?.gradient1 || gradient1;
-  const dynamicGradient2 = config?.gradient2 || gradient2;
-  const dynamicBottomTabbg = config?.bottomTabbg || bottomTabbg;
-  const dynamicBottomTabBorderTopWidth = config?.bottomTabBorderTopWidth ?? bottomTabBorderTopWidth;
-  const dynamicTabIconColor = config?.tabIconColor || tabIconColor;
-  const dynamicSelectedTabcolor = config?.selectedTabcolor || '#000';
-
+  const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(screenHeight)).current;
   const [cartCount, setCartCount1] = useState(0);
   const navigation = useNavigation();
@@ -324,20 +311,19 @@ const currentName = currentTabRoute?.name || "";
         initialRouteName="Home"
         screenOptions={({route}) => ({
           tabBarIcon: ({focused}) => (
-            <CustomTabBarIcon name={route.name} focused={focused} iconColor={dynamicTabIconColor} />
+            <CustomTabBarIcon name={route.name} focused={focused} />
           ),
           tabBarStyle: {
             borderTopLeftRadius: 15,
             borderTopRightRadius: 15,
-            backgroundColor: dynamicBottomTabbg,
-
-            height: 60,
+            backgroundColor: bottomTabbg,
+            height: 60 + insets.bottom,
             zIndex: 99,
             elevation: 99,
             marginBottom: 0,
-            paddingBottom: 0,
+            paddingBottom: insets.bottom,
             borderTopColor: '#e9e9e9',
-            borderTopWidth: dynamicBottomTabBorderTopWidth,
+            borderTopWidth: bottomTabBorderTopWidth,
           },
           tabBarItemStyle: {
             padding: 0,

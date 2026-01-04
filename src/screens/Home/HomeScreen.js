@@ -281,11 +281,11 @@ const HomeScreen = ({ }) => {
       };
 
       // Adding back handler event listener
-      BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+      const backHandlerSubscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
 
       // Cleanup listener on unmount
       return () => {
-        BackHandler.removeEventListener('hardwareBackPress', handleBackPress);
+        backHandlerSubscription.remove();
       };
     }, [navigation]),
   );

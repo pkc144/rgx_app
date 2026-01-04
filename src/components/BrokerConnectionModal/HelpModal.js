@@ -1,31 +1,22 @@
 import React, { useState, useRef,useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, Dimensions,ScrollView } from 'react-native';
-import { TrueSheet } from '@lodev09/react-native-true-sheet';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, Dimensions,ScrollView, Linking } from 'react-native';
+import Modal from 'react-native-modal';
 import YoutubePlayer from "react-native-youtube-iframe";
 import { ChevronLeft,XIcon,ChevronDown,ChevronUp, ClipboardList } from 'lucide-react-native';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-import { Linking } from 'react-native';
 import Config from 'react-native-config';
 const HelpModal = ({ broker, visible, onClose }) => {
   const [mpin, setMpin] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const brokerConnectRedirectURL=Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
-  const sheet = useRef(null);
-    const scrollViewRef = useRef(null);
+  const scrollViewRef = useRef(null);
   const handleSubmitOtp = async () => {
     setLoading(true);
     // Make sure to define submitOtp elsewhere
     await submitOtp();
     setLoading(false);
   };
-  useEffect(() => {
-    if (visible) {
-      sheet.current?.present();
-    } else {
-      sheet.current?.dismiss();
-    }
-  }, [visible]);
 
     const [isOpen, setIsOpen] = useState(false);
   
@@ -41,17 +32,18 @@ const HelpModal = ({ broker, visible, onClose }) => {
 
 
   return (
-    <View>
-      <TrueSheet
-        ref={sheet}
-        visible={visible}
-        style={styles.sheet}
-        sizes={['auto', screenHeight * 0.75]}
-        onClose={onClose}
-        onDismiss={onClose}
-        grabber={false}
-      >
-        <View style={styles.sheet }>
+    <Modal
+      isVisible={visible}
+      onBackdropPress={onClose}
+      onBackButtonPress={onClose}
+      onSwipeComplete={onClose}
+      swipeDirection={['down']}
+      style={styles.modal}
+      propagateSwipe={true}
+      useNativeDriverForBackdrop={true}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.sheet}>
             
       
             {(broker === 'ICICI') && (
@@ -698,18 +690,26 @@ designated screen.
 
  
         </View>
-        
-      </TrueSheet>
-    </View>
-
+      </View>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+    modal: {
+        justifyContent: 'flex-end',
+        margin: 0,
+    },
+    modalContainer: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        maxHeight: screenHeight * 0.85,
+    },
     sheet: {
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
-   
+
       },
       content: {
           paddingHorizontal:30,
