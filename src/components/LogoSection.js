@@ -12,8 +12,8 @@ const LogoSection = () => {
   const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
 
   // Use config from context, fallback to static config if not available
-  const logo = config?.logo || fallbackConfig.logo;
-  const themeColor = config?.themeColor || fallbackConfig.themeColor;
+  const logo = config?.logo || fallbackConfig?.logo;
+  const themeColor = config?.themeColor || fallbackConfig?.themeColor;
   const appName = Config.REACT_APP_WHITE_LABEL_TEXT;
 
   // Render logo based on type: URL string, function (SVG component), or require() object

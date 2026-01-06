@@ -64,11 +64,11 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
   const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
 
   // Get toolbarlogo from config (S3) or fallback
-  const toolbarLogo = config?.toolbarlogo || fallbackConfig.toolbarlogo || config?.logo || fallbackConfig.logo;
+  const toolbarLogo = config?.toolbarlogo || fallbackConfig?.toolbarlogo || config?.logo || fallbackConfig?.logo;
 
   // Get dynamic gradient colors from config
-  const gradient1 = config?.gradient1 || fallbackConfig.gradient1 || 'rgba(0, 86, 183, 1)';
-  const gradient2 = config?.gradient2 || fallbackConfig.gradient2 || 'rgba(0, 38, 81, 1)';
+  const gradient1 = config?.gradient1 || fallbackConfig?.gradient1 || 'rgba(0, 86, 183, 1)';
+  const gradient2 = config?.gradient2 || fallbackConfig?.gradient2 || 'rgba(0, 38, 81, 1)';
 
   const {
     userDetails,

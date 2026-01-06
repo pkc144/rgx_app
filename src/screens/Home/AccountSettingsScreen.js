@@ -40,7 +40,7 @@ const AccountSettingsScreen = ({navigation}) => {
   // Get background logo from config (S3) or fallback
   // showBackgroundLogo: true/false - controls visibility (default: true for backwards compatibility)
   const showBackgroundLogo = config?.showBackgroundLogo !== false; // Show by default unless explicitly set to false
-  const backgroundLogo = config?.backgroundLogo || config?.logo || fallbackConfig.logo;
+  const backgroundLogo = config?.backgroundLogo || config?.logo || fallbackConfig?.logo;
 
   const userProfile = {
     name: userDetails?.name,

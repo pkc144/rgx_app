@@ -43,12 +43,12 @@ const SignUpRADetails = ({route}) => {
   const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
 
   // Get logo and app name from config (S3) or fallback
-  const logo = config?.logo || fallbackConfig.logo;
+  const logo = config?.logo || fallbackConfig?.logo;
   const appName = config?.appName || Config.REACT_APP_WHITE_LABEL_TEXT || 'RGX Research';
 
   // Get dynamic gradient colors from config
-  const gradient1 = config?.gradient1 || fallbackConfig.gradient1 || '#03275B';
-  const gradient2 = config?.gradient2 || fallbackConfig.gradient2 || '#0156B7';
+  const gradient1 = config?.gradient1 || fallbackConfig?.gradient1 || '#03275B';
+  const gradient2 = config?.gradient2 || fallbackConfig?.gradient2 || '#0156B7';
 
   const [raId, setRaId] = useState('RGXRESEARCH'); // Default to rgxresearch
   const [loading, setLoading] = useState(false);

@@ -15,7 +15,8 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:theme="@style/AppTheme"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:extractNativeLibs="false">
 
         <meta-data
             android:name="cashfree_subscription_flow_enable"
