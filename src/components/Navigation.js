@@ -122,7 +122,8 @@ const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 const {height: screenHeight} = Dimensions.get('window');
 
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
+const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['rgxresearch'] || {};
 const {
   logo: LogoComponent,
   themeColor,
@@ -137,7 +138,7 @@ const {
   cardverticalmargin,
   placeholderText,
   tabIconColor,
-} = APP_VARIANTS[selectedVariant];
+} = variantConfig;
 const CustomTabBarIcon = ({name, focused}) => {
   let IconComponent;
   if (name === 'Home') {
