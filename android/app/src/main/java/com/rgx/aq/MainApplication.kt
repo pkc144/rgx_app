@@ -1,4 +1,4 @@
-package com.rgx
+package com.rgx.aq
 
 import android.app.Application
 import com.facebook.react.PackageList
