@@ -169,6 +169,19 @@ const RebalanceCard = ({
     {label: 'Final Rebalance'},
   ];
 
+  // Listen for event to close RebalancePreferenceModal when broker modal opens
+  useEffect(() => {
+    const handleCloseBrokerRelatedModals = () => {
+      setShowCheckboxModal(false);
+    };
+
+    eventEmitter.on('closeBrokerRelatedModals', handleCloseBrokerRelatedModals);
+
+    return () => {
+      eventEmitter.off('closeBrokerRelatedModals', handleCloseBrokerRelatedModals);
+    };
+  }, []);
+
   const handleCheckStatus = async () => {
     try {
       const response = await axios.get(
@@ -186,13 +199,18 @@ const RebalanceCard = ({
       );
       const orderResults =
         response.data?.data?.user_net_pf_model?.order_results || [];
-      setApiResponseData(response.data);
-      setStockDataForModal(orderResults);
+      if (setApiResponseData) {
+        setApiResponseData(response.data);
+      }
+      if (setStockDataForModal) {
+        setStockDataForModal(orderResults);
+      }
     } catch (error) {
-      setShowstatusModal(true);
       console.error('Error fetching stock data:', error);
     }
-    setShowstatusModal(true);
+    if (setShowstatusModal) {
+      setShowstatusModal(true);
+    }
   };
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -224,31 +242,47 @@ const RebalanceCard = ({
   };
 
   const handleAcceptClick = () => {
-    setisChangeModal(false);
-    setModelPortfolioModelId(data.model_Id);
-    setmatchfailed(matchingFailedTrades);
-    if (repair && userExecution?.status !== 'toExecute') {
-      setStoreModalName(modelName);
-      setCurrentStep(2);
-      handleCheckStatus();
-    } else {
-      setShowCheckboxModal(true);
-      setStoreModalName(modelName);
+    try {
+      setisChangeModal(false);
+      if (data?.model_Id) {
+        setModelPortfolioModelId(data.model_Id);
+      }
+      setmatchfailed(matchingFailedTrades || null);
+      if (repair && userExecution?.status !== 'toExecute') {
+        setStoreModalName(modelName);
+        setCurrentStep(2);
+        handleCheckStatus();
+      } else {
+        setShowCheckboxModal(true);
+        setStoreModalName(modelName);
+      }
+    } catch (error) {
+      console.error('Error in handleAcceptClick:', error);
     }
   };
 
   const handleChangeCheck = () => {
-  console.log("Here DATA----", userExecutionFinal, matchingFailedTrades);
+    try {
+      console.log("Here DATA----", userExecutionFinal, matchingFailedTrades);
 
-  // Set the values regardless of whether they're defined or not
-  setuserExecution(userExecutionFinal);
-  setmatchingFailedTrades(matchingFailedTrades);
+      // Set the values regardless of whether they're defined or not
+      if (setuserExecution) {
+        setuserExecution(userExecutionFinal || null);
+      }
+      if (setmatchingFailedTrades) {
+        setmatchingFailedTrades(matchingFailedTrades || null);
+      }
 
-  // Proceed with opening the change modal (no date restriction for repair/multiple executions)
-  setisChangeModal(true);
-  setStoreModalName(modelName);
-  setLatestRebalanceData(data);
-};
+      // Proceed with opening the change modal (no date restriction for repair/multiple executions)
+      setisChangeModal(true);
+      setStoreModalName(modelName);
+      if (setLatestRebalanceData) {
+        setLatestRebalanceData(data);
+      }
+    } catch (error) {
+      console.error('Error in handleChangeCheck:', error);
+    }
+  };
 
   const handleViewMore = () => {
     navigation.navigate('MPPerformanceScreen', {
@@ -257,34 +291,48 @@ const RebalanceCard = ({
     });
   };
   const handleConfirmPreference = () => {
-    handleCheckBroker();
+    try {
+      handleCheckBroker();
+    } catch (error) {
+      console.error('Error in handleConfirmPreference:', error);
+      setLoading(false);
+    }
   };
 
   const handleCheckBroker = async () => {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    // Refresh broker status from API to get latest connection state
-    const freshStatus = await refreshBrokerStatus();
-    const currentBroker = freshStatus.broker || broker;
-    const currentBrokerStatus = freshStatus.brokerStatus || brokerStatus;
+      // Refresh broker status from API to get latest connection state
+      const freshStatus = await refreshBrokerStatus();
+      const currentBroker = freshStatus?.broker || broker;
+      const currentBrokerStatus = freshStatus?.brokerStatus || brokerStatus;
 
-    if (currentBrokerStatus === 'Disconnected' || !currentBroker) {
-      setShowCheckboxModal(false);
-      setCurrentStep(2);
-      setBrokerModel(true);
-      setLoading(false);
-    } else {
-      const isMarketHours = IsMarketHours();
-      if (funds?.status === 1 || funds?.status === 2 || funds === null) {
-        setOpenTokenExpireModel(true);
-        setLoading(false);
-        return;
-      } else {
+      if (currentBrokerStatus === 'Disconnected' || !currentBroker) {
         setShowCheckboxModal(false);
         setCurrentStep(2);
-        handleCheckStatus();
+        if (setBrokerModel) {
+          setBrokerModel(true);
+        }
         setLoading(false);
+      } else {
+        const isMarketHours = IsMarketHours();
+        if (funds?.status === 1 || funds?.status === 2 || funds === null) {
+          if (setOpenTokenExpireModel) {
+            setOpenTokenExpireModel(true);
+          }
+          setLoading(false);
+          return;
+        } else {
+          setShowCheckboxModal(false);
+          setCurrentStep(2);
+          handleCheckStatus();
+          setLoading(false);
+        }
       }
+    } catch (error) {
+      console.error('Error in handleCheckBroker:', error);
+      setLoading(false);
     }
   };
 

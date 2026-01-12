@@ -6,12 +6,11 @@ import {
   ScrollView,
   ActivityIndicator,
   StyleSheet,
-  Modal,
   Image,
+  Dimensions,
+  BackHandler,
 } from 'react-native';
-import {FloatingLabelInput} from 'react-native-floating-label-input';
 import {
-  XIcon,
   EyeIcon,
   EyeOffIcon,
   ChevronLeft,
@@ -23,6 +22,11 @@ import UpstoxHelpContent from './HelpUI/UpstoxHelpContent';
 import LinearGradient from 'react-native-linear-gradient';
 import upstoxIcon from '../../assets/upstox.png';
 import {TextInput} from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FullWindowOverlay } from 'react-native-screens';
+
+const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
+
 const UpstoxConnectUI = ({
   isVisible,
   onClose,
@@ -43,208 +47,193 @@ const UpstoxConnectUI = ({
   scrollViewRef,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  // Handle Android back button
+  React.useEffect(() => {
+    if (!isVisible) return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [isVisible, onClose]);
+
+  if (!isVisible) return null;
 
   return (
-    <Modal visible={isVisible} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          {/* HEADER */}
-          <LinearGradient
-            colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
-            start={{x: 0, y: 0}}
-            end={{x: 1, y: 1}}
-            style={styles.headerRow}>
-            {shouldRenderContent && !showWebView ? (
-              <View style={{flexDirection: 'row'}}>
-                <TouchableOpacity style={styles.backButton} onPress={onClose}>
-                  <ChevronLeft size={24} color="#000" />
-                </TouchableOpacity>
-
-                <Text style={styles.headerTitle}>Connect to Upstox</Text>
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={onClose}
-                style={styles.backButtonContainer}>
-                <ChevronLeft size={20} color="#fff" />
-                <Text style={styles.backButtonText}>Back</Text>
+    <FullWindowOverlay>
+      <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
+        {/* HEADER */}
+        <LinearGradient
+          colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.headerRow}>
+          {shouldRenderContent && !showWebView ? (
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <TouchableOpacity style={styles.backButton} onPress={onClose}>
+                <ChevronLeft size={24} color="#000" />
               </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={onClose}>
-              <Image
-                source={upstoxIcon}
-                style={{
-                  width: 35,
-                  height: 35,
-                  marginBottom: 8,
-                  backgroundColor: '#fff',
-                  borderRadius: 3,
-                }}
-                resizeMode="contain"
-              />
+              <Text style={styles.headerTitle}>Connect to Upstox</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.backButtonContainer}>
+              <ChevronLeft size={20} color="#fff" />
+              <Text style={styles.backButtonText}>Back</Text>
             </TouchableOpacity>
-          </LinearGradient>
+          )}
+          <Image
+            source={upstoxIcon}
+            style={styles.headerIcon}
+            resizeMode="contain"
+          />
+        </LinearGradient>
 
-          {/* CONTENT */}
-          <View style={styles.contentContainer}>
-            {shouldRenderContent && !showWebView ? (
-              <>
-                {/* Scrollable help content with toggle expand */}
-                <View
-                  style={[styles.guideBox, {maxHeight: expanded ? 420 : 320}]}>
-                  <ScrollView
-                    ref={scrollViewRef}
-                    showsVerticalScrollIndicator
-                    nestedScrollEnabled
-                    contentContainerStyle={styles.helpScrollContent}>
-                    <UpstoxHelpContent
-                      expanded={expanded}
-                      onExpandChange={setExpanded}
-                    />
-                  </ScrollView>
-                  <TouchableOpacity
-                    onPress={() => setExpanded(!expanded)}
-                    style={styles.toggleContainer}>
-                    <Text style={styles.toggleText}>
-                      {expanded ? 'See Less' : 'Read More'}
-                    </Text>
-                    <View style={styles.toggleIconContainer}>
-                      {expanded ? (
-                        <ChevronUp size={14} color="#000" />
-                      ) : (
-                        <ChevronDown size={14} color="#000" />
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Fixed input card at bottom */}
-                <View style={styles.inputCard}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: '#F5F5F5',
-                      padding: 10,
-                      borderRadius: 3,
-                      marginBottom: 10,
-                    }}>
-                    <Text style={styles.connectLabel}>Connect to Upstox</Text>
-                    <Image
-                      source={upstoxIcon}
-                      style={{
-                        width: 30,
-                        height: 30,
-                        backgroundColor: '#fff',
-                        borderRadius: 3,
-                      }}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  <View>
-                    <Text style={styles.headerLabel}>API Key :</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        value={apiKey}
-                        placeholder="Enter your API key"
-                        placeholderTextColor="grey"
-                        style={[styles.inputStyles, {color: 'grey', flex: 1}]} // placeholder + entered text grey
-                        secureTextEntry={!isPasswordVisibleUp}
-                        onChangeText={text => setApiKey(text.trim())}
-                      />
-                      <TouchableOpacity
-                        onPress={() =>
-                          setIsPasswordVisibleUp(!isPasswordVisibleUp)
-                        }>
-                        {apiKey ? (
-                          isPasswordVisibleUp ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  <View>
-                    <Text style={styles.headerLabel}>Secret Key :</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        value={secretKey}
-                        placeholder="Enter your Secret key"
-                        placeholderTextColor="grey"
-                        style={[styles.inputStyles, {color: 'grey', flex: 1}]} // placeholder + entered text grey
-                        secureTextEntry={!isPasswordVisible}
-                        onChangeText={text => setSecretKey(text.trim())}
-                      />
-                      <TouchableOpacity
-                        onPress={() =>
-                          setIsPasswordVisible(!isPasswordVisible)
-                        }>
-                        {secretKey ? (
-                          isPasswordVisible ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.proceedButton,
-                      {
-                        backgroundColor:
-                          apiKey && secretKey ? '#0056B7' : '#d3d3d3',
-                      },
-                    ]}
-                    onPress={updateSecretKey}
-                    disabled={!(apiKey && secretKey)}>
-                    {isLoading ? (
-                      <ActivityIndicator size={27} color="#fff" />
-                    ) : (
-                      <Text style={styles.proceedButtonText}>
-                        Connect Upstox
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </>
-            ) : (
-              <View style={styles.webViewContainer}>
-                <WebView
-                  source={{uri: authUrl}}
-                  style={styles.webView}
+        {/* CONTENT */}
+        <View style={styles.contentContainer}>
+          {shouldRenderContent && !showWebView ? (
+            <>
+              {/* Scrollable help content with toggle expand */}
+              <View
+                style={[styles.guideBox, {maxHeight: expanded ? 420 : 320}]}>
+                <ScrollView
+                  ref={scrollViewRef}
+                  showsVerticalScrollIndicator
                   nestedScrollEnabled
-                  onNavigationStateChange={handleWebViewNavigationStateChange}
-                  javaScriptEnabled
-                  domStorageEnabled
-                  startInLoadingState
-                />
+                  contentContainerStyle={styles.helpScrollContent}>
+                  <UpstoxHelpContent
+                    expanded={expanded}
+                    onExpandChange={setExpanded}
+                  />
+                </ScrollView>
+                <TouchableOpacity
+                  onPress={() => setExpanded(!expanded)}
+                  style={styles.toggleContainer}>
+                  <Text style={styles.toggleText}>
+                    {expanded ? 'See Less' : 'Read More'}
+                  </Text>
+                  <View style={styles.toggleIconContainer}>
+                    {expanded ? (
+                      <ChevronUp size={14} color="#000" />
+                    ) : (
+                      <ChevronDown size={14} color="#000" />
+                    )}
+                  </View>
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
+
+              {/* Fixed input card at bottom */}
+              <View style={styles.inputCard}>
+                <View style={styles.connectRow}>
+                  <Text style={styles.connectLabel}>Connect to Upstox</Text>
+                  <Image
+                    source={upstoxIcon}
+                    style={styles.connectIcon}
+                    resizeMode="contain"
+                  />
+                </View>
+
+                <View>
+                  <Text style={styles.headerLabel}>API Key :</Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      value={apiKey}
+                      placeholder="Enter your API key"
+                      placeholderTextColor="grey"
+                      style={[styles.inputStyles, {color: 'grey', flex: 1}]}
+                      secureTextEntry={!isPasswordVisibleUp}
+                      onChangeText={text => setApiKey(text.trim())}
+                    />
+                    <TouchableOpacity
+                      onPress={() =>
+                        setIsPasswordVisibleUp(!isPasswordVisibleUp)
+                      }>
+                      {apiKey ? (
+                        isPasswordVisibleUp ? (
+                          <EyeIcon size={24} color="#000" />
+                        ) : (
+                          <EyeOffIcon size={24} color="#000" />
+                        )
+                      ) : null}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View>
+                  <Text style={styles.headerLabel}>Secret Key :</Text>
+                  <View style={styles.inputContainer}>
+                    <TextInput
+                      value={secretKey}
+                      placeholder="Enter your Secret key"
+                      placeholderTextColor="grey"
+                      style={[styles.inputStyles, {color: 'grey', flex: 1}]}
+                      secureTextEntry={!isPasswordVisible}
+                      onChangeText={text => setSecretKey(text.trim())}
+                    />
+                    <TouchableOpacity
+                      onPress={() =>
+                        setIsPasswordVisible(!isPasswordVisible)
+                      }>
+                      {secretKey ? (
+                        isPasswordVisible ? (
+                          <EyeIcon size={24} color="#000" />
+                        ) : (
+                          <EyeOffIcon size={24} color="#000" />
+                        )
+                      ) : null}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.proceedButton,
+                    {
+                      backgroundColor:
+                        apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                    },
+                  ]}
+                  onPress={updateSecretKey}
+                  disabled={!(apiKey && secretKey)}>
+                  {isLoading ? (
+                    <ActivityIndicator size={27} color="#fff" />
+                  ) : (
+                    <Text style={styles.proceedButtonText}>
+                      Connect Upstox
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <View style={styles.webViewContainer}>
+              <WebView
+                source={{uri: authUrl}}
+                style={styles.webView}
+                nestedScrollEnabled
+                onNavigationStateChange={handleWebViewNavigationStateChange}
+                javaScriptEnabled
+                domStorageEnabled
+                startInLoadingState
+              />
+            </View>
+          )}
         </View>
       </View>
-    </Modal>
+    </FullWindowOverlay>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-    justifyContent: 'flex-end',
-  },
-  modalContainer: {
+  fullScreen: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    flex: 1,
   },
   backButton: {
     padding: 4,
@@ -272,9 +261,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-SemiBold',
     color: '#fff',
     marginLeft: 20,
-    alignContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'center',
+  },
+  headerIcon: {
+    width: 35,
+    height: 35,
+    backgroundColor: '#fff',
+    borderRadius: 3,
   },
   backButtonContainer: {
     flexDirection: 'row',
@@ -331,11 +323,27 @@ const styles = StyleSheet.create({
     elevation: 3,
     shadowColor: '#ccc',
   },
+  connectRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 10,
+    borderRadius: 3,
+    marginBottom: 10,
+  },
   connectLabel: {
     fontSize: 16,
     fontWeight: '700',
     color: '#000',
     fontFamily: 'Poppins-SemiBold',
+  },
+  connectIcon: {
+    width: 30,
+    height: 30,
+    backgroundColor: '#fff',
+    borderRadius: 3,
   },
   inputContainer: {
     flexDirection: 'row',
@@ -350,20 +358,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Regular',
     paddingVertical: 5,
   },
-  inputLabel: {
-    colorFocused: '#222',
-    colorBlurred: '#222',
-    fontSizeFocused: 18,
-    fontSizeBlurred: 18,
-  },
-  inputLabelText: {
-    fontFamily: 'Poppins-Regular',
-    fontSize: 13,
-    color: '#777',
-    backgroundColor: '#fff',
-    paddingHorizontal: 5,
-  },
-
   proceedButton: {
     marginTop: 28,
     backgroundColor: 'black',

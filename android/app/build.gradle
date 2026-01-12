@@ -21,15 +21,15 @@ android {
     ndkVersion rootProject.ext.ndkVersion
 
     /**
-     * ✅ REQUIRED
-     * This is what creates app-arm64-v8a-release.apk
+     * ABI splits - disabled for development (enable for release builds)
+     * This creates separate APKs per architecture
      */
     splits {
         abi {
-            enable true
+            enable false  // Disabled for dev - builds universal APK
             reset()
-            include "arm64-v8a"
-            universalApk false
+            include "arm64-v8a", "x86_64"
+            universalApk true
         }
     }
 
@@ -37,8 +37,8 @@ android {
         applicationId "com.rgx.aq"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 33
-        versionName "3.3.0"
+        versionCode 35
+        versionName "3.5.0"
 
         missingDimensionStrategy "store", "play"
     }

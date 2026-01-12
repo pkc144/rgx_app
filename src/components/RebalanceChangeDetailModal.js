@@ -9,8 +9,10 @@ import {
   Dimensions,
   ScrollView,
   ActivityIndicator,
+  Modal,
+  TouchableWithoutFeedback,
+  SafeAreaView,
 } from 'react-native';
-import Modal from 'react-native-modal';
 import {X, ChevronDown, ArrowUp, ArrowDown} from 'lucide-react-native';
 import server from '../utils/serverConfig';
 import Config from 'react-native-config';
@@ -222,77 +224,87 @@ const RebalanceChangeDetailModal = ({
 
   return (
     <Modal
-      isVisible={isVisible}
-      onBackdropPress={onClose}
-      style={styles.modalContainer}>
-      <View style={styles.modalContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerText}>Expected vs Current Holdings</Text>
-          <TouchableOpacity onPress={onClose}>
-            <X color="#000" size={24} />
-          </TouchableOpacity>
-        </View>
-
-        {loading ? (
-          <View style={styles.loaderContainer}>
-            <ActivityIndicator size="large" color="#0056B7" />
-          </View>
-        ) : (
-          <>
-            {/* Table Header */}
-            <View style={styles.tableHeaderContainer}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.headerCell, styles.headerCellStock]}>
-                  Stocks
-                </Text>
-                <Text style={[styles.headerCell, styles.headerCellCenter]}>
-                  Allocation (prior)
-                </Text>
-                <Text style={[styles.headerCell, styles.headerCellCenter]}>
-                  Allocation (required)
-                </Text>
-              </View>
-            </View>
-
-            {/* Table Content */}
-            <ScrollView style={styles.tableContent}>
-              <FlatList
-                data={tableData}
-                renderItem={renderItem}
-                keyExtractor={(item, index) => item.symbol + index}
-                scrollEnabled={false}
-              />
-            </ScrollView>
-
-            {/* Accept Button */}
-            <TouchableOpacity
-              style={styles.acceptButton}
-              onPress={handleAcceptClick}>
-              <Text style={styles.acceptButtonText}>View and act</Text>
+      visible={isVisible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={onClose}>
+      <SafeAreaView style={styles.modalOverlay}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.backdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.modalContent}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerText}>Expected vs Current Holdings</Text>
+            <TouchableOpacity onPress={onClose}>
+              <X color="#000" size={24} />
             </TouchableOpacity>
-          </>
-        )}
-      </View>
+          </View>
+
+          {loading ? (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color="#0056B7" />
+            </View>
+          ) : (
+            <>
+              {/* Table Header */}
+              <View style={styles.tableHeaderContainer}>
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.headerCell, styles.headerCellStock]}>
+                    Stocks
+                  </Text>
+                  <Text style={[styles.headerCell, styles.headerCellCenter]}>
+                    Allocation (prior)
+                  </Text>
+                  <Text style={[styles.headerCell, styles.headerCellCenter]}>
+                    Allocation (required)
+                  </Text>
+                </View>
+              </View>
+
+              {/* Table Content */}
+              <ScrollView style={styles.tableContent}>
+                <FlatList
+                  data={tableData}
+                  renderItem={renderItem}
+                  keyExtractor={(item, index) => item.symbol + index}
+                  scrollEnabled={false}
+                />
+              </ScrollView>
+
+              {/* Accept Button */}
+              <TouchableOpacity
+                style={styles.acceptButton}
+                onPress={handleAcceptClick}>
+                <Text style={styles.acceptButtonText}>View and act</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalContainer: {
+  modalOverlay: {
+    flex: 1,
     justifyContent: 'flex-end',
-    margin: 0,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   loaderContainer: {
     height: 200,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   modalContent: {
     backgroundColor: '#fff',
     marginHorizontal: 0,
-    borderRadius: 12,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
     paddingTop: 20,
     paddingHorizontal: 0,
     maxHeight: '85%',

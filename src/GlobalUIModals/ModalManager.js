@@ -1,7 +1,6 @@
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
 import useModalStore from './modalStore';
 import { useTrade } from '../screens/TradeContext';
-import { View, ActivityIndicator } from 'react-native';
 
 // Lazy import modals
 import IIFLModal from '../components/iiflmodal';
@@ -60,18 +59,7 @@ const ModalManager = () => {
     }
   };
 
-  return (
-    <Suspense
-    fallback={
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center',backgroundColor:'transparent' }}>
-        <ActivityIndicator size="large" color="#000" />
-      </View>
-    }
-  >
-    {renderModal()}
-  </Suspense>
-
-  );
+  return renderModal();
 };
 
 export default ModalManager;

@@ -1,16 +1,15 @@
 import React, {useRef, useState} from 'react';
 import {
-  Modal,
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Dimensions,
   TextInput,
   ActivityIndicator,
   StyleSheet,
   Image,
+  BackHandler,
 } from 'react-native';
 import {
   EyeIcon,
@@ -24,8 +23,10 @@ import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
 import LinearGradient from 'react-native-linear-gradient';
 import hdfcIcon from '../../assets/hdfc_securities.png';
 import HDFCHelpContent from './HelpUI/HDFCHelpContent';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FullWindowOverlay } from 'react-native-screens';
 
-const {height: screenHeight} = Dimensions.get('window');
+const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
 
 const HDFCConnectUI = ({
@@ -48,10 +49,25 @@ const HDFCConnectUI = ({
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  // Handle Android back button
+  React.useEffect(() => {
+    if (!isVisible) return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [isVisible, onClose]);
+
+  if (!isVisible) return null;
 
   return (
-    <Modal visible={isVisible} transparent animationType="slide">
-      <SafeAreaView style={styles.modalContainer}>
+    <FullWindowOverlay>
+      <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
         {/* Header */}
         <LinearGradient
           colors={['#0B3D91', '#0056B7']}
@@ -221,13 +237,17 @@ const HDFCConnectUI = ({
           visible={helpVisible}
           onClose={() => setHelpVisible(false)}
         />
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </FullWindowOverlay>
   );
 };
 
 const styles = StyleSheet.create({
-  modalContainer: {flex: 1, backgroundColor: '#fff'},
+  fullScreen: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    backgroundColor: '#fff',
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

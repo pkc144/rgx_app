@@ -5,13 +5,12 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Dimensions,
   Image,
   TextInput,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
-import Modal from 'react-native-modal';
 import {WebView} from 'react-native-webview';
 import {
   EyeIcon,
@@ -24,8 +23,10 @@ import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
 import LinearGradient from 'react-native-linear-gradient';
 import iciciIcon from '../../assets/icici.png';
 import ICICIHelpContent from './HelpUI/ICICIHelpContent';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FullWindowOverlay } from 'react-native-screens';
 
-const {height: screenHeight, width: screenWidth} = Dimensions.get('window');
+const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
 
 const ICICIConnectUI = ({
@@ -50,18 +51,25 @@ const ICICIConnectUI = ({
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  // Handle Android back button
+  React.useEffect(() => {
+    if (!isVisible) return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [isVisible, onClose]);
+
+  if (!isVisible) return null;
 
   return (
-    <Modal
-      isVisible={isVisible}
-      onBackdropPress={onClose}
-      onBackButtonPress={onClose}
-      style={styles.modal}
-      backdropOpacity={0.1}
-      useNativeDriver
-      animationIn="slideInUp"
-      animationOut="slideOutDown">
-      <SafeAreaView style={styles.modalContent}>
+    <FullWindowOverlay>
+      <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
         <LinearGradient
           colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
           start={{x: 0, y: 0}}
@@ -88,8 +96,6 @@ const ICICIConnectUI = ({
           <ScrollView
             contentContainerStyle={styles.content}
             ref={scrollViewRef}>
-            {/* Header */}
-
             {/* Help Section */}
             <View style={[styles.guideBox, {maxHeight: expanded ? 420 : 320}]}>
               <ScrollView
@@ -236,27 +242,25 @@ const ICICIConnectUI = ({
             />
           </View>
         )}
-      </SafeAreaView>
 
-      {/* Help Modal */}
-      <HelpModal
-        broker="ICICI"
-        visible={helpVisible}
-        onClose={() => setHelpVisible(false)}
-      />
-    </Modal>
+        {/* Help Modal */}
+        <HelpModal
+          broker="ICICI"
+          visible={helpVisible}
+          onClose={() => setHelpVisible(false)}
+        />
+      </View>
+    </FullWindowOverlay>
   );
 };
 
 export default ICICIConnectUI;
 
 const styles = StyleSheet.create({
-  modal: {justifyContent: 'flex-end', margin: 0},
-  modalContent: {
-    flex: 1,
+  fullScreen: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
   },
   backButton: {
     padding: 4,

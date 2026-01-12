@@ -12,9 +12,11 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
+  Modal,
+  TouchableWithoutFeedback,
+  BackHandler,
 } from 'react-native';
 
-import Modal from 'react-native-modal';
 import {CountryCode} from '../utils/CountryCode';
 import {XIcon, ChevronDown, X} from 'lucide-react-native';
 import axios from 'axios';
@@ -50,6 +52,16 @@ const ProfileModal = ({
   const showTelegram = '0';
   const radius = 35;
   const circumference = 2 * Math.PI * radius;
+
+  // Handle back button
+  useEffect(() => {
+    if (!showModal) return;
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      setShowModal(false);
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [showModal, setShowModal]);
 
   useEffect(() => {
     if (showModal && userEmail) {
@@ -220,250 +232,246 @@ const ProfileModal = ({
 
   return (
     <Modal
-      isVisible={showModal}
-      onBackdropPress={() => setShowModal(false)}
-      style={styles.modal}
-      backdropOpacity={0.45}
-      useNativeDriver
-      hideModalContentWhileAnimating
-      animationIn="slideInUp"
-      animationOut="slideOutDown"
-      swipeDirection={['down']}
-      onSwipeComplete={() => setShowModal(false)}
-      propagateSwipe>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.centeredView}>
-        <View style={styles.container}>
-          {/* Header */}
-          <View style={styles.headerRow}>
-            <View style={styles.headerLeft}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarInitial}>
-                  {(userDetails?.name && userDetails.name[0]) ||
-                    userEmail?.[0] ||
-                    'U'}
-                </Text>
+      visible={showModal}
+      transparent={true}
+      animationType="slide"
+      statusBarTranslucent={true}
+      onRequestClose={() => setShowModal(false)}>
+      <View style={styles.modalOverlay}>
+        <TouchableWithoutFeedback onPress={() => setShowModal(false)}>
+          <View style={styles.backdrop} />
+        </TouchableWithoutFeedback>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.centeredView}>
+          <View style={styles.container}>
+            {/* Header */}
+            <View style={styles.headerRow}>
+              <View style={styles.headerLeft}>
+                <View style={styles.avatarCircle}>
+                  <Text style={styles.avatarInitial}>
+                    {(userDetails?.name && userDetails.name[0]) ||
+                      userEmail?.[0] ||
+                      'U'}
+                  </Text>
+                </View>
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.title}>Complete your profile</Text>
+                  <Text style={styles.subtitle}>
+                    A few details help us personalize your experience.
+                  </Text>
+                </View>
               </View>
-              <View style={styles.headerTextWrap}>
-                <Text style={styles.title}>Complete your profile</Text>
-                <Text style={styles.subtitle}>
-                  A few details help us personalize your experience.
-                </Text>
-              </View>
+
+              <TouchableOpacity
+                accessible
+                accessibilityLabel="Close"
+                style={styles.closeButton}
+                onPress={() => setShowModal(false)}>
+                <XIcon size={22} color="#222" />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              accessible
-              accessibilityLabel="Close"
-              style={styles.closeButton}
-              onPress={() => setShowModal(false)}>
-              <XIcon size={22} color="#222" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Content */}
-          <ScrollView
-            style={styles.content}
-            contentContainerStyle={styles.contentContainer}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled">
-            {/* Card */}
-            <View style={styles.card}>
-              {/* Profile progress row */}
-              <View style={styles.progressRow}>
-                <View style={styles.progressSvgWrap}>
-                  <Svg height="86" width="86" viewBox="0 0 86 86">
-                    <Circle
-                      cx="43"
-                      cy="43"
-                      r={radius}
-                      stroke="#eef2f6"
-                      strokeWidth="8"
-                      fill="transparent"
-                    />
-                    <Circle
-                      cx="43"
-                      cy="43"
-                      r={radius}
-                      stroke="url(#grad)"
-                      strokeWidth="8"
-                      strokeLinecap="round"
-                      strokeDasharray={`${circumference} ${circumference}`}
-                      strokeDashoffset={strokeDashoffset}
-                      fill="transparent"
-                      rotation="-90"
-                      origin="43, 43"
-                    />
-                    <Defs>
-                      <LinearGradient
-                        id="grad"
-                        x1="0%"
-                        y1="0%"
-                        x2="100%"
-                        y2="0%">
-                        <Stop offset="0%" stopColor="rgba(0, 86, 183, 1)" />
-                        <Stop offset="100%" stopColor="rgba(0, 38, 81, 1)" />
-                      </LinearGradient>
-                    </Defs>
-                  </Svg>
-                  <View style={styles.progressInner}>
-                    <Text style={styles.progressInnerNumber}>
-                      {profileCompletion}%
-                    </Text>
-                    <Text style={styles.progressInnerLabel}>Complete</Text>
+            {/* Content */}
+            <ScrollView
+              style={styles.content}
+              contentContainerStyle={styles.contentContainer}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled">
+              {/* Card */}
+              <View style={styles.card}>
+                {/* Profile progress row */}
+                <View style={styles.progressRow}>
+                  <View style={styles.progressSvgWrap}>
+                    <Svg height="86" width="86" viewBox="0 0 86 86">
+                      <Circle
+                        cx="43"
+                        cy="43"
+                        r={radius}
+                        stroke="#eef2f6"
+                        strokeWidth="8"
+                        fill="transparent"
+                      />
+                      <Circle
+                        cx="43"
+                        cy="43"
+                        r={radius}
+                        stroke="url(#grad)"
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={`${circumference} ${circumference}`}
+                        strokeDashoffset={strokeDashoffset}
+                        fill="transparent"
+                        rotation="-90"
+                        origin="43, 43"
+                      />
+                      <Defs>
+                        <LinearGradient
+                          id="grad"
+                          x1="0%"
+                          y1="0%"
+                          x2="100%"
+                          y2="0%">
+                          <Stop offset="0%" stopColor="rgba(0, 86, 183, 1)" />
+                          <Stop offset="100%" stopColor="rgba(0, 38, 81, 1)" />
+                        </LinearGradient>
+                      </Defs>
+                    </Svg>
+                    <View style={styles.progressInner}>
+                      <Text style={styles.progressInnerNumber}>
+                        {profileCompletion}%
+                      </Text>
+                      <Text style={styles.progressInnerLabel}>Complete</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
 
-              {/* Inputs */}
-              <View style={styles.form}>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Email ID</Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    value={userEmail || ''}
-                    editable={false}
-                  />
-                </View>
-
-                <View style={styles.field}>
-                  <Text style={styles.label}>Full Name</Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    value={userName}
-                    onChangeText={setUserName}
-                    placeholder="Enter your name"
-                    placeholderTextColor="#9ca3af"
-                  />
-                </View>
-
-                <View
-                  style={[
-                    styles.row,
-                    {
-                      alignItems: 'center',
-                      alignContent: 'center',
-                      alignSelf: 'center',
-                    },
-                  ]}>
-                  <Pressable
-                    style={styles.countryButton}
-                    onPress={() => setShowCountryCode(s => !s)}>
-                    <Text style={styles.countryText}>{countryCode}</Text>
-                    <ChevronDown size={18} />
-                  </Pressable>
-
-                  <View style={{flex: 1}}>
-                    <Text style={styles.label}>Phone Number</Text>
+                {/* Inputs */}
+                <View style={styles.form}>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Email ID</Text>
                     <TextInput
                       style={styles.inputBox}
-                      value={userPhoneNumber}
-                      onChangeText={v =>
-                        setUserPhoneNumber(v.replace(/\D/g, ''))
-                      }
-                      keyboardType="phone-pad"
-                      placeholder="Enter phone"
+                      value={userEmail || ''}
+                      editable={false}
+                    />
+                  </View>
+
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Full Name</Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      value={userName}
+                      onChangeText={setUserName}
+                      placeholder="Enter your name"
                       placeholderTextColor="#9ca3af"
                     />
                   </View>
-                </View>
 
-                <View style={styles.field}>
-                  <Text style={styles.label}>Telegram username (optional)</Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    value={userTelegram}
-                    onChangeText={setUserTelegram}
-                    placeholder="Enter Telegram username"
-                    placeholderTextColor="#9ca3af"
-                  />
-                </View>
+                  <View
+                    style={[
+                      styles.row,
+                      {
+                        alignItems: 'center',
+                        alignContent: 'center',
+                        alignSelf: 'center',
+                      },
+                    ]}>
+                    <Pressable
+                      style={styles.countryButton}
+                      onPress={() => setShowCountryCode(s => !s)}>
+                      <Text style={styles.countryText}>{countryCode}</Text>
+                      <ChevronDown size={18} />
+                    </Pressable>
 
-                {/* Country code dropdown */}
-                {showCountryCode && (
-                  <View style={styles.countryListWrap}>
-                    <View style={styles.countrySearchRow}>
+                    <View style={{flex: 1}}>
+                      <Text style={styles.label}>Phone Number</Text>
                       <TextInput
-                        placeholder="Search country or code"
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        style={styles.countrySearchInput}
-                        placeholderTextColor="#9aa0a6"
+                        style={styles.inputBox}
+                        value={userPhoneNumber}
+                        onChangeText={v =>
+                          setUserPhoneNumber(v.replace(/\D/g, ''))
+                        }
+                        keyboardType="phone-pad"
+                        placeholder="Enter phone"
+                        placeholderTextColor="#9ca3af"
                       />
-                      <TouchableOpacity
-                        style={styles.countryClose}
-                        onPress={() => {
-                          setShowCountryCode(false);
-                          setSearchQuery('');
-                        }}>
-                        <X size={18} />
-                      </TouchableOpacity>
                     </View>
+                  </View>
 
-                    <ScrollView
-                      style={styles.countryScroll}
-                      nestedScrollEnabled>
-                      {filteredCountryCodes.map(cc => (
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Telegram username (optional)</Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      value={userTelegram}
+                      onChangeText={setUserTelegram}
+                      placeholder="Enter Telegram username"
+                      placeholderTextColor="#9ca3af"
+                    />
+                  </View>
+
+                  {/* Country code dropdown */}
+                  {showCountryCode && (
+                    <View style={styles.countryListWrap}>
+                      <View style={styles.countrySearchRow}>
+                        <TextInput
+                          placeholder="Search country or code"
+                          value={searchQuery}
+                          onChangeText={setSearchQuery}
+                          style={styles.countrySearchInput}
+                          placeholderTextColor="#9aa0a6"
+                        />
                         <TouchableOpacity
-                          key={cc.value + cc.label}
-                          style={styles.countryItem}
+                          style={styles.countryClose}
                           onPress={() => {
-                            setCountryCode(cc.value);
                             setShowCountryCode(false);
                             setSearchQuery('');
                           }}>
-                          <Text style={styles.countryItemText}>
-                            {cc.value} — {cc.label}
-                          </Text>
+                          <X size={18} />
                         </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-              </View>
-            </View>
-          </ScrollView>
+                      </View>
 
-          {/* Footer / Actions */}
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={[
-                styles.saveButton,
-                loading ? styles.buttonDisabled : null,
-              ]}
-              onPress={handleUserProfile}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Save profile">
-              {loading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  {/* <Icon
-                    name="save"
-                    size={18}
-                    color="#fff"
-                    style={{marginRight: 8}}
-                  /> */}
-                  <Text style={styles.saveButtonText}>Save Profile</Text>
-                </>
-              )}
-            </TouchableOpacity>
+                      <ScrollView
+                        style={styles.countryScroll}
+                        nestedScrollEnabled>
+                        {filteredCountryCodes.map(cc => (
+                          <TouchableOpacity
+                            key={cc.value + cc.label}
+                            style={styles.countryItem}
+                            onPress={() => {
+                              setCountryCode(cc.value);
+                              setShowCountryCode(false);
+                              setSearchQuery('');
+                            }}>
+                            <Text style={styles.countryItemText}>
+                              {cc.value} — {cc.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Footer / Actions */}
+            <View style={styles.footer}>
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  loading ? styles.buttonDisabled : null,
+                ]}
+                onPress={handleUserProfile}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Save profile">
+                {loading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Text style={styles.saveButtonText}>Save Profile</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  modal: {
+  modalOverlay: {
+    flex: 1,
     justifyContent: 'flex-end',
-    margin: 0,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
   },
   centeredView: {
-    flex: 1,
     justifyContent: 'flex-end',
   },
   container: {

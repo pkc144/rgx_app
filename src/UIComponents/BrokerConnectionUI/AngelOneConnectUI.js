@@ -1,84 +1,114 @@
 // components/AngleOneModalUI.js
-import React from 'react';
-import { View, StyleSheet, Dimensions, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import React, { useRef } from 'react';
+import {
+  View,
+  StyleSheet,
+  Platform,
+  TouchableOpacity,
+  Dimensions,
+  BackHandler,
+} from 'react-native';
 import WebView from 'react-native-webview';
-import Modal from 'react-native-modal';
 import { ChevronLeft, XIcon } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FullWindowOverlay } from 'react-native-screens';
 
-const { height: screenHeight } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
 const AngleOneConnectUI = ({ isVisible, onClose, authUrl, handleWebViewNavigationStateChange, handleClose }) => {
+  const webViewRef = useRef(null);
+  const insets = useSafeAreaInsets();
+
+  // Handle Android back button
+  React.useEffect(() => {
+    if (!isVisible) return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [isVisible, onClose]);
+
+  if (!isVisible) return null;
+
   return (
-    <Modal
-      isVisible={isVisible}
-      onBackdropPress={onClose}
-      style={styles.modal}
-      backdropOpacity={0.1}
-      useNativeDriver
-      animationIn="slideInUp"
-      animationOut="slideOutDown"
-      onSwipeComplete={onClose}
-    >
-      <SafeAreaView style={styles.modalContent}>
-        <View style={styles.header}>
-          <ChevronLeft size={24} color={'black'} onPress={handleClose} style={{ top: 10, right: 0 }} />
+    <FullWindowOverlay>
+      <View style={styles.fullScreen}>
+        <View style={[styles.header, { paddingTop: insets.top }]}>
+          <TouchableOpacity
+            onPress={handleClose || onClose}
+            style={styles.headerButton}
+          >
+            <ChevronLeft size={24} color="#000" />
+          </TouchableOpacity>
           <View style={styles.handleIndicator} />
-          <TouchableOpacity onPress={onClose} style={{ top: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.headerButton}
+          >
             <XIcon size={24} color="#000" />
           </TouchableOpacity>
         </View>
-        <ScrollView nestedScrollEnabled contentContainerStyle={styles.content} indicatorStyle="black">
-          <View style={styles.sheetContent}>
-            <WebView
-              source={{ uri: authUrl }}
-              style={styles.webView}
-              nestedScrollEnabled
-              onNavigationStateChange={handleWebViewNavigationStateChange}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              startInLoadingState={true}
-              cacheEnabled={true}
-              sharedCookiesEnabled={true}
-              thirdPartyCookiesEnabled={true}
-              userAgent={
-                Platform.OS === 'android'
-                  ? 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
-                  : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile Safari/604.1'
-              }
-            />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+        <WebView
+          ref={webViewRef}
+          source={{ uri: authUrl }}
+          style={styles.webView}
+          nestedScrollEnabled={true}
+          onNavigationStateChange={handleWebViewNavigationStateChange}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          startInLoadingState={true}
+          cacheEnabled={true}
+          sharedCookiesEnabled={true}
+          thirdPartyCookiesEnabled={true}
+          scrollEnabled={true}
+          originWhitelist={['*']}
+          mixedContentMode="compatibility"
+          setSupportMultipleWindows={false}
+          userAgent={
+            Platform.OS === 'android'
+              ? 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
+              : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile Safari/604.1'
+          }
+        />
+      </View>
+    </FullWindowOverlay>
   );
 };
 
 const styles = StyleSheet.create({
-  content: { padding: 10 },
-  modal: { justifyContent: 'flex-end', alignContent: 'center', margin: 0 },
-  modalContent: {
+  fullScreen: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 10,
-    height: '100%',
   },
   header: {
+    height: 56,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginHorizontal: 10,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#fff',
+  },
+  headerButton: {
+    padding: 12,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 20,
   },
   handleIndicator: {
-    width: 110,
-    height: 6,
-    borderRadius: 250,
-    alignSelf: 'center',
-    backgroundColor: '#f1f4f8',
-    marginBottom: 5,
-    marginTop: 20,
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#e0e0e0',
   },
-  sheetContent: { flex: 1 },
-  webView: { flex: 1, minHeight: screenHeight },
+  webView: {
+    flex: 1,
+    width: SCREEN_WIDTH,
+  },
 });
 
 export default AngleOneConnectUI;

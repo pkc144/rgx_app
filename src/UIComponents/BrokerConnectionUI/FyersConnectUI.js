@@ -2,7 +2,6 @@ import React, {useState} from 'react';
 import {
   View,
   Text,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Dimensions,
@@ -12,8 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  BackHandler,
 } from 'react-native';
-import Modal from 'react-native-modal';
 import {WebView} from 'react-native-webview';
 import {
   ChevronLeft,
@@ -26,8 +25,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
 import FyersHelpContent from './HelpUI/FyersHelpContent';
 import fyersIcon from '../../assets/fyers.png';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FullWindowOverlay } from 'react-native-screens';
 
-const {height: screenHeight} = Dimensions.get('window');
+const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
 
 const FyersConnectUI = ({
@@ -50,18 +51,28 @@ const FyersConnectUI = ({
   handleWebViewNavigationStateChange,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  // Handle Android back button
+  React.useEffect(() => {
+    if (!isVisible) return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [isVisible, onClose]);
+
+  if (!isVisible) return null;
 
   return (
-    <Modal
-      isVisible={isVisible}
-      onBackdropPress={onClose}
-      style={styles.modal}
-      backdropOpacity={0.1}
-      useNativeDriver>
+    <FullWindowOverlay>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{flex: 1}}>
-        <SafeAreaView style={styles.safeArea}>
+        <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
           {/* Header */}
           <LinearGradient
             colors={['#0B3D91', '#0056B7']}
@@ -228,15 +239,18 @@ const FyersConnectUI = ({
             visible={helpVisible}
             onClose={() => setHelpVisible(false)}
           />
-        </SafeAreaView>
+        </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </FullWindowOverlay>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: '#fff'},
-  modal: {justifyContent: 'flex-end', margin: 0},
+  fullScreen: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    backgroundColor: '#fff',
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
