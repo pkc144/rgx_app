@@ -13,7 +13,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import DDPI from '../assets/DDPI.png';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
+// Using solid background color with View instead
 import Toast from 'react-native-toast-message';
 import WebView from 'react-native-webview';
 import Config from 'react-native-config';
@@ -736,10 +737,9 @@ export function ActivateNowModel({
               </View>
             </View>
 
-            {/* Action Button */}
-            <LinearGradient
-              colors={['#D97706', '#F59E0B', '#D97706']}
-              style={styles.buttonGradient}>
+            {/* Action Button - View replaces LinearGradient for iOS Fabric compatibility */}
+            <View
+              style={[styles.buttonGradient, { backgroundColor: '#D97706', overflow: 'hidden' }]}>
               <TouchableOpacity
                 style={styles.activateButton}
                 onPress={onActivate}>
@@ -747,7 +747,7 @@ export function ActivateNowModel({
                   Activate DDPI Now &gt;&gt;
                 </Text>
               </TouchableOpacity>
-            </LinearGradient>
+            </View>
           </View>
         </ScrollView>
       </View>

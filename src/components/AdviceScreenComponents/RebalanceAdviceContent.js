@@ -410,7 +410,12 @@ const RebalanceAdviceContent = React.memo(
         <View
           style={[
             styles.cardContainerReb,
-            {width: screenWidth * 0.94, marginVertical: type === 'All' ? 5 : 0},
+            {
+              width: screenWidth * 0.92,
+              marginVertical: type === 'All' ? 5 : 0,
+              marginHorizontal: screenWidth * 0.04,
+              overflow: 'hidden',
+            },
           ]}>
           {item && (
             <RebalanceCard
@@ -483,7 +488,7 @@ const RebalanceAdviceContent = React.memo(
           <View style={styles.tabContainer}></View>
         )}
 
-        <View style={styles.carouselContainer}>
+        <View style={[styles.carouselContainer, {overflow: 'hidden'}]}>
           <FlatList
             data={filteredAndSortedStrategies}
             renderItem={renderPortfolioVerticalList}
@@ -491,9 +496,9 @@ const RebalanceAdviceContent = React.memo(
             horizontal={type === 'home'}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{paddingHorizontal: 0}}
-            initialNumToRender={10} // Render only 10 items initially
-            maxToRenderPerBatch={10} // Render 10 more in subsequent batches
-            windowSize={5} // Number of screens worth of data to render
+            initialNumToRender={3}
+            maxToRenderPerBatch={3}
+            windowSize={3}
             removeClippedSubviews={true}
             ListEmptyComponent={
               isDatafetchinMP ? ( // Show loading animation if still loading

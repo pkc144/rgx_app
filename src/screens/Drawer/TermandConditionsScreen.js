@@ -9,15 +9,14 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { ChevronLeft } from "lucide-react-native";
 import WebView from "react-native-webview";
-import LinearGradient from "react-native-linear-gradient";
+// LinearGradient import removed - replaced with View for iOS Fabric compatibility
 import { useTrade } from "../TradeContext";
 import { useConfig } from "../../context/ConfigContext";
-import Config from "react-native-config";
 
 const TermsandConditionsScreen = () => {
   const { configData } = useTrade();
   const tncURL =
-    configData?.config?.REACT_APP_ADVISOR_TERMS_AND_CONDITION || Config.REACT_APP_ADVISOR_TERMS_AND_CONDITION;
+    configData?.config?.REACT_APP_ADVISOR_TERMS_AND_CONDITION;
 
   // Get dynamic colors from config
   const config = useConfig();
@@ -40,12 +39,9 @@ const TermsandConditionsScreen = () => {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Header */}
-      <LinearGradient
-        colors={[gradient1, gradient2]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={styles.headerContainer}
+      {/* Header - iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
+      <View
+        style={[styles.headerContainer, {backgroundColor: gradient1, overflow: 'hidden'}]}
       >
         <View style={styles.headerRow}>
           <TouchableOpacity
@@ -56,7 +52,7 @@ const TermsandConditionsScreen = () => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Terms & Conditions</Text>
         </View>
-      </LinearGradient>
+      </View>
 
       {/* WebView or Error */}
       {isValidUrl ? (

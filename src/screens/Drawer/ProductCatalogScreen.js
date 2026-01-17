@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Dimensions  } from 'react-native';
-import { CheckBox } from 'react-native-elements';
+
 import Icon from 'react-native-vector-icons/AntDesign';
 import CustomToolbar from '../../components/CustomToolbar';
 import { ChevronLeft,Clock,Flame,Info,SquareArrowUpRight,SquareArrowOutUpRight,ChevronUp,ChevronDown } from "lucide-react-native";

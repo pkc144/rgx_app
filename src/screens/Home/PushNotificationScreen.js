@@ -14,7 +14,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import SVGGradient from '../../components/SVGGradient';
 import Icon from 'react-native-vector-icons/Feather';
 import {useNavigation} from '@react-navigation/native';
 import {useTrade} from '../TradeContext';
@@ -958,18 +958,15 @@ const getUnreadCount = () => {
 
   if (isNotificationLoading && !refreshing) {
     return (
-      <LinearGradient
-        colors={['#EAEEFF', '#fff']}
-        start={{x: 0, y: 0}}
-        end={{x: 0, y: 1}}
-        style={{flex: 1}}>
+      <View
+        style={{flex: 1, backgroundColor: '#EAEEFF', overflow: 'hidden'}}>
         <SafeAreaView style={{flex: 1}}>
-             <LinearGradient
-          colors={[gradient1, gradient2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={{ paddingHorizontal: 15, paddingVertical: 10, borderBottomLeftRadius: 15, borderBottomRightRadius: 15, }}
-        >
+          <SVGGradient
+            colors={[gradient1, gradient2]}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+            style={{ paddingHorizontal: 15, paddingVertical: 10, borderBottomLeftRadius: 15, borderBottomRightRadius: 15 }}
+          >
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, }}>
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
               <ChevronLeft size={24} color="#000" />
@@ -985,28 +982,25 @@ const getUnreadCount = () => {
               Stay updated with the latest alerts
             </Text>
           </View>
-        </LinearGradient>
+        </SVGGradient>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#6B7A99" />
             <Text style={styles.loadingText}>Loading notifications...</Text>
           </View>
         </SafeAreaView>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient
-      colors={['#EAEEFF', '#fff']}
-      start={{x: 0, y: 0}}
-      end={{x: 0, y: 1}}
-      style={{flex: 1}}>
+    <View
+      style={{flex: 1, backgroundColor: '#EAEEFF', overflow: 'hidden'}}>
       <SafeAreaView style={{flex: 1}}>
-        <LinearGradient
+        <SVGGradient
           colors={[gradient1, gradient2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={{ paddingHorizontal: 15, paddingVertical: 10, borderBottomLeftRadius: 15, borderBottomRightRadius: 15, }}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={{ paddingHorizontal: 15, paddingVertical: 10, borderBottomLeftRadius: 15, borderBottomRightRadius: 15 }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, }}>
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -1043,7 +1037,7 @@ const getUnreadCount = () => {
                   </Text>
                 </TouchableOpacity>
               </View>
-        </LinearGradient>
+        </SVGGradient>
 
         {!allNotifications ||
         !allNotifications.notifications ||
@@ -1109,7 +1103,7 @@ const getUnreadCount = () => {
 
         {renderNotificationModal()}
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 };
 

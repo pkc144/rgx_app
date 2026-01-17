@@ -1,8 +1,19 @@
 import {View, Text, TouchableOpacity} from 'react-native';
 import {CandlestickChartIcon} from 'lucide-react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import {useNavigation} from '@react-navigation/native';
 import {useConfig} from '../../context/ConfigContext';
+
+// Simple gradient-like background using solid color (avoiding LinearGradient for iOS Fabric compatibility)
+const GradientBackground = ({children, colors, style}) => {
+  // Use the first color as solid background (simpler, more compatible with Fabric)
+  const backgroundColor = colors?.[0] || '#0076FB';
+
+  return (
+    <View style={[{backgroundColor, overflow: 'hidden'}, style]}>
+      {children}
+    </View>
+  );
+};
 
 const RenderEmptyMessageCard = ({value}) => {
   const navigation = useNavigation();
@@ -14,7 +25,7 @@ const RenderEmptyMessageCard = ({value}) => {
   const mainColor = config?.mainColor || '#0056B7';
 
   return (
-    <LinearGradient
+    <GradientBackground
       colors={[gradient1, gradient2]}
       style={{
         alignItems: 'center',
@@ -51,13 +62,13 @@ const RenderEmptyMessageCard = ({value}) => {
         }}
       />
 
-      {/* Icon container */}
-      <LinearGradient
-        colors={[gradient1, gradient2]}
+      {/* Icon container - using solid color instead of gradient */}
+      <View
         style={{
           width: 90,
           height: 90,
           borderRadius: 45,
+          backgroundColor: gradient1,
           justifyContent: 'center',
           alignItems: 'center',
           marginBottom: 20,
@@ -66,6 +77,7 @@ const RenderEmptyMessageCard = ({value}) => {
           shadowOpacity: 0.25,
           shadowRadius: 8,
           elevation: 6,
+          overflow: 'hidden',
         }}>
         <View
           style={{
@@ -88,7 +100,7 @@ const RenderEmptyMessageCard = ({value}) => {
             <CandlestickChartIcon size={28} color={mainColor} />
           </View>
         </View>
-      </LinearGradient>
+      </View>
 
       {/* Title */}
       <Text
@@ -143,7 +155,7 @@ const RenderEmptyMessageCard = ({value}) => {
           </Text>
         </TouchableOpacity>
       )}
-    </LinearGradient>
+    </GradientBackground>
   );
 };
 

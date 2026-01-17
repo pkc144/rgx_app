@@ -11,7 +11,6 @@ import {
   Pressable,
 } from 'react-native';
 import Modal from 'react-native-modal';
-import {Input} from 'react-native-elements';
 import {XIcon, EyeOffIcon, EyeIcon} from 'lucide-react-native';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';

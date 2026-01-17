@@ -12,12 +12,13 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import {ArrowLeft, Mail} from 'lucide-react-native';
 import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
-import LinearGradient from 'react-native-linear-gradient';
-import {Image} from 'react-native-elements';
+// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
+// import LinearGradient from 'react-native-linear-gradient';
 import {useConfig} from '../../context/ConfigContext';
 // --- ASSETS ---
 const AlphaQuarkLogo = require('../../assets/logo.png');
@@ -66,11 +67,9 @@ const ResetPasswordScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={dismissError}>
-        <LinearGradient
-          colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 1}}
-          style={styles.container}>
+        {/* View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background */}
+        <View
+          style={[styles.container, {backgroundColor: 'rgba(0, 38, 81, 1)', overflow: 'hidden'}]}>
           <StatusBar barStyle="light-content" />
 
           {/* Decorative background circles */}
@@ -158,7 +157,7 @@ const ResetPasswordScreen = () => {
               <Text style={styles.resetButtonText}>Send Link</Text>
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );

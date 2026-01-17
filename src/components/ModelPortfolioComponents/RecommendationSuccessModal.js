@@ -25,12 +25,12 @@ import {
 } from 'lucide-react-native';
 import { Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { ScreenWidth } from 'react-native-elements/dist/helpers';
 import moment from 'moment';
 const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');
 import { useModal } from '../ModalContext';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
+// Using solid background color with View instead
 import { useConfig } from '../../context/ConfigContext';
 
 const CheckedIcon = require('../../assets/checked.png');
@@ -228,12 +228,9 @@ const RecommendationSuccessModal = ({
       {/* ✅ FIXED: Proper SafeAreaView structure for iOS */}
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalContent}>
-          {/* Header Section */}
-          <LinearGradient
-            colors={[gradient1, gradient2]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={styles.headerGradient}>
+          {/* Header Section - View replaces LinearGradient for iOS Fabric compatibility */}
+          <View
+            style={[styles.headerGradient, { backgroundColor: gradient1, overflow: 'hidden' }]}>
             <View style={styles.headerRow}>
               <TouchableOpacity
                 style={styles.backButton}
@@ -251,7 +248,7 @@ const RecommendationSuccessModal = ({
             <View style={styles.subHeaderContainer}>
               <Text style={styles.subHeaderText}>All Trade Details</Text>
             </View>
-          </LinearGradient>
+          </View>
 
           {/* Content Section - Scrollable */}
           <View style={styles.contentContainer}>

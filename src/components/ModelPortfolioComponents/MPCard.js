@@ -282,18 +282,18 @@ const MPCard = ({
   };
 
 
+  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
     <View style={styles.container}>
       <View activeOpacity={0.9}>
-        <LinearGradient
-          colors={[gradient1, gradient2]}
-          start={{ x: 0, y: 1 }}
-          end={{ x: 1, y: 1 }}
+        <View
           style={[
             styles.cardContainer,
             {
               borderBottomLeftRadius: isExpanded ? 0 : 8,
-              borderBottomRightRadius: isExpanded ? 0 : 8
+              borderBottomRightRadius: isExpanded ? 0 : 8,
+              backgroundColor: gradient1,
+              overflow: 'hidden',
             }
           ]}
         >
@@ -318,14 +318,11 @@ const MPCard = ({
               )}
             </View>
             {discount > 0 && (
-              <LinearGradient
-                colors={['#58a100', '#1f7d00']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.saveTag}
+              <View
+                style={[styles.saveTag, {backgroundColor: '#58a100', overflow: 'hidden'}]}
               >
                 <Text style={styles.saveTagText}>Save {discount}%</Text>
-              </LinearGradient>
+              </View>
             )}
           </View>
 
@@ -467,7 +464,7 @@ const MPCard = ({
               </Text>
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
       </View>
 
       {/* Expanded Section */}

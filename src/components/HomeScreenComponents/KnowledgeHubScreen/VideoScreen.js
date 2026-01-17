@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { ArrowLeft, ChevronLeft } from "lucide-react-native";
 import KnowledgeHub from "../KnowledgeHub";
-import LinearGradient from "react-native-linear-gradient";
+// LinearGradient removed - not used in this file
 
 const VideosScreen = ({ navigation, route }) => {
   const { videos, title } = route.params || {};

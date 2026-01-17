@@ -42,16 +42,15 @@ const Alpha100 = require('../../assets/alpha-100.png');
 const speed = require('../../assets/speed.png');
 import {useNavigation} from '@react-navigation/native';
 const screenWidth = Dimensions.get('window').width;
+const ScreenHeight = Dimensions.get('window').height;
 import MPInvestNowModal from '../../components/ModelPortfolioComponents/MPInvestNowModal';
 import MPReviewTradeModal from '../../components/ModelPortfolioComponents/MPReviewTradeModal';
 import eventEmitter from '../../components/EventEmitter';
 import RecommendationSuccessModal from '../../components/ModelPortfolioComponents/RecommendationSuccessModal';
-import {color, ScreenHeight} from 'react-native-elements/dist/helpers';
-import {fonts} from 'react-native-elements/dist/config';
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import Animated from 'react-native-reanimated';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient import removed - replaced with View for iOS Fabric compatibility
 import CustomTabBarOrder from './CustomTabbarOrder';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
 import CustomTabBarMPPerformance from './CustomTabbarMPPerformance';
@@ -1002,12 +1001,10 @@ const BespokePerformanceScreen = ({route}) => {
           <View>
             <View>
               <View style={styles.container}>
+                {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
                 <TouchableOpacity activeOpacity={1}>
-                  <LinearGradient
-                    colors={['#002651', '#0076fb']}
-                    start={{x: 0, y: 1}}
-                    end={{x: 1, y: 1}}
-                    style={[styles.cardContainer]}>
+                  <View
+                    style={[styles.cardContainer, {backgroundColor: '#002651', overflow: 'hidden'}]}>
                     <View
                       style={{
                         flexDirection: 'row',
@@ -1062,16 +1059,14 @@ const BespokePerformanceScreen = ({route}) => {
                           </Text>
                         )}
                       </View>
+                      {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
                       {discount > 0 && (
-                        <LinearGradient
-                          colors={['#58a100', '#1f7d00']}
-                          start={{x: 0, y: 0}}
-                          end={{x: 1, y: 0}}
-                          style={styles.saveTag}>
+                        <View
+                          style={[styles.saveTag, {backgroundColor: '#58a100', overflow: 'hidden'}]}>
                           <Text style={styles.saveTagText}>
                             Save {discount}%
                           </Text>
-                        </LinearGradient>
+                        </View>
                       )}
                     </View>
 
@@ -1116,7 +1111,7 @@ const BespokePerformanceScreen = ({route}) => {
                     </View>
 
                     {/* Stats */}
-                  </LinearGradient>
+                  </View>
                 </TouchableOpacity>
 
                 {/* Expanded Section */}

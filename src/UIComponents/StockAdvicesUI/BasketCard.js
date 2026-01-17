@@ -10,7 +10,8 @@ import {
   XCircle,
 } from 'lucide-react-native';
 import React, { useState, useEffect } from 'react';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
+// Using solid background color with View instead
 import moment from 'moment';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import logo from '../../assets/fadedlogo.png';
@@ -391,19 +392,18 @@ const BasketCard = ({
     );
   };
 
-  // Determine gradient colors based on basket type
-  const getGradientColors = () => {
-    if (isExpired) return ['rgba(100, 100, 100, 1)', 'rgba(150, 150, 150, 1)']; // Gray for expired
-    if (isClosureBasket) return ['rgba(139, 0, 0, 1)', 'rgba(200, 50, 50, 1)']; // Red for closure
-    return ['rgba(15, 62, 0, 1)', 'rgba(41, 164, 0, 1)']; // Green for regular
+  // Determine background color based on basket type (first color from gradient)
+  // View replaces LinearGradient for iOS Fabric compatibility
+  const getBackgroundColor = () => {
+    if (isExpired) return 'rgba(100, 100, 100, 1)'; // Gray for expired
+    if (isClosureBasket) return 'rgba(139, 0, 0, 1)'; // Red for closure
+    return 'rgba(15, 62, 0, 1)'; // Green for regular
   };
 
   return (
-    <LinearGradient
-      colors={getGradientColors()}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.card}
+    // View with solid background replaces LinearGradient for iOS Fabric compatibility
+    <View
+      style={[styles.card, { backgroundColor: getBackgroundColor(), overflow: 'hidden' }]}
     >
       <View style={styles.contentContainer}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -537,7 +537,7 @@ const BasketCard = ({
           isLoading={isCheckingReconciliation}
         />
       </View>
-    </LinearGradient>
+    </View>
   );
 };
 

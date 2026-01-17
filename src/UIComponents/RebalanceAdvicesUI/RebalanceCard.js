@@ -336,18 +336,23 @@ const RebalanceCard = ({
     }
   };
 
+  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
+  const cardBackgroundColor = repair && userExecution?.status !== 'toExecute'
+    ? 'rgba(0, 38, 81, 1)'
+    : '#002651';
+
   return (
-    <View>
-      <View>
-        <LinearGradient
-          colors={
-            repair && userExecution?.status !== 'toExecute'
-              ? ['rgba(0, 38, 81, 1)', '#dc4108ff']
-              : ['#002651', '#0672edff']
-          }
-          start={{x: 0, y: 1}}
-          end={{x: 1, y: 1}}
-          style={[styles.cardContainer, {borderRadius: isExpanded ? 0 : 6}]}>
+    <View style={{overflow: 'hidden', borderRadius: isExpanded ? 0 : 6}}>
+      <View style={{overflow: 'hidden'}}>
+        <View
+          style={[
+            styles.cardContainer,
+            {
+              borderRadius: isExpanded ? 0 : 6,
+              backgroundColor: cardBackgroundColor,
+              overflow: 'hidden',
+            },
+          ]}>
           <View style={styles.cardContent}>
             <View style={styles.textContent}>
               <Text style={styles.titleText}>{modelName}</Text>
@@ -477,7 +482,7 @@ const RebalanceCard = ({
               )}
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
       </View>
 
       {/* Step 1: Rebalance Preference Modal */}

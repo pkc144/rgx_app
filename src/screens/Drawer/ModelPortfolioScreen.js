@@ -30,11 +30,10 @@ import RecommendationSuccessModal from '../../components/ModelPortfolioComponent
 import {useTrade} from '../TradeContext';
 import CustomTabBar from './CustomTabbar';
 import RenderHTML from 'react-native-render-html';
-import LinearGradient from 'react-native-linear-gradient';
-import {ScreenWidth} from 'react-native-elements/dist/helpers';
+// LinearGradient import removed - replaced with View for iOS Fabric compatibility
 import {useConfig} from '../../context/ConfigContext';
 
-const {width} = Dimensions.get('window');
+const {width, width: ScreenWidth} = Dimensions.get('window');
 
 const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const {userDetails, broker, getUserDeatils, configData} = useTrade();
@@ -693,16 +692,16 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
 
   return (
     <SafeAreaView style={{flex: 1, backgroundColor: '#FBFBFB'}}>
+      {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
       {!(type === 'tab') && (
-        <LinearGradient
-          colors={[gradient1, gradient2]}
-          start={{x: 0, y: 0}}
-          end={{x: 0, y: 1}}
+        <View
           style={{
             paddingHorizontal: 15,
             paddingVertical: 10,
             borderBottomLeftRadius: 15,
             borderBottomRightRadius: 15,
+            backgroundColor: gradient1,
+            overflow: 'hidden',
           }}>
           <View
             style={{flexDirection: 'row', alignItems: 'center', marginTop: 10}}>
@@ -732,7 +731,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
               You can subscribe to 1 or more Plans
             </Text>
           </View>
-        </LinearGradient>
+        </View>
       )}
 
       {routes.length === 0 ? (

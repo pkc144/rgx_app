@@ -7,14 +7,13 @@ import CryptoJS from 'react-native-crypto-js';
 import { getAuth } from '@react-native-firebase/auth';
 import axios from 'axios';
 
-import Toast from 'react-native-toast-message';
-
 import { generateToken } from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import UpstoxConnectUI from '../../UIComponents/BrokerConnectionUI/UpstoxConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -26,6 +25,7 @@ const UpstoxModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -137,7 +137,7 @@ const UpstoxModal = ({
       })
       .catch(error => {
         console.log(error);
-        showToast('Incorrect credential.Please try again', 'error', '');
+        showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
       });
   };
 
@@ -185,7 +185,7 @@ const UpstoxModal = ({
         })
         .catch(error => {
           console.log(error);
-          showToast('Incorrect credential.Please try again', 'error', '');
+          showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
         });
     }
   }, [isVisible]);
@@ -255,11 +255,11 @@ const UpstoxModal = ({
         .catch(error => {
           console.error(error);
           setIsLoading(false);
-          showToast('Error to connect.', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect to Upstox. Please try again.');
         });
       hasConnectedUpstox.current = true;
     } else if (hasConnectedUpstox.current) {
-      showToast('Already Connected.', 'error', '');
+      showAlert('info', 'Already Connected', 'Your broker is already connected.');
     }
   };
 
@@ -269,29 +269,6 @@ const UpstoxModal = ({
     }
   }, [upstoxCode, userDetails]);
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const isToastShown = useRef(false);
   const connectBrokerDbUpadte = () => {
@@ -304,6 +281,8 @@ const UpstoxModal = ({
         uid: userId,
         user_broker: 'Upstox',
         jwtToken: upstoxSessionToken,
+        apiKey: checkValidApiAnSecret(apiKey),
+        secretKey: checkValidApiAnSecret(secretKey),
       };
       let config = {
         method: 'put',
@@ -328,14 +307,14 @@ const UpstoxModal = ({
           setIsLoading(false);
           fetchBrokerStatusModal();
           eventEmitter.emit('refreshEvent', { source: 'Upstox broker connection' });
-          showToast('Your Broker Connected Successfully!.', 'success', '');
+          showAlert('success', 'Connected Successfully', 'Your Upstox broker has been connected successfully!');
           //  setShowupstoxModal(false);
           onClose();
           setShowBrokerModal(false);
         })
         .catch(error => {
           console.log(error);
-          showToast('Error to connect.', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect to Upstox. Please try again.');
         });
     }
   };
@@ -401,7 +380,7 @@ const UpstoxModal = ({
         })
         .catch(error => {
           console.log(error);
-          showToast('Incorrect credential.Please try again', 'error', '');
+          showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
         });
     }
   }, [isVisible, userDetails]);

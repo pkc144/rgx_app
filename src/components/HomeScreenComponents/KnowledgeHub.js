@@ -27,7 +27,7 @@ import { WebView } from "react-native-webview";
 import { useTrade } from "../../screens/TradeContext";
 import LinkOpeningWeb from "../../screens/Home/NewsScreen/LinkOpeningWeb";
 import FileViewer from 'react-native-file-viewer';
-import LinearGradient from "react-native-linear-gradient";
+import SVGGradient from '../SVGGradient';
 import { useConfig } from "../../context/ConfigContext";
 
 const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
@@ -70,6 +70,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
 
     const [modalVisible, setModalVisible] = useState(false);
     const [currentUrl, setCurrentUrl] = useState("");
+    const [currentHtml, setCurrentHtml] = useState(null); // For HTML content
     const [loading, setLoading] = useState(false);
     const [title, settitle] = useState("");
 
@@ -332,9 +333,11 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
 </body>
 </html>
       `;
-            const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`;
-            setCurrentUrl(dataUrl);
+            // Use HTML content directly instead of data URL for better iOS compatibility
+            setCurrentHtml(htmlContent);
+            setCurrentUrl("");
         } else if (item.link || item.videoUrl) {
+            setCurrentHtml(null);
             setCurrentUrl(item.link || item.videoUrl);
         } else {
             const noContentHtml = `
@@ -390,21 +393,28 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
 </body>
 </html>
       `;
-            setCurrentUrl(`data:text/html;charset=utf-8,${encodeURIComponent(noContentHtml)}`);
+            // Use HTML content directly instead of data URL for better iOS compatibility
+            setCurrentHtml(noContentHtml);
+            setCurrentUrl("");
         }
         settitle(item.title);
         setModalVisible(true);
     };
 
     const handleContentPress = (item, contentType) => {
-        if (contentType === "Videos") {
-            setSelectedVideoId(item?.video_id);
-            setVideoModalVisible(true);
-            setSelectedVideo(item);
-        } else if (contentType === "Blogs") {
-            openWebView(item);
-        } else if (contentType === "PDFs") {
-            handleViewPDF(item?._id);
+        try {
+            if (contentType === "Videos") {
+                setSelectedVideoId(item?.video_id);
+                setVideoModalVisible(true);
+                setSelectedVideo(item);
+            } else if (contentType === "Blogs") {
+                openWebView(item);
+            } else if (contentType === "PDFs") {
+                handleViewPDF(item?._id);
+            }
+        } catch (error) {
+            console.error("Error handling content press:", error);
+            showToast("Unable to open content", "error", "");
         }
     };
 
@@ -431,8 +441,10 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
         const { title, subtitle, emoji } = messages[type] || {};
 
         return (
-            <LinearGradient
+            <SVGGradient
                 colors={[gradient1, gradient2]}
+                start={{x: 0, y: 0}}
+                end={{x: 1, y: 1}}
                 style={{
                     flex: 1,
                     alignItems: "center",
@@ -470,9 +482,8 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                     }}
                 />
 
-                {/* Icon container */}
-                <LinearGradient
-                    colors={[gradient1, gradient2]}
+                {/* Icon container - View replaces LinearGradient for iOS Fabric compatibility */}
+                <View
                     style={{
                         width: 90,
                         height: 90,
@@ -485,6 +496,8 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                         shadowOpacity: 0.25,
                         shadowRadius: 8,
                         elevation: 6,
+                        backgroundColor: gradient1,
+                        overflow: 'hidden',
                     }}
                 >
                     <View
@@ -510,7 +523,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                             <Text style={{ fontSize: 28 }}>{emoji}</Text>
                         </View>
                     </View>
-                </LinearGradient>
+                </View>
 
                 {/* Title */}
                 <Text
@@ -539,7 +552,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                 >
                     {subtitle}
                 </Text>
-            </LinearGradient>
+            </SVGGradient>
         );
     };
 
@@ -652,7 +665,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
             : contentData[activeTab];
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, type !== "home" && { flex: 1 }]}>
             <View>
                 <View style={styles.headerouter}>
                     {type === "home" && (
@@ -707,11 +720,11 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
             </View>
 
             {!(type === "home") && (
-                <LinearGradient
+                <SVGGradient
                     colors={[gradient1, gradient2]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={{ paddingHorizontal: 15, paddingTop: 10, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 10, }}
+                    start={{x: 0, y: 0}}
+                    end={{x: 1, y: 1}}
+                    style={{ paddingHorizontal: 15, paddingTop: 10, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 10, overflow: 'hidden' }}
                 >
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, }}>
                         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -754,28 +767,27 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                             );
                         })}
                     </View>
-                </LinearGradient>
+                </SVGGradient>
             )}
 
 
 
 
-            <SafeAreaView style={{ flex: 0, paddingHorizontal: 20, }}>
+            <View style={{ flex: type === "home" ? 0 : 1, paddingHorizontal: 20, overflow: 'hidden' }}>
                 <ScrollView
                     contentContainerStyle={{
                         paddingBottom: type === "home" ? 0 : 200, // extra space only for View All
                     }}
-
                     showsVerticalScrollIndicator={false}
+                    bounces={false}
                 >
-{displayContent.length > 0 ? (
-  displayContent.map((item) => renderContentItem(item, activeTab))
-) : (
-  <EmptyState type={activeTab} />
-)}
-
+                    {displayContent.length > 0 ? (
+                        displayContent.map((item) => renderContentItem(item, activeTab))
+                    ) : (
+                        <EmptyState type={activeTab} />
+                    )}
                 </ScrollView>
-            </SafeAreaView>
+            </View>
 
 
             <LinkOpeningWeb
@@ -783,6 +795,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                 setWebview={setModalVisible}
                 webViewVisible={modalVisible}
                 currentUrl={currentUrl}
+                currentHtml={currentHtml}
             />
 
             {selectedVideo && (
@@ -810,7 +823,21 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                                     <XIcon size={20} color="#fff" />
                                 </TouchableOpacity>
                             </View>
-                            <YoutubePlayer height={250} play={true} videoId={selectedVideo.video_id} onChangeState={onStateChange} />
+                            <YoutubePlayer
+                                height={250}
+                                play={true}
+                                videoId={selectedVideo.video_id}
+                                onChangeState={onStateChange}
+                                webViewProps={{
+                                    allowsInlineMediaPlayback: true,
+                                    mediaPlaybackRequiresUserAction: false,
+                                    allowsFullscreenVideo: true,
+                                }}
+                                onError={(error) => {
+                                    console.error("YouTube Player error:", error);
+                                    showToast("Video playback error", "error", "");
+                                }}
+                            />
                         </View>
                     </View>
                 </Modal>
@@ -824,6 +851,7 @@ const styles = StyleSheet.create({
         backgroundColor: "transparent",
         paddingVertical: 0,
         paddingHorizontal: 0,
+        overflow: "hidden",
     },
     header: {
         flexDirection: "row",

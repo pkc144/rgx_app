@@ -12,7 +12,6 @@ import {
 import WebView from 'react-native-webview';
 
 import { getAuth } from '@react-native-firebase/auth';
-import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import axios from 'axios';
 import { FloatingLabelInput } from 'react-native-floating-label-input';
@@ -35,6 +34,7 @@ import ICICIConnectUI from '../../UIComponents/BrokerConnectionUI/ICICIConnectUI
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 
 const ICICIUPModal = ({
   isVisible,
@@ -44,6 +44,7 @@ const ICICIUPModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -148,7 +149,7 @@ const ICICIUPModal = ({
         })
         .catch(error => {
           console.error('Error connecting to ICICI:', error.response);
-          showToast('Failed to connect to ICICI Direct', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect to ICICI Direct. Please try again.');
         });
     }
   }, [apiSession, apiKey]);
@@ -160,6 +161,8 @@ const ICICIUPModal = ({
         uid: userDetails._id,
         user_broker: 'ICICI Direct',
         jwtToken: sessionToken,
+        apiKey: checkValidApiAnSecret(apiKey),
+        secretKey: checkValidApiAnSecret(secretKey),
       };
 
       axios
@@ -177,13 +180,13 @@ const ICICIUPModal = ({
           isToastShown.current = true;
           fetchBrokerStatusModal();
           eventEmitter.emit('refreshEvent', { source: 'ICICI Direct broker connection' });
-          showToast('Your Broker Connected Successfully!', 'success', '');
+          showAlert('success', 'Connected Successfully', 'Your ICICI Direct broker has been connected successfully!');
           onClose();
           //setShowBrokerModal(false);
         })
         .catch(error => {
           console.error('Error updating broker connection:', error);
-          showToast('Error connecting broker', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect broker. Please try again.');
         });
     }
   }, [sessionToken, userDetails, fetchBrokerStatusModal, setShowBrokerModal]);
@@ -207,13 +210,12 @@ const ICICIUPModal = ({
 
   const initiateAuth = () => {
     if (!userDetails?._id || !apiKey || !secretKey) {
-      showToast('Please fill in all required fields', 'error', '');
+      showAlert('error', 'Missing Fields', 'Please fill in all required fields.');
       return;
     }
 
     const data = {
       uid: userDetails._id,
-      user_broker: 'ICICI Direct',
       apiKey: checkValidApiAnSecret(apiKey),
       secretKey: checkValidApiAnSecret(secretKey),
     };
@@ -238,32 +240,10 @@ const ICICIUPModal = ({
       })
       .catch(error => {
         console.error('Error initiating auth:', error);
-        showToast('Authentication failed', 'error', '');
+        showAlert('error', 'Authentication Failed', 'Failed to authenticate. Please check your credentials.');
       });
   };
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000,
-      autoHide: true,
-      topOffset: 60,
-      bottomOffset: 80,
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium',
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular',
-      },
-    });
-  };
 
   const renderHeader = section => (
     <View
@@ -319,7 +299,6 @@ const ICICIUPModal = ({
       setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
       let data = JSON.stringify({
         uid: userDetails?._id,
-        user_broker: 'ICICI Direct',
         apiKey: userDetails?.apiKey,
         secretKey: userDetails?.secretKey,
       });

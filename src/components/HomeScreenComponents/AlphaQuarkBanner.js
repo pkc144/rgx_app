@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import {useTrade} from '../../screens/TradeContext';
 import ProfileModal from '../ProfileModal';
-import LinearGradient from 'react-native-linear-gradient';
+import SVGGradient from '../SVGGradient';
+import {useConfig} from '../../context/ConfigContext';
 import Config from 'react-native-config';
 
 const AlphaQuarkBanner = () => {
@@ -34,12 +35,17 @@ const AlphaQuarkBanner = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
+  // Get configurable gradient colors
+  const config = useConfig();
+  const gradient1 = config?.gradient1 || '#0076FB';
+  const gradient2 = config?.gradient2 || '#002651';
+
   return (
     <View style={styles.container}>
-      {/* Banner */}
+      {/* Banner with SVG gradient for iOS Fabric compatibility */}
       <View style={styles.bannerContainer}>
-        <LinearGradient
-          colors={['#1A358C', '#2D5CF2']}
+        <SVGGradient
+          colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
           style={styles.alphaQuarkBanner}>
@@ -64,7 +70,7 @@ const AlphaQuarkBanner = () => {
               <Text style={styles.profileButtonText}>Profile</Text>
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </SVGGradient>
       </View>
 
       {/* Profile Modal */}

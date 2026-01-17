@@ -89,7 +89,8 @@ import {
   updatePendingPayment,
 } from '../../FunctionCall/services/PendingPaymentManager';
 import {logPayment} from '../../utils/Logging';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
+// Using solid background color with View instead
 import {
   Digio,
   DigioConfig,
@@ -4370,6 +4371,13 @@ const MPInvestNowModal = ({
               </TouchableOpacity>
             </View>
 
+            {/* Apple App Store Compliance Disclaimer */}
+            <View style={styles.paymentDisclaimer}>
+              <Text style={styles.paymentDisclaimerText}>
+                Payments in this app are for financial research/advisory services provided by registered entities. All fees are collected on behalf of and remitted to licensed financial professionals for real-world investment services.
+              </Text>
+            </View>
+
             <TouchableOpacity
               onPress={handleDigioPayment}
               disabled={!selectedCard || loading || !consentChecked}
@@ -4403,11 +4411,9 @@ const MPInvestNowModal = ({
       <Modal visible={visible} animationType="slide" transparent={false}>
         <SafeAreaView style={styles.container}>
           <View style={styles.headerContainer}>
-            <LinearGradient
-              colors={[gradient1, gradient2]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.alphaQuarkBanner}>
+            {/* View with solid background replaces LinearGradient for iOS Fabric compatibility */}
+            <View
+              style={[styles.alphaQuarkBanner, { backgroundColor: gradient1, overflow: 'hidden' }]}>
               <View style={styles.headerPattern} />
               <View style={styles.headerContent}>
                 <View style={styles.headerTitleContainer}>
@@ -4424,7 +4430,7 @@ const MPInvestNowModal = ({
                   <XIcon size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
-            </LinearGradient>
+            </View>
           </View>
 
           {/* Progress Bar */}
@@ -4947,6 +4953,21 @@ const styles = StyleSheet.create({
   linkText: {
     fontFamily: 'Satoshi-Bold',
     textDecorationLine: 'underline',
+  },
+  paymentDisclaimer: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#0284c7',
+  },
+  paymentDisclaimerText: {
+    fontSize: 11,
+    fontFamily: 'Satoshi-Regular',
+    color: '#475569',
+    lineHeight: 16,
   },
 
   paymentHeader: {

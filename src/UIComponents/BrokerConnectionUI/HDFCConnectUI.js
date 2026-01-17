@@ -10,6 +10,8 @@ import {
   StyleSheet,
   Image,
   BackHandler,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   EyeIcon,
@@ -20,11 +22,10 @@ import {
 } from 'lucide-react-native';
 import {WebView} from 'react-native-webview';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
-import LinearGradient from 'react-native-linear-gradient';
 import hdfcIcon from '../../assets/hdfc_securities.png';
 import HDFCHelpContent from './HelpUI/HDFCHelpContent';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FullWindowOverlay } from 'react-native-screens';
+import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
@@ -39,6 +40,7 @@ const HDFCConnectUI = ({
   showWebView,
   authUrl,
   helpVisible,
+  setHelpVisible,
   loading,
   setApiKey,
   setSecretKey,
@@ -63,17 +65,12 @@ const HDFCConnectUI = ({
     return () => backHandler.remove();
   }, [isVisible, onClose]);
 
-  if (!isVisible) return null;
-
   return (
-    <FullWindowOverlay>
+    <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
-        {/* Header */}
-        <LinearGradient
-          colors={['#0B3D91', '#0056B7']}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 1}}
-          style={styles.headerRow}>
+        {/* Header - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
+        <View
+          style={[styles.headerRow, {backgroundColor: '#0B3D91', overflow: 'hidden'}]}>
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
               <ChevronLeft size={24} color="#000" />
@@ -81,7 +78,7 @@ const HDFCConnectUI = ({
             <Text style={styles.headerTitle}>Connect to HDFC</Text>
           </View>
           <Image source={hdfcIcon} style={styles.headerIcon} />
-        </LinearGradient>
+        </View>
 
         {/* WebView Full Screen */}
         {showWebView ? (
@@ -108,43 +105,55 @@ const HDFCConnectUI = ({
               onNavigationStateChange={handleWebViewNavigationStateChange}
             />
           </View>
-        ) : (
-          <View style={{flex: 1}}>
-            {/* Scrollable Guide */}
+        ) : expanded ? (
+          /* Full Screen Help when expanded */
+          <View style={styles.fullScreenHelp}>
             <ScrollView
-              contentContainerStyle={{
-                paddingHorizontal: 10,
-                paddingVertical: 10,
-              }}
-              showsVerticalScrollIndicator={false}>
-              <View
-                style={[styles.guideBox, {maxHeight: expanded ? 420 : 320}]}>
-                <HDFCHelpContent
-                  expanded={expanded}
-                  onExpandChange={setExpanded}
-                />
+              ref={scrollViewRef}
+              style={{flex: 1}}
+              contentContainerStyle={{padding: 10, paddingBottom: 20}}
+              showsVerticalScrollIndicator={true}>
+              <HDFCHelpContent expanded={expanded} onExpandChange={setExpanded} />
+              <View style={[styles.toggleWrapper, {marginTop: 15, paddingBottom: insets.bottom + 10}]}>
+                <TouchableOpacity
+                  style={styles.toggleContainer}
+                  onPress={() => setExpanded(false)}>
+                  <Text style={styles.toggleText}>See Less</Text>
+                  <View style={styles.toggleIconContainer}>
+                    <ChevronUp size={14} color="#000" />
+                  </View>
+                </TouchableOpacity>
               </View>
             </ScrollView>
-
-            {/* Read More / See Less Button */}
-            <TouchableOpacity
-              onPress={() => setExpanded(!expanded)}
-              style={styles.toggleContainer}>
-              <Text style={styles.toggleText}>
-                {expanded ? 'See Less' : 'Read More'}
-              </Text>
-              <View style={styles.toggleIconContainer}>
-                {expanded ? (
-                  <ChevronUp size={14} color="#000" />
-                ) : (
-                  <ChevronDown size={14} color="#000" />
-                )}
+          </View>
+        ) : (
+          <KeyboardAvoidingView
+            style={{flex: 1}}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+            <ScrollView
+              ref={scrollViewRef}
+              style={{flex: 1}}
+              contentContainerStyle={{padding: 10, paddingBottom: insets.bottom + 100}}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled">
+              {/* Help Content */}
+              <View style={[styles.guideBox, {maxHeight: 280}]}>
+                <HDFCHelpContent expanded={expanded} onExpandChange={setExpanded} />
               </View>
-            </TouchableOpacity>
 
-            {/* Fixed Bottom Input & Button */}
-            <View style={styles.bottomContainer}>
-              <View style={styles.connectCard}>
+              {/* Read More Button */}
+              <TouchableOpacity
+                onPress={() => setExpanded(true)}
+                style={styles.toggleContainer}>
+                <Text style={styles.toggleText}>Read More</Text>
+                <View style={styles.toggleIconContainer}>
+                  <ChevronDown size={14} color="#000" />
+                </View>
+              </TouchableOpacity>
+
+              {/* Input Card */}
+              <View style={styles.inputCard}>
                 <View style={styles.connectRow}>
                   <Text style={styles.connectLabel}>Connect to HDFC</Text>
                   <Image
@@ -154,82 +163,60 @@ const HDFCConnectUI = ({
                   />
                 </View>
 
-                {/* API Key */}
-                <View style={{paddingHorizontal: 10}}>
-                  <View style={styles.inputWrapper}>
-                    <Text style={styles.headerLabel}>API Key:</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        value={apiKey}
-                        placeholder="Enter your API key"
-                        placeholderTextColor="grey"
-                        style={[styles.inputStyles, {flex: 1}]}
-                        secureTextEntry={!isPasswordVisibleup}
-                        onChangeText={text => setApiKey(text.trim())}
-                      />
-                      <TouchableOpacity
-                        onPress={() =>
-                          setIsPasswordVisibleup(!isPasswordVisibleup)
-                        }>
-                        {apiKey ? (
-                          isPasswordVisibleup ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </TouchableOpacity>
+                  {/* API Key */}
+                  <View style={{paddingHorizontal: 10}}>
+                    <View style={styles.inputWrapper}>
+                      <Text style={styles.headerLabel}>API Key:</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          value={apiKey}
+                          placeholder="Enter your API key"
+                          placeholderTextColor="grey"
+                          style={[styles.inputStyles, {flex: 1}]}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          onChangeText={text => setApiKey(text.trim())}
+                        />
+                      </View>
                     </View>
-                  </View>
 
-                  {/* Secret Key */}
-                  <View style={styles.inputWrapper}>
-                    <Text style={styles.headerLabel}>Secret Key:</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        value={secretKey}
-                        placeholder="Enter your Secret key"
-                        placeholderTextColor="grey"
-                        style={[styles.inputStyles, {flex: 1}]}
-                        secureTextEntry={!isPasswordVisible}
-                        onChangeText={text => setSecretKey(text.trim())}
-                      />
-                      <TouchableOpacity
-                        onPress={() =>
-                          setIsPasswordVisible(!isPasswordVisible)
-                        }>
-                        {secretKey ? (
-                          isPasswordVisible ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </TouchableOpacity>
+                    {/* Secret Key */}
+                    <View style={styles.inputWrapper}>
+                      <Text style={styles.headerLabel}>Secret Key:</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          value={secretKey}
+                          placeholder="Enter your Secret key"
+                          placeholderTextColor="grey"
+                          style={[styles.inputStyles, {flex: 1}]}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          onChangeText={text => setSecretKey(text.trim())}
+                        />
+                      </View>
                     </View>
-                  </View>
 
-                  {/* Connect Button */}
-                  <TouchableOpacity
-                    style={[
-                      styles.proceedButton,
-                      {
-                        backgroundColor:
-                          apiKey && secretKey ? '#0056B7' : '#d3d3d3',
-                      },
-                    ]}
-                    onPress={initiateAuth}
-                    disabled={!(apiKey && secretKey)}>
-                    {loading ? (
-                      <ActivityIndicator size={27} color="#fff" />
-                    ) : (
-                      <Text style={styles.proceedButtonText}>Connect HDFC</Text>
-                    )}
-                  </TouchableOpacity>
+                    {/* Connect Button */}
+                    <TouchableOpacity
+                      style={[
+                        styles.proceedButton,
+                        {
+                          backgroundColor:
+                            apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                        },
+                      ]}
+                      onPress={initiateAuth}
+                      disabled={!(apiKey && secretKey)}>
+                      {loading ? (
+                        <ActivityIndicator size={27} color="#fff" />
+                      ) : (
+                        <Text style={styles.proceedButtonText}>Connect HDFC</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            </View>
-          </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         )}
 
         <HelpModal
@@ -238,15 +225,16 @@ const HDFCConnectUI = ({
           onClose={() => setHelpVisible(false)}
         />
       </View>
-    </FullWindowOverlay>
+    </CrossPlatformOverlay>
   );
 };
 
 const styles = StyleSheet.create({
   fullScreen: {
+    flex: 1,
     width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
+    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',
@@ -274,6 +262,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
   },
+  fullScreenHelp: {flex: 1, backgroundColor: '#fff'},
+  toggleWrapper: {
+    borderTopWidth: 1,
+    borderTopColor: '#E8E9EC',
+    backgroundColor: '#fff',
+    paddingVertical: 5,
+  },
   toggleContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
@@ -297,6 +292,15 @@ const styles = StyleSheet.create({
     padding: 10,
     borderTopWidth: 1,
     borderTopColor: '#E8E9EC',
+    backgroundColor: '#fff',
+  },
+  inputCard: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: '#E8E9EC',
+    borderRadius: 12,
     backgroundColor: '#fff',
   },
   connectCard: {

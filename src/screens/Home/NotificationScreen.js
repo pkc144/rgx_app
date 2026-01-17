@@ -4,12 +4,14 @@ import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { CandlestickChartIcon,X,Check,Bike } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/Feather';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
+// import LinearGradient from 'react-native-linear-gradient';
 
 const NotificationScreen = () => {
   const circumference = 2 * Math.PI * 35;
   return (
-    <LinearGradient colors={['#062a56', '#002a5c', '#ffffff']} style={styles.linearGradient}>
+    // View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background
+    <View style={[styles.linearGradient, {backgroundColor: '#062a56', overflow: 'hidden'}]}>
       <View style={styles.MainContainer}>
       <View style={styles.topIconContainer}>
           <View >
@@ -54,10 +56,9 @@ const NotificationScreen = () => {
       </View>
       </View>
       </View>
-      
 
-    
-      </LinearGradient>
+
+      </View>
   );
 };
 

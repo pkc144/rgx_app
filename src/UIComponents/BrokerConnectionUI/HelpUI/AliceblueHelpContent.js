@@ -21,7 +21,7 @@ const AliceblueHelpContent = ({expanded, onExpandChange }) => {
           videoId="m906oWzMe0o"
         />
       </View>
-      <Text style={styles.title}>Steps to Obtain API and Secret key for ICICI:</Text>
+      <Text style={styles.title}>Steps to Obtain User ID and API Key for AliceBlue:</Text>
 <View style={styles.content}>
              <Text
                           style={styles.instruction}

@@ -2,7 +2,6 @@ import React, { useRef, useState, useEffect } from 'react';
 
 import { View, StyleSheet, Dimensions } from 'react-native';
 import { getAuth } from '@react-native-firebase/auth';
-import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import axios from 'axios';
 const { height: screenHeight } = Dimensions.get('window');
@@ -12,6 +11,8 @@ import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import GrowwConnectUI from '../../UIComponents/BrokerConnectionUI/GrowwConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
+
 const GrowwConnectModal = ({
   isVisible,
   setShowangleoneModal,
@@ -20,6 +21,7 @@ const GrowwConnectModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const sheet = useRef(null);
   const scrollViewRef = useRef(null); // ScrollView ref for nested scrolling
   const [authUrl, setauthurl] = useState('https://prod.alphaquark.in/');
@@ -29,29 +31,6 @@ const GrowwConnectModal = ({
   const userEmail = user?.email;
   const finalUrl =
     'intent://groww.in/oauth/authorize?response_type=code&client_id=4d3e71cd681041ba84e8cb521644aa62&redirect_uri=https%3A%2F%2Fccxtprod.alphaquark.in%2Fgroww%2Foauth%2Fcallback&scope=openid+profile+holdings%3Aread&state=cHJvZC5hbHBoYXF1YXJrLmluL3N0b2NrLXJlY29tbWVuZGF0aW9ufG1QVkdvRk56eFNZXzMzaE1STlk4Uk1QdndfSEZLZjhfOTFBVnBEOE5jX00%3D&code_challenge=LZlRCVivV96ttQM90rDkbN0ORQp7E80G0cP9QtgIwzs&code_challenge_method=S256&handledOnceGrowwParam=true#Intent;scheme=https;package=com.nextbillion.groww;end';
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
   const webViewRef = useRef(null);
 
   const [userDetails, setUserDetails] = useState();
@@ -119,7 +98,7 @@ const GrowwConnectModal = ({
     if (growwBroker === 'Groww' && growwStatus === '0' && growwToken) {
       setAuthToken(growwToken);
       console.log('Growww Url Fix---', growwToken);
-      showToast('Groww connected successfully!', 'success', '');
+      showAlert('success', 'Connected Successfully', 'Your Groww broker has been connected successfully!');
       sheet.current?.dismiss(); // Close sheet
     }
   };
@@ -158,13 +137,13 @@ const GrowwConnectModal = ({
             console.log('success brooooohh');
             fetchBrokerStatusModal();
             eventEmitter.emit('refreshEvent', { source: 'Groww broker connection' });
-            showToast('Your Broker Connected Successfully!.', 'success', '');
+            showAlert('success', 'Connected Successfully', 'Your Groww broker has been connected successfully!');
             setShowBrokerModal(false);
             onClose();
           })
           .catch(error => {
             console.log(error);
-            showToast('Error to connect.', 'error', '');
+            showAlert('error', 'Connection Error', 'Failed to connect to Groww. Please try again.');
           });
       }
     }

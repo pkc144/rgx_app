@@ -1,7 +1,6 @@
 import React, {useRef, useState, useEffect} from 'react';
 import {StyleSheet, Dimensions} from 'react-native';
 import {getAuth} from '@react-native-firebase/auth';
-import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import axios from 'axios';
 const {height: screenHeight} = Dimensions.get('window');
@@ -11,6 +10,8 @@ import AngleOneConnectUI from '../../UIComponents/BrokerConnectionUI/AngelOneCon
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
+
 const AngleOneBookingTrueSheet = ({
   isVisible,
   // setShowangleoneModal,
@@ -19,6 +20,7 @@ const AngleOneBookingTrueSheet = ({
   fetchBrokerStatusModal,
 }) => {
   const {configData} = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
 
   const sheet = useRef(null);
   const scrollViewRef = useRef(null); // ScrollView ref for nested scrolling
@@ -29,29 +31,6 @@ const AngleOneBookingTrueSheet = ({
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const [userDetails, setUserDetails] = useState();
   const getUserDeatils = () => {
@@ -141,14 +120,14 @@ const AngleOneBookingTrueSheet = ({
             fetchBrokerStatusModal();
             // Emit refresh event to update portfolio data in listening components
             eventEmitter.emit('refreshEvent', { source: 'AngleOne broker connection' });
-            showToast('Your Broker Connected Successfully!.', 'success', '');
+            showAlert('success', 'Connected Successfully', 'Your Angel One broker has been connected successfully!');
             // setShowangleoneModal(false);
             onClose();
             setShowBrokerModal(false);
           })
           .catch(error => {
             console.log(error);
-            showToast('Error to connect.', 'error', '');
+            showAlert('error', 'Connection Error', 'Failed to connect to Angel One. Please try again.');
           });
       }
     }

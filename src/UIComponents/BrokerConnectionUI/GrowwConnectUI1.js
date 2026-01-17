@@ -1,11 +1,10 @@
 // components/GrowwConnectUI.js
-import React, { useState, useRef } from 'react';
+import React, {useState, useRef} from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   StyleSheet,
   Dimensions,
   TextInput,
@@ -13,15 +12,22 @@ import {
   Image,
   Platform,
   KeyboardAvoidingView,
+  BackHandler,
 } from 'react-native';
-import Modal from 'react-native-modal';
-import { EyeIcon, EyeOffIcon, XIcon, ChevronUp, ChevronDown, ChevronLeft } from 'lucide-react-native';
+import {
+  EyeIcon,
+  EyeOffIcon,
+  ChevronUp,
+  ChevronDown,
+  ChevronLeft,
+} from 'lucide-react-native';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
-import LinearGradient from 'react-native-linear-gradient';
-import growwIcon from '../../assets/GrowwIcon.png'; // Use correct path
-import GrowwHelpContent from './HelpUI/GrowwHelpContent'; // Create or adjust this component
+import growwIcon from '../../assets/GrowwIcon.png';
+import GrowwHelpContent from './HelpUI/GrowwHelpContent';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
-const { height: screenHeight } = Dimensions.get('window');
+const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
 
 const GrowwConnectUI = ({
@@ -42,148 +48,240 @@ const GrowwConnectUI = ({
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  // Handle Android back button
+  React.useEffect(() => {
+    if (!isVisible) return;
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [isVisible, onClose]);
 
   return (
-    <Modal
-      isVisible={isVisible}
-      onBackdropPress={onClose}
-      style={styles.modal}
-      backdropOpacity={0.1}
-      useNativeDriver
-    >
-      <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <LinearGradient
-          colors={['#0B3D91', '#0056B7']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerRow}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <TouchableOpacity onPress={onClose} style={styles.backButton}>
-              <ChevronLeft size={24} color="#000" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Connect to Groww</Text>
+    <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
+      <View style={styles.fullScreen}>
+        <View style={{flex: 1, paddingTop: insets.top}}>
+          {/* Header - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
+          <View
+            style={[styles.headerRow, {backgroundColor: '#0B3D91', overflow: 'hidden'}]}>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <TouchableOpacity onPress={onClose} style={styles.backButton}>
+                <ChevronLeft size={24} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Connect to Groww</Text>
+            </View>
+            <Image source={growwIcon} style={styles.headerIcon} />
           </View>
-          <Image source={growwIcon} style={styles.headerIcon} />
-        </LinearGradient>
 
-        {/* Scrollable Help Content */}
-        <ScrollView
-          ref={scrollViewRef}
-          contentContainerStyle={{ padding: 10 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={[styles.guideBox, { maxHeight: expanded ? 1000 : 600 }]}>
-            <GrowwHelpContent expanded={expanded} />
-          </View>
-        </ScrollView>
+          {/* Scrollable Content */}
+          {expanded ? (
+            /* Full Screen Help when expanded */
+            <View style={styles.fullScreenHelp}>
+              <ScrollView
+                ref={scrollViewRef}
+                style={{flex: 1}}
+                contentContainerStyle={{padding: 10, paddingBottom: 20}}
+                showsVerticalScrollIndicator={true}>
+                <GrowwHelpContent expanded={expanded} />
+                <View style={[styles.toggleWrapper, {marginTop: 15, paddingBottom: insets.bottom + 10}]}>
+                  <TouchableOpacity
+                    style={styles.toggleContainer}
+                    onPress={() => setExpanded(false)}>
+                    <Text style={styles.toggleText}>See Less</Text>
+                    <View style={styles.toggleIconContainer}>
+                      <ChevronUp size={14} color="#000" />
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          ) : (
+            <KeyboardAvoidingView
+              style={{flex: 1}}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+              <ScrollView
+                ref={scrollViewRef}
+                style={{flex: 1}}
+                contentContainerStyle={{padding: 10, paddingBottom: insets.bottom + 100}}
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled">
+                {/* Help Content */}
+                <View style={[styles.guideBox, {maxHeight: 280}]}>
+                  <GrowwHelpContent expanded={expanded} />
+                </View>
 
-        {/* Read More / See Less outside scroll */}
-        <TouchableOpacity style={styles.toggleContainer} onPress={() => setExpanded(!expanded)}>
-          <Text style={styles.toggleText}>{expanded ? 'See Less' : 'Read More'}</Text>
-          <View style={styles.toggleIconContainer}>
-            {expanded ? <ChevronUp size={14} color="#000" /> : <ChevronDown size={14} color="#000" />}
-          </View>
-        </TouchableOpacity>
+                {/* Read More */}
+                <TouchableOpacity
+                  style={styles.toggleContainer}
+                  onPress={() => setExpanded(true)}>
+                  <Text style={styles.toggleText}>Read More</Text>
+                  <View style={styles.toggleIconContainer}>
+                    <ChevronDown size={14} color="#000" />
+                  </View>
+                </TouchableOpacity>
 
-        <View style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#F5F5F5',
-          padding: 10,
-          borderRadius: 3,
-          marginBottom: 10,
-          marginHorizontal: 10,
-        }}>
-          <Text style={styles.connectLabel}>Connect to Groww</Text>
-          <Image
-            source={growwIcon}
-            style={{ width: 30, height: 30, backgroundColor: '#fff', borderRadius: 3 }}
-            resizeMode="contain"
+                {/* Input Card */}
+                <View style={styles.inputCard}>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.connectLabel}>Connect to Groww</Text>
+                    <Image
+                      source={growwIcon}
+                      style={styles.cardIcon}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  {/* Input Fields */}
+                  <View style={styles.inputSection}>
+                    {/* Client ID */}
+                    <View style={styles.inputWrapper}>
+                      <Text style={styles.headerLabel}>Client ID:</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          value={cliendId}
+                          placeholder="Enter your Client ID"
+                          placeholderTextColor="grey"
+                          style={[styles.inputStyles, {flex: 1}]}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          onChangeText={setCliendId}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Access Token */}
+                    <View style={styles.inputWrapper}>
+                      <Text style={styles.headerLabel}>Access Token:</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          value={accessToken}
+                          placeholder="Enter your Access Token"
+                          placeholderTextColor="grey"
+                          style={[styles.inputStyles, {flex: 1}]}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          onChangeText={setaccessToken}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Connect Button */}
+                    <TouchableOpacity
+                      style={[
+                        styles.proceedButton,
+                        {backgroundColor: cliendId && accessToken ? '#1cb152' : '#d3d3d3'},
+                      ]}
+                      onPress={handleSubmit}
+                      disabled={!(cliendId && accessToken)}>
+                      {loading ? (
+                        <ActivityIndicator size={27} color="#fff" />
+                      ) : (
+                        <Text style={styles.proceedButtonText}>Connect</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          )}
+
+          <HelpModal
+            broker="Groww"
+            visible={helpVisible}
+            onClose={() => setHelpVisible(false)}
           />
         </View>
-
-        {/* Fixed Bottom Inputs & Button */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-        >
-          <View style={styles.bottomContainer}>
-            {/* Client ID */}
-            <View style={styles.inputWrapper}>
-              <Text style={styles.headerLabel}>Client ID:</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  value={cliendId}
-                  placeholder="Enter your Client ID"
-                  placeholderTextColor="grey"
-                  style={[styles.inputStyles, { flex: 1 }]}
-                  secureTextEntry={!isPasswordVisibleup}
-                  onChangeText={setCliendId}
-                />
-                <TouchableOpacity onPress={() => setIsPasswordVisibleup(!isPasswordVisibleup)}>
-                  {cliendId ? (
-                    isPasswordVisibleup ? <EyeIcon size={24} color="#000" /> : <EyeOffIcon size={24} color="#000" />
-                  ) : null}
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Access Token */}
-            <View style={styles.inputWrapper}>
-              <Text style={styles.headerLabel}>Access Token:</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  value={accessToken}
-                  placeholder="Enter your Access Token"
-                  placeholderTextColor="grey"
-                  style={[styles.inputStyles, { flex: 1 }]}
-                  secureTextEntry={!isPasswordVisible}
-                  onChangeText={setaccessToken}
-                />
-                <TouchableOpacity onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                  {accessToken ? (
-                    isPasswordVisible ? <EyeIcon size={24} color="#000" /> : <EyeOffIcon size={24} color="#000" />
-                  ) : null}
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Connect Button */}
-            <TouchableOpacity
-              style={[styles.proceedButton, { backgroundColor: cliendId && accessToken ? '#1cb152' : '#d3d3d3' }]}
-              onPress={handleSubmit}
-              disabled={!(cliendId && accessToken)}
-            >
-              {loading ? <ActivityIndicator size={27} color="#fff" /> : <Text style={styles.proceedButtonText}>Connect</Text>}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-
-        <HelpModal broker="Groww" visible={helpVisible} onClose={() => setHelpVisible(false)} />
-      </SafeAreaView>
-    </Modal>
+      </View>
+    </CrossPlatformOverlay>
   );
 };
 
 const styles = StyleSheet.create({
-  modal: { justifyContent: 'flex-end', margin: 0 },
-  headerIcon: { width: 35, height: 35, borderRadius: 3, backgroundColor: '#fff' },
-  safeArea: { flex: 1, backgroundColor: '#fff' },
-  backButton: { padding: 4, borderRadius: 5, backgroundColor: '#fff', elevation: 4 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15 },
-  headerTitle: { fontSize: 18, fontFamily: 'Poppins-SemiBold', color: '#fff', marginLeft: 10 },
-  closeButton: { padding: 4, borderRadius: 5, backgroundColor: '#000' },
-  guideBox: { borderWidth: 1, borderColor: '#E8E9EC', borderRadius: 8, padding: 10 },
-  toggleContainer: { flexDirection: 'row', alignItems: 'center', padding: 10 },
-  toggleText: { fontSize: 14, fontFamily:"Poppins-SemiBold", color: "#0056B7" ,marginLeft:15 },
-  toggleIconContainer: { marginLeft: 5, backgroundColor: '#fff', borderRadius: 20, padding: 3, elevation: 3 },
-  bottomContainer: { padding: 15, borderTopWidth: 1, borderTopColor: '#E8E9EC', backgroundColor: '#fff' },
-  inputWrapper: { marginBottom: 10 },
-  headerLabel: { fontSize: 14, fontFamily: 'Poppins-Medium', color: '#000', marginBottom: 5 },
+  fullScreen: {
+    flex: 1,
+    width: SCREEN_WIDTH,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  headerIcon: {width: 35, height: 35, borderRadius: 3, backgroundColor: '#fff'},
+  backButton: {padding: 4, borderRadius: 5, backgroundColor: '#fff', elevation: 4},
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#fff',
+    marginLeft: 10,
+  },
+  guideBox: {borderWidth: 1, borderColor: '#E8E9EC', borderRadius: 8, padding: 10},
+  fullScreenHelp: {flex: 1, backgroundColor: '#fff'},
+  toggleWrapper: {
+    borderTopWidth: 1,
+    borderTopColor: '#E8E9EC',
+    backgroundColor: '#fff',
+    paddingVertical: 5,
+  },
+  toggleContainer: {flexDirection: 'row', alignItems: 'center', padding: 10},
+  toggleText: {
+    fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#0056B7',
+    marginLeft: 15,
+  },
+  toggleIconContainer: {
+    marginLeft: 5,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 3,
+    elevation: 3,
+  },
+  bottomContainer: {
+    padding: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#E8E9EC',
+    backgroundColor: '#fff',
+  },
+  inputCard: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#E8E9EC',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+  },
+  cardIcon: {
+    width: 30,
+    height: 30,
+    backgroundColor: '#fff',
+    borderRadius: 3,
+  },
+  inputSection: {
+    padding: 15,
+  },
+  inputWrapper: {marginBottom: 10},
+  headerLabel: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Medium',
+    color: '#000',
+    marginBottom: 5,
+  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -198,10 +296,20 @@ const styles = StyleSheet.create({
     color: '#000',
     fontFamily: 'Poppins-SemiBold',
   },
-  inputStyles: { fontSize: 14, fontFamily: 'Poppins-Regular', color: '#000', paddingVertical: 5 },
-  helpText: { color: '#1890FF', fontFamily: 'Poppins-SemiBold', paddingHorizontal: 5 },
-  proceedButton: { height: commonHeight, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
-  proceedButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  inputStyles: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+    color: '#000',
+    paddingVertical: 5,
+  },
+  proceedButton: {
+    height: commonHeight,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  proceedButtonText: {color: '#fff', fontSize: 16, fontWeight: '600'},
 });
 
 export default GrowwConnectUI;

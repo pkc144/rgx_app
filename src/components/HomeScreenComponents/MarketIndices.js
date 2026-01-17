@@ -280,12 +280,13 @@ const MarketIndices = () => {
   };
 
   return (
-    <View>
+    <View style={{overflow: 'hidden'}}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
+        bounces={false}
       >
         {displayIndices.map((index) => {
           const showChange = comparisonType === "prevClose" && basePrices[index.key] != null && !index.loading;

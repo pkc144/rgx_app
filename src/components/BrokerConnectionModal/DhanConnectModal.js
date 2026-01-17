@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, Dimensions } from 'react-native';
 import server from '../../utils/serverConfig';
 import { getAuth } from '@react-native-firebase/auth';
-import Toast from 'react-native-toast-message';
 import axios from 'axios';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
@@ -10,6 +9,7 @@ import DhanConnectUI from '../../UIComponents/BrokerConnectionUI/DhanConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06;
 const commonWidth = '100%';
@@ -21,6 +21,7 @@ const DhanConnectModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [cliendId, setCliendId] = useState('');
   const [accessToken, setaccessToken] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -71,29 +72,6 @@ const DhanConnectModal = ({
     }
   }, [isVisible]);
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 12,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const [isLoading, setIsLoading] = useState(false);
 
@@ -126,7 +104,7 @@ const DhanConnectModal = ({
       .then(response => {
         setLoading(false);
         console.log('connected');
-        showToast('Broker Connected Successfully', 'success', '');
+        showAlert('success', 'Connected Successfully', 'Your Dhan broker has been connected successfully!');
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'Dhan broker connection' });
         // setShowDhanModal(false);
@@ -139,15 +117,7 @@ const DhanConnectModal = ({
         console.log(error.response, error.response.message, error.message);
         setLoading(false);
         getUserDeatils();
-        Toast.show({
-          type: 'error',
-          text1: 'Incorrect credentials',
-          text2: 'Please try again.',
-          position: 'top',
-          visibilityTime: 5000,
-          autoHide: true,
-          topOffset: 30,
-        });
+        showAlert('error', 'Incorrect Credentials', 'Please check your Client ID and Access Token and try again.');
       });
   };
 

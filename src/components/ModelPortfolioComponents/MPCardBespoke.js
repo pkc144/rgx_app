@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Animated,
   Easing,
+  Dimensions,
 } from 'react-native';
 import {
   XIcon,
@@ -27,7 +28,7 @@ import LinePattern from '../../assets/Vector.svg';
 import Icon from 'react-native-vector-icons/AntDesign';
 const Alpha100 = require('../../assets/alpha-100.png');
 import Icon1 from 'react-native-vector-icons/Feather';
-import { ScreenWidth } from 'react-native-elements/dist/helpers';
+const { width: ScreenWidth } = Dimensions.get('window');
 import moment from 'moment';
 import { useConfig } from '../../context/ConfigContext';
 
@@ -276,13 +277,11 @@ const MPCardBespoke = ({
       setSelectedPricing(pricingOptions[0].period);
     }
   }, [pricingOptions]);
+  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
     <View>
-      <LinearGradient
-        colors={['#fff', '#fff', '#fff']}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-        style={[styles.cardContainer, { borderRadius: isExpanded ? 0.5 : 4,flex:1, }]}>
+      <View
+        style={[styles.cardContainer, { borderRadius: isExpanded ? 0.5 : 4, flex:1, backgroundColor: '#fff', overflow: 'hidden' }]}>
         <View
           style={{
             position: 'absolute',
@@ -296,17 +295,14 @@ const MPCardBespoke = ({
           <LinePattern />
         </View>
  {discount > 0 && (
-    <LinearGradient
-      colors={['#58a100', '#1f7d00']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
+    <View
       style={{
         position: 'absolute',
         top: 8,
         left: 0,
         paddingVertical: 3,
         paddingHorizontal: 10,
-  
+        backgroundColor: '#58a100',
         borderTopRightRadius:12,
         borderBottomRightRadius:12,
         zIndex: 10,
@@ -315,6 +311,7 @@ const MPCardBespoke = ({
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.2,
         shadowRadius: 2,
+        overflow: 'hidden',
       }}
     >
       <Text
@@ -326,7 +323,7 @@ const MPCardBespoke = ({
       >
         Save {discount}%
       </Text>
-    </LinearGradient>
+    </View>
   )}
 
 
@@ -477,7 +474,7 @@ const MPCardBespoke = ({
             </TouchableOpacity>
           )}
         </View>
-      </LinearGradient>
+      </View>
 
       {/* {isExpanded && (
                 <Animated.View style={[styles.animatedSection, { height: animatedHeight }]}>
@@ -515,10 +512,10 @@ cardContainer: {
 
     subscribedBadge: {
     position: 'absolute',
-    top: -10,
-    right: 8,
+    top: 10,
+    right: 16,
     backgroundColor: '#FACC15', // nice yellow
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     zIndex: 1,

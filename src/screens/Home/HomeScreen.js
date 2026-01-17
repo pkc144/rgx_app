@@ -19,7 +19,7 @@ import {
   Modal,
 } from 'react-native';
 import { getAuth } from '@react-native-firebase/auth';
-import LinearGradient from 'react-native-linear-gradient';
+import SVGGradient from '../../components/SVGGradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -1042,20 +1042,13 @@ const HomeScreen = ({ }) => {
       extrapolate: 'clamp',
     });
 
-    const AnimatedLinearGradient =
-      Animated.createAnimatedComponent(LinearGradient);
-
-    const headerColors = [gradient1, gradient2];
-
     return (
       <View
         style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 11 }}>
-        <AnimatedLinearGradient
-          colors={headerColors}
-          start={{ x: 1, y: 0 }}
-          end={{ x: 0, y: 1 }}
+        <Animated.View
           style={[
             {
+              overflow: 'hidden',
               paddingVertical: selectedVariant === 'arfs' ? 40 : 10,
               marginBottom: 10,
               borderBottomLeftRadius: 20,
@@ -1068,6 +1061,21 @@ const HomeScreen = ({ }) => {
               transform: [{ translateY: animatedTranslateY }],
             },
           ]}>
+          {/* SVG Gradient Background */}
+          <SVGGradient
+            colors={[gradient1, gradient2]}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              borderBottomLeftRadius: 20,
+              borderBottomRightRadius: 20,
+            }}
+          />
           {/* Rest of the header content remains the same */}
           <View style={{ flex: 1 }}>
             <Animated.View
@@ -1147,24 +1155,19 @@ const HomeScreen = ({ }) => {
 
                       <View style={styles.magnusCredentials}>
                         <View style={styles.magnusBadgeRow}>
-                          <LinearGradient
-                            colors={[mainColor, mainColor]} // Gold gradient for AI-POWERED
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.magnusAIBadge}>
+                          {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
+                          <View
+                            style={[styles.magnusAIBadge, {backgroundColor: mainColor, overflow: 'hidden'}]}>
                             <Text style={styles.magnusAIBadgeText}>
                               ALL-IN-ONE APP
                             </Text>
-                          </LinearGradient>
-                          <LinearGradient
-                            colors={[mainColor, mainColor]} // Blue gradient for SEBI CERTIFIED
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.magnusVerified}>
+                          </View>
+                          <View
+                            style={[styles.magnusVerified, {backgroundColor: mainColor, overflow: 'hidden'}]}>
                             <Text style={styles.magnusVerifiedText}>
                               🏛️ SEBI CERTIFIED
                             </Text>
-                          </LinearGradient>
+                          </View>
                         </View>
                         <Text style={styles.magnusTagline}>
                           Ethical Investing • Real-time Market Analysis
@@ -1187,11 +1190,10 @@ const HomeScreen = ({ }) => {
                               setShowEthicalList(true);
                               fetchEthicalList();
                             }}>
-                            <LinearGradient
-                              colors={['#000000', '#3A3A3A']}
-                              start={{ x: 0, y: 0 }}
-                              end={{ x: 1, y: 1 }}
+                            {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
+                            <View
                               style={{
+                                backgroundColor: '#000000',
                                 borderRadius: 20,
                                 borderWidth: 1,
                                 borderColor: '#212121',
@@ -1210,7 +1212,7 @@ const HomeScreen = ({ }) => {
                                 }}>
                                 {ETHICAL_CONFIG.buttonText}
                               </Text>
-                            </LinearGradient>
+                            </View>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1225,7 +1227,7 @@ const HomeScreen = ({ }) => {
               </View>
             </Animated.View>
           </View>
-        </AnimatedLinearGradient>
+        </Animated.View>
       </View>
     );
   };
@@ -1237,6 +1239,14 @@ const HomeScreen = ({ }) => {
   const [hasBespokeData, setHasBespokeData] = useState(false);
 
   // Data for All Tab
+  // Debug logging for plans card visibility
+  console.log('🔍 [HomeScreen Debug] planList:', planList);
+  console.log('🔍 [HomeScreen Debug] !planList:', !planList);
+  console.log('🔍 [HomeScreen Debug] REACT_APP_MODEL_PORTFOLIO_STATUS:', configData?.config?.REACT_APP_MODEL_PORTFOLIO_STATUS);
+  console.log('🔍 [HomeScreen Debug] REACT_APP_BESPOKE_PLANS_STATUS:', configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS);
+  console.log('🔍 [HomeScreen Debug] hasMPData:', hasMPData);
+  console.log('🔍 [HomeScreen Debug] hasBespokeData:', hasBespokeData);
+
   const allTabData = [
 
     ...(!planList &&
@@ -1364,11 +1374,10 @@ const HomeScreen = ({ }) => {
                   fetchEthicalList();
                 }}
               >
-                <LinearGradient
-                  colors={['#000000', '#3A3A3A']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
+                <View
                   style={{
+                    backgroundColor: '#000000',
                     borderRadius: 20,
                     borderWidth: 1,
                     borderColor: '#212121',
@@ -1387,7 +1396,7 @@ const HomeScreen = ({ }) => {
                     }}>
                     {ETHICAL_CONFIG.buttonText}
                   </Text>
-                </LinearGradient>
+                </View>
               </TouchableOpacity>
             </View>
           )}
@@ -1489,13 +1498,10 @@ const HomeScreen = ({ }) => {
               borderBottomLeftRadius: 30,
               borderBottomRightRadius: 30,
             }}>
-            {/* Gradient Border */}
+            {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
             {selectedVariant === 'arfs' && (
-              <LinearGradient
-                colors={['#212121', '#212121']} // Border gradient colors arfs: '#6A29CA', '#773D9A'
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.borderGradient} // Border gradient container
+              <View
+                style={[styles.borderGradient, {backgroundColor: '#212121', overflow: 'hidden'}]}
               >
                 <TouchableOpacity
                   onPress={OpenNewsScreen}
@@ -1511,7 +1517,7 @@ const HomeScreen = ({ }) => {
                   />
                   <Icon1 name="search" size={12} color={'#fff'} />
                 </TouchableOpacity>
-              </LinearGradient>
+              </View>
             )}
           </View>
         )}

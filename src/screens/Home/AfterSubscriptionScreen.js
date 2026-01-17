@@ -11,7 +11,7 @@ import {
   FlatList,
   Dimensions,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import SVGGradient from '../../components/SVGGradient';
 import {ChevronLeft, Bookmark} from 'lucide-react-native';
 import {getAuth} from '@react-native-firebase/auth';
 import {TabView, SceneMap, TabBar} from 'react-native-tab-view';
@@ -283,18 +283,19 @@ const AfterSubscriptionScreen = ({route}) => {
   }, [fileName]);
 
   return (
-    <LinearGradient
+    <SVGGradient
       colors={[gradientStart, gradientEnd]}
       start={{x: 0, y: 0}}
-      end={{x: 0, y: 1}}
+      end={{x: 1, y: 1}}
       style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor={gradientStart} />
 
         <ScrollView contentContainerStyle={styles.content}>
-          {/* Header Card */}
-          <LinearGradient
+          <SVGGradient
             colors={[gradientEnd, gradientStart]}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
             style={styles.headerCard}>
             <View style={styles.headerRow}>
               <TouchableOpacity
@@ -358,7 +359,7 @@ const AfterSubscriptionScreen = ({route}) => {
               />
               <InfoPill title="Rebalance" value={strategyDetails?.frequency} />
             </View>
-          </LinearGradient>
+          </SVGGradient>
 
           {/* Holdings Distribution */}
           <View style={{}}>
@@ -517,7 +518,7 @@ const AfterSubscriptionScreen = ({route}) => {
           strategyDetails={strategyDetails}
         />
       )}
-    </LinearGradient>
+    </SVGGradient>
   );
 };
 

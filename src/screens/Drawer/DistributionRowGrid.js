@@ -7,13 +7,15 @@ import {
   ActivityIndicator,
   StyleSheet,
   TouchableOpacity,
+  Dimensions,
 } from 'react-native';
 import axios from 'axios';
 import Config from 'react-native-config';
 import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {AlertTriangle} from 'lucide-react-native';
-import {ScreenHeight, ScreenWidth} from 'react-native-elements/dist/helpers';
+
+const {width: ScreenWidth} = Dimensions.get('window');
 
 const DistributionGrid = ({
   adviceEntries = [],

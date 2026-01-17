@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from "react-native";
-import LinearGradient from "react-native-linear-gradient";
+// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
+// Using solid background color with View instead
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import Config from "react-native-config";
@@ -85,18 +86,16 @@ const ExploreSection = ({
             onPress={() => handleItemPress(item)}
             activeOpacity={0.8}
           >
-            <LinearGradient
-              colors={item.gradientColors}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.card}
+            {/* View with solid background replaces LinearGradient for iOS Fabric compatibility */}
+            <View
+              style={[styles.card, { backgroundColor: item.gradientColors[0], overflow: 'hidden' }]}
             >
               <View style={styles.iconContainer}>
                 <Icon name={item.icon} size={20} color="#FFFFFF" />
               </View>
               <Text style={styles.cardTitle}>{item.name}</Text>
-          
-            </LinearGradient>
+
+            </View>
           </TouchableOpacity>
         ))}
     </View>

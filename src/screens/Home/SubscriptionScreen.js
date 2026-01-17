@@ -9,7 +9,7 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import SVGGradient from '../../components/SVGGradient';
 import axios from 'axios';
 import { getAuth } from '@react-native-firebase/auth';
 import { useNavigation } from '@react-navigation/native';
@@ -215,11 +215,10 @@ const SubscriptionScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <LinearGradient
+      <SVGGradient
         colors={[gradient1, gradient2]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 1}}
         style={styles.headerGradient}>
         <View style={styles.headerRow}>
           <TouchableOpacity
@@ -240,7 +239,7 @@ const SubscriptionScreen = () => {
             </Text>
           </View>
         </View>
-      </LinearGradient>
+      </SVGGradient>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -266,11 +265,9 @@ const SubscriptionScreen = () => {
             brokerStatus === null ||
             brokerStatus === 'Disconnected'
           ) ? (
-            <LinearGradient
-              colors={[gradient1, gradient2]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.brokerStatusCard}>
+            // View replaces LinearGradient for iOS Fabric compatibility
+            <View
+              style={[styles.brokerStatusCard, {backgroundColor: gradient1, overflow: 'hidden'}]}>
               <View style={styles.brokerStatusContent}>
                 <View style={styles.brokerStatusLeft}>
                   <Image source={tick} style={styles.statusIcon} />
@@ -288,7 +285,7 @@ const SubscriptionScreen = () => {
                   <Pencil size={14} color="#fff" />
                 </TouchableOpacity>
               </View>
-            </LinearGradient>
+            </View>
           ) : (
             <View style={styles.errorContainer}>
               <View style={styles.errorMessage}>
@@ -310,12 +307,9 @@ const SubscriptionScreen = () => {
           )}
         </View>
 
-        {/* Broker & Funds Info Card */}
-        <LinearGradient
-          colors={[gradient1, gradient2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.infoCard}>
+        {/* Broker & Funds Info Card - View replaces LinearGradient for iOS Fabric compatibility */}
+        <View
+          style={[styles.infoCard, {backgroundColor: gradient1, overflow: 'hidden'}]}>
           <Text style={styles.infoCardTitle}>Your Broker & Funds Info</Text>
 
           <View style={styles.infoRow}>
@@ -365,7 +359,7 @@ const SubscriptionScreen = () => {
                 : 'N/A'}
             </Text>
           </View>
-        </LinearGradient>
+        </View>
       </ScrollView>
 
       {!(

@@ -6,7 +6,8 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
+// import LinearGradient from 'react-native-linear-gradient';
 import {getAuth, signOut} from '@react-native-firebase/auth';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
 import {useTrade} from '../TradeContext';
@@ -36,7 +37,15 @@ const LogoutScreen = ({navigation}) => {
 
   const handleLogout = async () => {
     try {
-      await GoogleSignin.signOut();
+      // Try to sign out from Google (may fail if user signed in with Apple/email)
+      try {
+        await GoogleSignin.signOut();
+      } catch (googleError) {
+        // Ignore - user may not have signed in with Google
+        console.log('Google signOut skipped (user may not have used Google)');
+      }
+
+      // Sign out from Firebase (handles all auth providers)
       await signOut(auth);
       await AsyncStorage.removeItem('cartItems');
 
@@ -52,6 +61,8 @@ const LogoutScreen = ({navigation}) => {
       navigation.replace('Login');
     } catch (error) {
       console.error('Error signing out: ', error);
+      // Still navigate to login even if there's an error
+      navigation.replace('Login');
     }
   };
 
@@ -60,16 +71,14 @@ const LogoutScreen = ({navigation}) => {
   }, []);
 
   return (
-    <LinearGradient
-      colors={[gradient1, gradient2]}
-      start={{x: 0, y: 0}}
-      end={{x: 0, y: 1}}
-      style={styles.container}>
+    // View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background
+    <View
+      style={[styles.container, {backgroundColor: gradient1, overflow: 'hidden'}]}>
       <View style={styles.content}>
         <Text style={styles.text}>Logging out...</Text>
         <ActivityIndicator size="large" color="#fff" />
       </View>
-    </LinearGradient>
+    </View>
   );
 };
 

@@ -18,6 +18,7 @@ import {
   Info,
   X,
 } from 'lucide-react-native';
+import {FullWindowOverlay} from 'react-native-screens';
 import useModalStore from './modalStore';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
@@ -117,7 +118,7 @@ const BrokerAlertModal = () => {
 
   const statusBarHeight = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 
-  return (
+  const alertContent = (
     <View style={[styles.fullScreenOverlay, {paddingTop: statusBarHeight}]} pointerEvents="box-none">
       <Animated.View style={[styles.backdrop, {opacity: fadeAnim}]}>
         <Pressable style={styles.backdropPressable} onPress={hideAlert} />
@@ -160,6 +161,13 @@ const BrokerAlertModal = () => {
       </View>
     </View>
   );
+
+  // Use FullWindowOverlay on iOS to ensure alert appears above other FullWindowOverlay modals
+  if (Platform.OS === 'ios') {
+    return <FullWindowOverlay>{alertContent}</FullWindowOverlay>;
+  }
+
+  return alertContent;
 };
 
 const styles = StyleSheet.create({

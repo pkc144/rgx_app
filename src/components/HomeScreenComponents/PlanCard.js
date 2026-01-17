@@ -59,12 +59,12 @@ const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
   const infoLabelStyle = isBespoke ? styles.infoLabelBespoke : styles.infoLabelMp;
   const infoValueStyle = isBespoke ? styles.infoValueBespoke : styles.infoValueMp;
 
+  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
+  const cardBackgroundColor = isBespoke ? '#FFFFFF' : '#002651';
+
   return (
-    <LinearGradient
-      colors={isBespoke ? ['#FFFFFF', '#FFFFFF'] : ['#002651', '#0070EF']}
-      start={{ x: 0, y: 1 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.container, containerStyle]}
+    <View
+      style={[styles.container, containerStyle, {backgroundColor: cardBackgroundColor, overflow: 'hidden'}]}
     >
       {/* Header */}
       <View style={styles.header}>
@@ -109,7 +109,7 @@ const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
           <Text style={subscribeButtonTextStyle}>Subscribe</Text>
         </TouchableOpacity>
       </View>
-    </LinearGradient>
+    </View>
   );
 };
 

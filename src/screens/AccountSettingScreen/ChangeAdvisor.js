@@ -14,7 +14,8 @@ import {
   Image,
 } from 'react-native';
 import {ChevronLeft, Bell} from 'lucide-react-native';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
+// Using solid background color with View instead
 import {getAuth} from '@react-native-firebase/auth';
 import {useTrade} from '../TradeContext';
 import {useNavigation, CommonActions} from '@react-navigation/native';
@@ -264,25 +265,21 @@ const ChangeAdvisor = () => {
 
   if (initialLoading) {
     return (
-      <LinearGradient
-        colors={['#002651', '#0056B7']}
-        start={{x: 0, y: 0}}
-        end={{x: 0, y: 1}}
-        style={styles.container}>
+      // View with solid background replaces LinearGradient for iOS Fabric compatibility
+      <View
+        style={[styles.container, { backgroundColor: '#002651', overflow: 'hidden' }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Loading settings...</Text>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient
-      colors={['#002651', '#0056B7']}
-      start={{x: 0, y: 0}}
-      end={{x: 0, y: 1}}
-      style={styles.container}>
+    // View with solid background replaces LinearGradient for iOS Fabric compatibility
+    <View
+      style={[styles.container, { backgroundColor: '#002651', overflow: 'hidden' }]}>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor="#002651" />
 
@@ -370,7 +367,7 @@ const ChangeAdvisor = () => {
           </View>
         </View>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 };
 

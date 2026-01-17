@@ -16,35 +16,57 @@ import Loader from '../../../utils/Loader';
 import WebView from 'react-native-webview';
 import { ChevronLeft ,XIcon} from 'lucide-react-native';
 
-const LinkOpeningWeb = ({ setWebview,currentUrl,webViewVisible,symbol }) => {
+const LinkOpeningWeb = ({ setWebview, currentUrl, currentHtml, webViewVisible, symbol }) => {
    // console.log('here i enter',currentUrl);
     const [loading,setLoading]=useState(false);
+
+    // Determine the source based on whether we have HTML content or URL
+    // Make sure we have valid source before rendering WebView
+    const webViewSource = currentHtml
+        ? { html: currentHtml, baseUrl: '' }
+        : currentUrl ? { uri: currentUrl } : null;
+
   return (
- 
+
        <Modal visible={webViewVisible} animationType="slide" onRequestClose={() => setWebview(false)}>
-                    <SafeAreaView style={{flexDirection:'row',justifyContent:'space-between',alignContent:'center',alignItems:'center',marginVertical:10,marginHorizontal:10,borderBottomColor:'#e9e9e9',borderBottomWidth:2,}}>
-                    <Text style={styles.headerTitle}>{symbol}</Text>
-                    <XIcon
-                          size={24}
-                          color="black"
-                          style={{marginTop:0,}}
-                          onPress={() => setWebview(false)}
-                        />
+                    <SafeAreaView style={{flex: 1, backgroundColor: '#fff', overflow: 'hidden'}}>
+                        <View style={{flexDirection:'row',justifyContent:'space-between',alignContent:'center',alignItems:'center',paddingVertical:12,paddingHorizontal:16,borderBottomColor:'#e9e9e9',borderBottomWidth:1,}}>
+                            <Text style={[styles.headerTitle, {flex: 1, marginRight: 16}]} numberOfLines={2}>{symbol}</Text>
+                            <TouchableOpacity
+                                onPress={() => setWebview(false)}
+                                style={{padding: 8, backgroundColor: '#f0f0f0', borderRadius: 20}}
+                            >
+                                <XIcon
+                                    size={20}
+                                    color="black"
+                                />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={{flex:1, overflow: 'hidden'}}>
+                            {webViewSource ? (
+                                <WebView
+                                    source={webViewSource}
+                                    style={styles.webView}
+                                    startInLoadingState={true}
+                                    renderLoading={() => (
+                                        <View style={styles.loaderContainer}>
+                                            <Loader color={'#000'} width={40} height={40} />
+                                        </View>
+                                    )}
+                                    originWhitelist={['*']}
+                                    onError={(syntheticEvent) => {
+                                        const { nativeEvent } = syntheticEvent;
+                                        console.warn('WebView error: ', nativeEvent);
+                                    }}
+                                />
+                            ) : (
+                                <View style={styles.loaderContainer}>
+                                    <Text>Loading content...</Text>
+                                </View>
+                            )}
+                        </View>
                     </SafeAreaView>
-                    
-                   <SafeAreaView style={{flex:1}}>
-                   <WebView
-                          source={{ uri: currentUrl }}
-                          style={styles.webView}
-                          startInLoadingState={true}  // Ensures the loader is shown initially
-                          renderLoading={() => (
-                            <View style={styles.loaderContainer}>
-                              <Loader color={'#000'} width={40} height={40} />
-                            </View>
-                          )}
-                          originWhitelist={['*']}
-                        />
-                   </SafeAreaView>
                     
                        
                       

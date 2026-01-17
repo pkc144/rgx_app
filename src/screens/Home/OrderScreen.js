@@ -535,8 +535,7 @@ export default function OrderScreen() {
                 </Text>
               </View>
             ) : (
-              <LinearGradient
-                colors={[gradient1, gradient2]}
+              <View
                 style={{
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -547,6 +546,7 @@ export default function OrderScreen() {
                   overflow: 'hidden',
                   width: '90%',
                   alignSelf: 'center',
+                  backgroundColor: gradient1,
                 }}>
                 {/* Glow circles */}
                 <View
@@ -573,8 +573,7 @@ export default function OrderScreen() {
                 />
 
                 {/* Icon container */}
-                <LinearGradient
-                  colors={[gradient1, gradient2]}
+                <View
                   style={{
                     width: 90,
                     height: 90,
@@ -582,11 +581,13 @@ export default function OrderScreen() {
                     justifyContent: 'center',
                     alignItems: 'center',
                     marginBottom: 20,
+                    backgroundColor: gradient1,
                     shadowColor: '#001A40',
                     shadowOffset: {width: 0, height: 4},
                     shadowOpacity: 0.25,
                     shadowRadius: 8,
                     elevation: 6,
+                    overflow: 'hidden',
                   }}>
                   <View
                     style={{
@@ -609,7 +610,7 @@ export default function OrderScreen() {
                       <Text style={{fontSize: 28}}>🛒</Text>
                     </View>
                   </View>
-                </LinearGradient>
+                </View>
 
                 {/* Title */}
                 <Text
@@ -636,7 +637,7 @@ export default function OrderScreen() {
                   }}>
                   Orders that are placed will appear here.
                 </Text>
-              </LinearGradient>
+              </View>
             )
           }
         />

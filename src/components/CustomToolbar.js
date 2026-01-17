@@ -177,14 +177,14 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
   const getInitials = name => {
     return name?.length > 0 ? name[0]?.toUpperCase() : '';
   };
+  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
-    <LinearGradient
-      colors={[gradient1, gradient2]}
-      start={{x: 0, y: 0}}
-      end={{x: 0, y: 1}}
+    <View
       style={{
+        backgroundColor: gradient1,
         borderBottomLeftRadius: 15,
         borderBottomRightRadius: 15,
+        overflow: 'hidden',
       }}>
       <View style={styles.toolbar}>
         <View style={{flexDirection: 'row', alignItems: 'center'}}>
@@ -282,7 +282,7 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
       </View>
 
       <MarketIndices />
-    </LinearGradient>
+    </View>
   );
 });
 

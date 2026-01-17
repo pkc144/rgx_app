@@ -198,21 +198,19 @@ const BrokerSelectionModal = ({
 
   return (
     <Modal
-      visible={showBrokerModal || OpenTokenExpireModel}
+      isVisible={showBrokerModal || OpenTokenExpireModel}
       backdropOpacity={0.5}
-      useNativeDriver
-      hideModalContentWhileAnimating
+      useNativeDriver={true}
+      useNativeDriverForBackdrop={true}
+      hideModalContentWhileAnimating={true}
       animationIn="slideInUp"
       animationOut="slideOutDown"
-      swipeDirection={['down']}
       style={styles.modal}
-      onRequestClose={onClose}>
+      onBackdropPress={onClose}>
       {showBrokerModal && (
-        <LinearGradient
-          colors={['#002651', '#003572', '#0053B1']}
-          style={styles.gradientContainer}
-          start={{x: 0, y: 0}}
-          end={{x: 0, y: 1}}>
+        // Use solid background color instead of LinearGradient for iOS Fabric compatibility
+        <View
+          style={[styles.gradientContainer, {backgroundColor: '#002651', overflow: 'hidden'}]}>
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.contentContainer}>
               {/* Header */}
@@ -301,10 +299,10 @@ const BrokerSelectionModal = ({
               </TouchableOpacity>
             </View>
           </SafeAreaView>
-        </LinearGradient>
-      )}
+        </View>
+        )}
 
-      {OpenTokenExpireModel && (
+        {OpenTokenExpireModel && (
         <View style={styles.expireModalContainer}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <XIcon size={24} color="#666" />

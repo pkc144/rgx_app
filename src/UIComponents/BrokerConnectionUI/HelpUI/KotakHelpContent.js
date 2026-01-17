@@ -21,7 +21,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
             videoId="JXwnwaxM88k"
           />
         </View>
-        <Text style={styles.title}>Steps to Obtain API and Secret key for Zerodha:</Text>
+        <Text style={styles.title}>Steps to Obtain API Credentials for Kotak Neo:</Text>
         <View style={styles.content}>
 
           <Text style={styles.instruction}>Step 1: Getting NEO trade API access</Text>

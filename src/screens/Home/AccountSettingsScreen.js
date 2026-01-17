@@ -24,7 +24,7 @@ import {
   Bell,
   Bookmark,
 } from 'lucide-react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import SVGGradient from '../../components/SVGGradient';
 import {getAuth} from '@react-native-firebase/auth';
 import Config from 'react-native-config';
 import {useTrade} from '../TradeContext';
@@ -195,7 +195,7 @@ const AccountSettingsScreen = ({navigation}) => {
   const gradientEnd = config?.gradient2 || '#0056B7';
 
   return (
-    <LinearGradient
+    <SVGGradient
       colors={[gradientStart, gradientEnd]}
       start={{x: 0, y: 0}}
       end={{x: 0, y: 1}}
@@ -323,7 +323,7 @@ const AccountSettingsScreen = ({navigation}) => {
           })()}
         </ScrollView>
       </SafeAreaView>
-    </LinearGradient>
+    </SVGGradient>
   );
 };
 

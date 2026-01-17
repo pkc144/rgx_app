@@ -14,7 +14,7 @@ import { getAuth } from '@react-native-firebase/auth';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { useTrade } from '../TradeContext';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient import removed - replaced with View for iOS Fabric compatibility
 import FileViewer from 'react-native-file-viewer';
 import { useConfig } from '../../context/ConfigContext';
 
@@ -203,15 +203,15 @@ const completeDownloadStatement = async (pdfData) => {
       
       return (
         <View style={styles.container}>
-            <LinearGradient
-                      colors={[gradient1, gradient2]}
-                      start={{x: 0, y: 0}}
-                      end={{x: 0, y: 1}}
+            {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
+            <View
                       style={{
                         paddingHorizontal: 15,
                         paddingVertical: 15,
                         borderBottomLeftRadius: 15,
                         borderBottomRightRadius: 15,
+                        backgroundColor: gradient1,
+                        overflow: 'hidden',
                       }}>
                       <View
                         style={{flexDirection: 'row', alignItems: 'center', marginTop: 10}}>
@@ -231,8 +231,8 @@ const completeDownloadStatement = async (pdfData) => {
                           </Text>
                         </View>
                       </View>
-                      
-                    </LinearGradient>
+
+                    </View>
           <FlatList
             data={InvoiceData}
             renderItem={renderPaymentItem}

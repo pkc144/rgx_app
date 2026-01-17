@@ -34,13 +34,11 @@ const PortfolioCard = ({
   const arrowColor = isPositive ? '#23C36A' : '#FF6B6B';
   const percentColor = isPositive ? '#5EEA99' : '#FF6B6B';
 
+  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
     <View style={portfolioCardStyles.pcWrapper}>
-      <LinearGradient
-        colors={[gradient1, gradient2]}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
-        style={portfolioCardStyles.pcGradientCard}>
+      <View
+        style={[portfolioCardStyles.pcGradientCard, {backgroundColor: gradient1}]}>
         {/* Background Circle */}
         <Svg
           width="180"
@@ -89,7 +87,7 @@ const PortfolioCard = ({
             </Text>
           </View>
         </View>
-      </LinearGradient>
+      </View>
     </View>
   );
 };

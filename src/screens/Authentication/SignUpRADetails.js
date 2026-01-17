@@ -15,7 +15,8 @@ import {
   Modal,
   Image,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
+// import LinearGradient from 'react-native-linear-gradient';
 import {useNavigation} from '@react-navigation/native';
 import Config from 'react-native-config';
 import {useConfig} from '../../context/ConfigContext';
@@ -50,7 +51,7 @@ const SignUpRADetails = ({route}) => {
   const gradient1 = config?.gradient1 || fallbackConfig.gradient1 || '#03275B';
   const gradient2 = config?.gradient2 || fallbackConfig.gradient2 || '#0156B7';
 
-  const [raId, setRaId] = useState('RGXRESEARCH'); // Default to rgxresearch
+  const [raId, setRaId] = useState(''); // Default to rgxresearch
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -204,11 +205,9 @@ const SignUpRADetails = ({route}) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <LinearGradient
-          colors={[gradient1, gradient2]}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 1}}
-          style={styles.container}>
+        {/* View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background */}
+        <View
+          style={[styles.container, {backgroundColor: gradient1, overflow: 'hidden'}]}>
           <StatusBar barStyle="light-content" />
 
           {/* Background Circles */}
@@ -305,7 +304,7 @@ const SignUpRADetails = ({route}) => {
               <Text style={styles.signInLink}>Sign In</Text>
             </TouchableOpacity>
           </View>
-        </LinearGradient>
+        </View>
       </TouchableWithoutFeedback>
       <Modal
         transparent
