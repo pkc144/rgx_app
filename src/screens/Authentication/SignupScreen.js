@@ -12,18 +12,19 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
+  Image,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import {Image} from 'react-native-elements';
 import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
 import {Mail, Lock, Eye, CheckIcon, User} from 'lucide-react-native';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
+import Config from 'react-native-config';
 import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../TradeContext';
-import TermsModal from './TermsModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment';
 import {useConfig} from '../../context/ConfigContext';
@@ -35,7 +36,7 @@ import {
   refreshAllAppData,
   isUserDataComplete,
 } from '../../utils/storageUtils';
-import { ScreenWidth } from 'react-native-elements/dist/helpers';
+const { width: ScreenWidth } = Dimensions.get('window');
 import {
   logLoginAttempt,
   trackAppUser,
@@ -53,7 +54,11 @@ const SignupScreen = () => {
   } = useTrade();
 
   const config = useConfig();
-  const {logo: LogoComponent, themeColor} = config || {};
+  const {logo: LogoComponent, themeColor, configLoading} = config || {};
+
+  // Get dynamic gradient colors from config
+  const gradient1 = config?.gradient1 || 'rgba(0, 38, 81, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 86, 183, 1)';
 
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
@@ -65,7 +70,6 @@ const SignupScreen = () => {
   const [success, setSuccess] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
 
   const storeLoginTime = async () => {
     try {
@@ -312,7 +316,7 @@ const SignupScreen = () => {
       }}>
       <TouchableWithoutFeedback onPress={dismissError}>
         <LinearGradient
-          colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+          colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
          style={[styles.container, {justifyContent: 'space-between'}]}> 
@@ -327,9 +331,23 @@ const SignupScreen = () => {
           <View style={styles.content}>
             {/* Logo */}
             <View style={styles.logoContainer}>
-              {LogoComponent && typeof LogoComponent === 'function' ? (
+              {configLoading ? (
+                <View style={styles.logo} />
+              ) : LogoComponent && typeof LogoComponent === 'function' ? (
                 <LogoComponent style={styles.logo} />
-              ) : LogoComponent ? (
+              ) : LogoComponent && typeof LogoComponent === 'string' ? (
+                <Image
+                  source={{uri: LogoComponent}}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              ) : LogoComponent && typeof LogoComponent === 'object' && LogoComponent.uri ? (
+                <Image
+                  source={{uri: LogoComponent.uri}}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              ) : LogoComponent && typeof LogoComponent === 'object' ? (
                 <Image
                   source={LogoComponent}
                   style={styles.logo}
@@ -434,13 +452,18 @@ const SignupScreen = () => {
                   )}
                 </View>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setModalVisible(true)}>
+              <View style={styles.tcTextContainer}>
                 <Text style={styles.tcText}>
                   I agree to the {Config?.REACT_APP_WHITE_LABEL_TEXT}{' '}
-                  <Text style={styles.tcText2}>Terms of Service</Text> and{' '}
-                  <Text style={styles.tcText2}>Privacy Policy</Text>
                 </Text>
-              </TouchableOpacity>
+                <TouchableOpacity onPress={() => navigation.navigate('Terms & Conditions')}>
+                  <Text style={styles.tcText2}>Terms of Service</Text>
+                </TouchableOpacity>
+                <Text style={styles.tcText}> and </Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Privacy Policy')}>
+                  <Text style={styles.tcText2}>Privacy Policy</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Loading Indicator */}
@@ -475,11 +498,6 @@ const SignupScreen = () => {
           {/* Already have account */}
       
 
-          <TermsModal
-            modalVisible={modalVisible}
-            setModalVisible={setModalVisible}
-            setIsChecked={setIsChecked}
-          />
           <Toast />
               <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account? </Text>
@@ -614,18 +632,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  tcTextContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    flex: 1,
+    marginLeft: 5,
+  },
   tcText: {
     color: '#fff',
     fontFamily: 'Poppins-Medium',
     fontSize: 12,
-    // flex: 1,
-    marginHorizontal:10,
- 
   },
   tcText2: {
     color: 'rgba(133, 245, 0, 1)',
     fontFamily: 'Poppins-Medium',
     fontSize: 12,
+    textDecorationLine: 'underline',
   },
   signupButton: {
     backgroundColor: 'rgba(41, 164, 0, 1)',

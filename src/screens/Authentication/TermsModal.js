@@ -33,7 +33,7 @@ const TermsModal = ({ modalVisible, setModalVisible,setIsChecked }) => {
     },
     {
       heading: "Limitation of Liability",
-      text: "5.1. To the fullest extent permitted by law, we will not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, or other intangible losses, arising out of or in connection with your use of the Service.\n\n5.2. Our total liability to you for any claims arising out of or in connection with these Terms or your use of the Service will be limited to the lesser of (i) the amount of monthly fees paid by you for the Service during the month in which the claim arose, or (ii) INR 1,00,000.\n\n5.3. We disclaim all warranties, whether express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement."
+      text: "5.1. To the fullest extent permitted by law, we will not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, or other intangible losses, arising out of or in connection with your use of the Service.\n\n5.2. We disclaim all warranties, whether express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement."
     },
     {
       heading: "Indemnification",
@@ -63,7 +63,7 @@ const TermsModal = ({ modalVisible, setModalVisible,setIsChecked }) => {
             11.2. <Text style={{ fontWeight: "bold" }}>No Waiver</Text>: Our failure to enforce any right or provision of these Terms will not be deemed a waiver of such right or provision.{"\n\n"}
             11.3. <Text style={{ fontWeight: "bold" }}>Assignment</Text>: We may assign these Terms, in whole or in part, at any time without notice to you. You may not assign these Terms without our prior written consent.{"\n\n"}
             11.4. <Text style={{ fontWeight: "bold" }}>Entire Agreement</Text>: These Terms constitute the entire agreement between you and us regarding your use of the Service and supersede all prior or contemporaneous agreements and understandings.{"\n\n"}
-            11.5. <Text style={{ fontWeight: "bold" }}>Contact Us</Text>: If you have any questions about these Terms, please contact us at hello@alphaquark.in.
+            11.5. <Text style={{ fontWeight: "bold" }}>Contact Us</Text>: If you have any questions about these Terms, please contact us.
           </>
         ),
       },

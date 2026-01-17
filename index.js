@@ -80,4 +80,4 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 });
 
 // Register the app
-AppRegistry.registerComponent('EquityPro by RGX Research', () => App);
+AppRegistry.registerComponent(appName, () => App);

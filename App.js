@@ -20,6 +20,7 @@ import server from './src/utils/serverConfig';
 import {TradeProvider} from './src/screens/TradeContext';
 import {ConfigProvider} from './src/context/ConfigContext';
 import ModalManager from './src/GlobalUIModals/ModalManager';
+import BrokerAlertModal from './src/GlobalUIModals/BrokerAlertModal';
 import UpdateAppModal from './src/UpdateAppModal';
 
 const App = () => {
@@ -158,27 +159,28 @@ const App = () => {
   };
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{flex: 1}}>
       <UpdateAppModal />
       <CustomStatusBar barStyle={'dark-content'} />
       <GestureHandlerRootView style={{flex: 1}}>
         <SocialProofProvider>
           <CartProvider>
-            <SafeAreaView style={{flex: 1}}>
-              <ConfigProvider>
-                <TradeProvider>
-                  <ModalProvider>
+            <ConfigProvider>
+              <TradeProvider>
+                <ModalProvider>
+                  <SafeAreaView style={{flex: 1}}>
                     <Navigation
                       iscomplete={iscomplete}
                       userEmail={userEmail}
                       isAuthenticated={!!user}
                     />
-                    <ModalManager />
-                  </ModalProvider>
-                </TradeProvider>
-              </ConfigProvider>
-              <Toast />
-            </SafeAreaView>
+                    <Toast />
+                  </SafeAreaView>
+                  <ModalManager />
+                  <BrokerAlertModal />
+                </ModalProvider>
+              </TradeProvider>
+            </ConfigProvider>
           </CartProvider>
         </SocialProofProvider>
       </GestureHandlerRootView>

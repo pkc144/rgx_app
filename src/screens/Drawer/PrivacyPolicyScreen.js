@@ -12,11 +12,12 @@ import WebView from 'react-native-webview';
 import {useTrade} from '../TradeContext';
 import LinearGradient from 'react-native-linear-gradient';
 import {useConfig} from '../../context/ConfigContext';
+import Config from 'react-native-config';
 
 const PrivacyPolicyScreen = () => {
   const {configData} = useTrade();
   const navigation = useNavigation();
-  const privacyURL = configData?.config?.REACT_APP_ADVISOR_PRIVACY_POLICY;
+  const privacyURL = configData?.config?.REACT_APP_ADVISOR_PRIVACY_POLICY || Config.REACT_APP_ADVISOR_PRIVACY_POLICY;
 
   // Get dynamic colors from config
   const config = useConfig();

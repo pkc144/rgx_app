@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   SafeAreaView,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import {NavigationContainer, useNavigation, useNavigationState, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';

@@ -12,11 +12,12 @@ import WebView from "react-native-webview";
 import LinearGradient from "react-native-linear-gradient";
 import { useTrade } from "../TradeContext";
 import { useConfig } from "../../context/ConfigContext";
+import Config from "react-native-config";
 
 const TermsandConditionsScreen = () => {
   const { configData } = useTrade();
   const tncURL =
-    configData?.config?.REACT_APP_ADVISOR_TERMS_AND_CONDITION;
+    configData?.config?.REACT_APP_ADVISOR_TERMS_AND_CONDITION || Config.REACT_APP_ADVISOR_TERMS_AND_CONDITION;
 
   // Get dynamic colors from config
   const config = useConfig();
