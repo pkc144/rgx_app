@@ -1,13 +1,21 @@
 #import "AppDelegate.h"
 #import <Firebase.h>
 #import <React/RCTBundleURLProvider.h>
+#import <RCTAppDependencyProvider.h>
 
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+  // Configure Firebase
   [FIRApp configure];
-  self.moduleName = @"AlphaPro by AlphaQuark";
+
+  // Set the module name (must match app.json "name" - no spaces allowed)
+  self.moduleName = @"EquityProByRGXResearch";
+
+  // CRITICAL: Set the dependency provider for TurboModules (required in RN 0.78+)
+  self.dependencyProvider = [RCTAppDependencyProvider new];
+
   // You can add your custom initial props in the dictionary below.
   // They will be passed down to the ViewController used by React Native.
   self.initialProps = @{};
@@ -23,11 +31,6 @@
 
 - (NSURL *)bundleURL
 {
-  for (NSString *fontFamilyName in [UIFont familyNames]) {
-      for (NSString *fontName in [UIFont fontNamesForFamilyName:fontFamilyName]) {
-          NSLog(@"Family: %@ Font: %@", fontFamilyName, fontName);
-      }
-  }
 #if DEBUG
   return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index"];
 #else

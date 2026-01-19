@@ -116,6 +116,7 @@ import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen
 import ChangeAdvisor from '../screens/AccountSettingScreen/ChangeAdvisor';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import { useWebSocketInitializer } from '../utils/websocketInitializer';
+import DeleteAccountScreen from '../screens/Home/DeleteAccountScreen';
 
 
 const auth = getAuth();
@@ -1193,6 +1194,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="Logout"
           component={LogOutScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="DeleteAccount"
+          component={DeleteAccountScreen}
           options={{headerShown: false}}
         />
       </Stack.Navigator>

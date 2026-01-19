@@ -23,6 +23,7 @@ import {
   LogOut,
   Bell,
   Bookmark,
+  Trash2,
 } from 'lucide-react-native';
 import SVGGradient from '../../components/SVGGradient';
 import {getAuth} from '@react-native-firebase/auth';
@@ -137,6 +138,12 @@ const AccountSettingsScreen = ({navigation}) => {
           onPress: () => handleMenuPress('Terms & Conditions'),
         },
         {
+          icon: Trash2,
+          label: 'Delete Account',
+          onPress: () => handleMenuPress('DeleteAccount'),
+          isDestructive: true,
+        },
+        {
           icon: LogOut,
           label: 'Log Out',
           onPress: () => handleMenuPress('Logout'),
@@ -168,27 +175,30 @@ const AccountSettingsScreen = ({navigation}) => {
     return name?.length > 0 ? name[0]?.toUpperCase() : '';
   };
 
-  const renderMenuItem = (item, isLast) => (
-    <TouchableOpacity
-      key={item.label}
-      style={[styles.menuItem, isLast && styles.menuItemLast]}
-      onPress={item.onPress}
-      activeOpacity={0.7}>
-      <View style={styles.menuItemLeft}>
-        <View
-          style={[
-            styles.iconContainer,
-            item.isLogout && styles.logoutIconContainer,
-          ]}>
-          <item.icon size={18} color={item.isLogout ? '#FF4444' : '#FFFFFF'} />
+  const renderMenuItem = (item, isLast) => {
+    const isDestructiveItem = item.isLogout || item.isDestructive;
+    return (
+      <TouchableOpacity
+        key={item.label}
+        style={[styles.menuItem, isLast && styles.menuItemLast]}
+        onPress={item.onPress}
+        activeOpacity={0.7}>
+        <View style={styles.menuItemLeft}>
+          <View
+            style={[
+              styles.iconContainer,
+              isDestructiveItem && styles.logoutIconContainer,
+            ]}>
+            <item.icon size={18} color={isDestructiveItem ? '#FF4444' : '#FFFFFF'} />
+          </View>
+          <Text style={[styles.menuItemText, item.isDestructive && {color: '#FF4444'}]}>
+            {item.label}
+          </Text>
         </View>
-        <Text style={[styles.menuItemText, item.isLogout && styles.logoutText]}>
-          {item.label}
-        </Text>
-      </View>
-      <ChevronRight size={20} color="#FFFFFF" />
-    </TouchableOpacity>
-  );
+        <ChevronRight size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+    );
+  };
 
   // Get gradient colors from config
   const gradientStart = config?.gradient1 || '#002651';

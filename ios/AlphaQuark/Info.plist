@@ -9,7 +9,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>AlphaPro by AlphaQuark</string>
+	<string>EquityPro by RGX Research</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -31,7 +31,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.892331696104-gs4gdllr0ges38e0i4627b4arb6over6</string>
+				<string>com.googleusercontent.apps.887826618956-uujqb520c36fq46sdh345h6u3ukjoa55</string>
 			</array>
 		</dict>
 		<dict>
