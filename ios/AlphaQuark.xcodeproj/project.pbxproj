@@ -677,7 +677,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.aq;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.alphaquark;
 				PRODUCT_NAME = AlphaQuark;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -710,7 +710,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.aq;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.alphaquark;
 				PRODUCT_NAME = AlphaQuark;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;

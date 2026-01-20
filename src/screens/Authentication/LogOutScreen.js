@@ -30,10 +30,14 @@ const LogoutScreen = ({navigation}) => {
 
   const auth = getAuth();
 
-  GoogleSignin.configure({
-    webClientId:
-      '892331696104-e26pu9iotqrjk1o6jq4ifd4e95fasil1.apps.googleusercontent.com',
-  });
+  // Configure Google Sign-In with googleWebClientId from backend config
+  useEffect(() => {
+    if (config?.googleWebClientId) {
+      GoogleSignin.configure({
+        webClientId: config.googleWebClientId,
+      });
+    }
+  }, [config?.googleWebClientId]);
 
   const handleLogout = async () => {
     try {
