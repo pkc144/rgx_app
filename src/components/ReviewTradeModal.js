@@ -1082,7 +1082,7 @@ const ReviewTradeModal = ({
                 (hasZeroQuantity || !isMarketHours) && styles.buttonDisabled, // disabled styling
                 loading && styles.buttonLoading, // optional: add extra styling when loading
               ]}
-              // disabled={hasZeroQuantity || !isMarketHours || loading} // disable while loading
+              disabled={hasZeroQuantity || !isMarketHours || loading}
               onPress={() => placeOrder(stockDetails)}>
               {loading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />

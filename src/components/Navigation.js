@@ -231,7 +231,7 @@ const MainTabNavigator = () => {
     console.log('success after:', successclosemodel);
     const startTime = global.performance.now();
     Animated.timing(translateY, {
-      toValue: screenHeight * 0.82,
+      toValue: screenHeight - 130 - 60,
       duration: 300,
       isInteraction: false,
       useNativeDriver: true,
@@ -260,7 +260,7 @@ const MainTabNavigator = () => {
       onMoveShouldSetPanResponder: (evt, gestureState) => gestureState.dy > 10,
       onPanResponderMove: (evt, gestureState) => {
         if (gestureState.dy > 0) {
-          translateY.setValue(screenHeight * 0.82 + gestureState.dy);
+          translateY.setValue(screenHeight - 130 - 60 + gestureState.dy);
         }
       },
       onPanResponderRelease: (evt, gestureState) => {
@@ -387,7 +387,7 @@ const currentName = currentTabRoute?.name || "";
             transform: [{translateY}], // Use transform with translateY instead of top
             left: 0,
             right: 0,
-            height: 100,
+            height: 120,
             elevation: 98,
             shadowColor: 'black',
             borderColor: '#eee',

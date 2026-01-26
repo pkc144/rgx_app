@@ -358,6 +358,19 @@ const AddToCartModal = ({
   const handleTrade = async () => {
     setTradeClickCount(prevCount => prevCount + 1);
 
+    // Check if market is open
+    const isMarketOpen = IsMarketHours();
+    if (!isMarketOpen) {
+      Toast.show({
+        type: 'error',
+        text1: 'Market Closed',
+        text2: 'Orders cannot be placed after market hours.',
+        position: 'top',
+        visibilityTime: 3000,
+      });
+      return;
+    }
+
     const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
 
     const currentBrokerRejectedCount = await getRejectedCount();
@@ -1474,10 +1487,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     borderTopLeftRadius: 20,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 25,
     marginTop: 10,
-    //  elevation:10,
-    //  shadowColor:'black'
+    elevation: 10,
+    shadowColor: 'black',
   },
   topSection: {
     flexDirection: 'row',
