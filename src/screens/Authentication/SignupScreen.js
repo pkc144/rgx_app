@@ -319,7 +319,7 @@ const SignupScreen = () => {
           colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
-         style={[styles.container, {justifyContent: 'space-between'}]}> 
+         style={[styles.container, {justifyContent: 'space-between'}]}>
           <StatusBar barStyle="light-content" />
 
           {/* Decorative Circles */}
@@ -496,7 +496,7 @@ const SignupScreen = () => {
           </View>
 
           {/* Already have account */}
-      
+
 
           <Toast />
               <View style={styles.loginContainer}>
@@ -509,7 +509,7 @@ const SignupScreen = () => {
           </View>
         </LinearGradient>
       </TouchableWithoutFeedback>
-      
+
     </KeyboardAvoidingView>
   );
 };

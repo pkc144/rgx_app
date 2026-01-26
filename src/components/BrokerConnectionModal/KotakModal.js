@@ -4,13 +4,13 @@ import { getAuth } from '@react-native-firebase/auth';
 import axios from 'axios';
 import server from '../../utils/serverConfig';
 import CryptoJS from 'react-native-crypto-js';
-import Toast from 'react-native-toast-message';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import KotakConnectUI from '../../UIComponents/BrokerConnectionUI/KotakConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 
 const KotakModal = ({
   isVisible,
@@ -21,6 +21,7 @@ const KotakModal = ({
   setShowKotakModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [clientCode, setClientCode] = useState('');
   const [showProceedModal, setShowProceedModal] = useState(false);
   const sheet = useRef(null);
@@ -83,48 +84,25 @@ const KotakModal = ({
     setHelpVisible(true);
   };
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
   const updateKotakSecretKey = () => {
     setIsLoading(true);
 
     // Input validation
     if (!/^\d{10}$/.test(mobileNumber)) {
       setIsLoading(false);
-      showToast('Please enter a valid 10-digit mobile number', 'error', '');
+      showAlert('error', 'Invalid Mobile Number', 'Please enter a valid 10-digit mobile number.');
       return;
     }
 
     if (!/^\d{6}$/.test(mpin)) {
       setIsLoading(false);
-      showToast('MPIN should be a 6-digit number', 'error', '');
+      showAlert('error', 'Invalid MPIN', 'MPIN should be a 6-digit number.');
       return;
     }
 
     if (!/^\d{6}$/.test(totp)) {
       setIsLoading(false);
-      showToast('TOTP should be a 6-digit number', 'error', '');
+      showAlert('error', 'Invalid TOTP', 'TOTP should be a 6-digit number.');
       return;
     }
 
@@ -156,11 +134,7 @@ const KotakModal = ({
       .request(config)
       .then(response => {
         setIsLoading(false);
-        showToast(
-          'You have been successfully logged in to your broker.',
-          'success',
-          '',
-        );
+        showAlert('success', 'Connected Successfully', 'Your Kotak broker has been connected successfully!');
 
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'Kotak broker connection' });
@@ -176,7 +150,7 @@ const KotakModal = ({
           'Incorrect credentials. Please try again';
 
         setIsLoading(false);
-        showToast(errorMessage, 'error', '');
+        showAlert('error', 'Connection Error', errorMessage);
       });
   };
 
@@ -214,18 +188,14 @@ const KotakModal = ({
         setIsLoading(false);
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'Kotak broker connection' });
-        showToast(
-          'You have been successfully logged in to your broker.',
-          'success',
-          '',
-        );
+        showAlert('success', 'Connected Successfully', 'Your Kotak broker has been connected successfully!');
         setShowKotakModal(false);
         setShowBrokerModal(false);
       })
       .catch(error => {
         console.log(error);
         setIsLoading(false);
-        showToast('Incorrect credential. Please try again', 'error', '');
+        showAlert('error', 'Incorrect Credentials', 'Please check your credentials and try again.');
       });
   };
 

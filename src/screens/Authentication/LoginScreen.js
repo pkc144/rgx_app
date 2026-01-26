@@ -11,13 +11,14 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import {Image} from 'react-native-elements';
 import auth from '@react-native-firebase/auth';
 import Config from 'react-native-config';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
+import appleAuth from '@invertase/react-native-apple-authentication';
 import axios from 'axios';
 import server from '../../utils/serverConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -345,6 +346,177 @@ const LoginScreen = () => {
     }
   };
 
+  // Apple Sign-In handler
+  const handleAppleLogin = async () => {
+    // Only available on iOS
+    if (Platform.OS !== 'ios') {
+      return;
+    }
+
+    try {
+      setErrorShow(false);
+      setLoading(true);
+
+      // Perform Apple Sign-In request
+      const appleAuthRequestResponse = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
+      });
+
+      // Get credential state to ensure user is authenticated
+      const credentialState = await appleAuth.getCredentialStateForUser(
+        appleAuthRequestResponse.user,
+      );
+
+      if (credentialState !== appleAuth.State.AUTHORIZED) {
+        throw new Error('Apple Sign-In was not authorized');
+      }
+
+      const {identityToken, nonce, fullName, email} = appleAuthRequestResponse;
+
+      if (!identityToken) {
+        throw new Error('Apple Sign-In failed - no identity token returned');
+      }
+
+      // Create Firebase credential from Apple identity token
+      const appleCredential = auth.AppleAuthProvider.credential(
+        identityToken,
+        nonce,
+      );
+
+      // Sign in to Firebase with the Apple credential
+      const response = await auth().signInWithCredential(appleCredential);
+
+      if (response) {
+        const user = response.user;
+
+        // Apple may hide the email on subsequent logins
+        // Use email from Apple response, or from Firebase user, or navigate to email collection
+        let userEmail = email || user.email;
+
+        // If no email available, navigate to email collection screen
+        if (!userEmail) {
+          setLoading(false);
+          navigation.navigate('EmailScreenAppleLogin', {
+            onSubmit: async collectedEmail => {
+              if (collectedEmail) {
+                await completeAppleSignIn(user, collectedEmail, fullName);
+              }
+            },
+          });
+          return;
+        }
+
+        await completeAppleSignIn(user, userEmail, fullName);
+      }
+    } catch (error) {
+      console.error('Apple login error:', error);
+
+      // Don't show error if user cancelled
+      if (error.code === appleAuth.Error.CANCELED) {
+        console.log('User cancelled Apple Sign-In');
+        setLoading(false);
+        return;
+      }
+
+      // Log failed Apple login attempt
+      const failedAppleAdvisorSubdomain =
+        config?.subdomain || config?.advisorRaCode?.toLowerCase();
+      logLoginAttempt({
+        email: 'unknown',
+        status: 'failed',
+        login_method: 'apple',
+        failure_reason: 'apple_auth_error',
+        error_message: error.message,
+        error_code: error.code,
+        advisor_subdomain: failedAppleAdvisorSubdomain,
+      });
+
+      setError(error.message || 'Apple Sign-In failed');
+      setErrorShow(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to complete Apple Sign-In after getting email
+  const completeAppleSignIn = async (user, userEmail, fullName) => {
+    try {
+      setLoading(true);
+
+      // Construct display name from Apple's fullName object
+      let displayName = user.displayName;
+      if (!displayName && fullName) {
+        const nameParts = [fullName.givenName, fullName.familyName].filter(
+          Boolean,
+        );
+        displayName = nameParts.join(' ') || 'Apple User';
+      }
+      displayName = displayName || 'Apple User';
+
+      // Create or update user in backend
+      await axios.post(
+        `${server.server.baseUrl}api/user/`,
+        {
+          email: userEmail,
+          name: displayName,
+          imageUrl: user.photoURL || null,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+
+      // Get user details from backend
+      const userDetails = await axios.get(
+        `${server.server.baseUrl}api/user/getUser/${userEmail}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+
+      // Log successful Apple login
+      const appleAdvisorSubdomain =
+        config?.subdomain || config?.advisorRaCode?.toLowerCase();
+      trackAppUser({
+        email: userEmail,
+        firebase_id: user.uid,
+        name: displayName,
+        login_method: 'apple',
+        advisor_subdomain: appleAdvisorSubdomain,
+      });
+      logLoginAttempt({
+        email: userEmail,
+        firebase_id: user.uid,
+        status: 'success',
+        login_method: 'apple',
+        advisor_subdomain: appleAdvisorSubdomain,
+      });
+
+      await handlePostLoginNavigation(userDetails, userEmail);
+    } catch (error) {
+      console.error('Error completing Apple Sign-In:', error);
+      setError(error.message || 'Failed to complete sign in');
+      setErrorShow(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const storeLoginTime = async () => {
     try {
       const now = moment().toISOString();
@@ -510,6 +682,19 @@ const LoginScreen = () => {
                   Continue With Google
                 </Text>
               </TouchableOpacity>
+
+              {/* Apple Sign-In Button - iOS only */}
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity
+                  style={styles.appleButton}
+                  onPress={handleAppleLogin}
+                  disabled={loading}>
+                  <Text style={styles.appleIcon}></Text>
+                  <Text style={styles.appleButtonText}>
+                    Continue With Apple
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.signupContainer}>
@@ -680,6 +865,26 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     color: '#333333',
+    fontSize: 14,
+    fontFamily: 'Poppins-Medium',
+  },
+  appleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
+    paddingVertical: 14,
+    borderRadius: 3,
+    height: 45,
+    marginTop: 12,
+  },
+  appleIcon: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    marginRight: 10,
+  },
+  appleButtonText: {
+    color: '#FFFFFF',
     fontSize: 14,
     fontFamily: 'Poppins-Medium',
   },

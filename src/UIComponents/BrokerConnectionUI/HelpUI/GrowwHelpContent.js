@@ -13,8 +13,10 @@ const GrowwHelpContent = ({expanded, onExpandChange }) => {
   return (
     <View>
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 0 }}>
-
-      <Text style={styles.title}>Steps to Obtain API and Secret key for Groww:</Text>
+      <View style={styles.videoPlaceholder}>
+        <Text style={styles.videoPlaceholderText}>Video tutorial coming soon</Text>
+      </View>
+      <Text style={styles.title}>Steps to Obtain Client ID and Access Token for Groww:</Text>
 <View style={styles.content}>
                <Text style={styles.instruction}>
                     1. Go to{' '}
@@ -82,6 +84,22 @@ const styles = StyleSheet.create({
   videoBox: {
     alignItems: 'center',
     marginVertical: 12,
+  },
+  videoPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 12,
+    padding: 20,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed',
+  },
+  videoPlaceholderText: {
+    fontSize: 14,
+    color: '#888',
+    fontFamily: 'Poppins-Medium',
   },
   title: {
     fontSize: 13,

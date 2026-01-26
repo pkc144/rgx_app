@@ -26,7 +26,7 @@ import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
 import FyersHelpContent from './HelpUI/FyersHelpContent';
 import fyersIcon from '../../assets/fyers.png';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FullWindowOverlay } from 'react-native-screens';
+import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
@@ -65,14 +65,10 @@ const FyersConnectUI = ({
     return () => backHandler.remove();
   }, [isVisible, onClose]);
 
-  if (!isVisible) return null;
-
   return (
-    <FullWindowOverlay>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{flex: 1}}>
-        <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
+    <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
+      <View style={styles.fullScreen}>
+        <View style={{flex: 1, paddingTop: insets.top}}>
           {/* Header */}
           <LinearGradient
             colors={['#0B3D91', '#0056B7']}
@@ -97,141 +93,138 @@ const FyersConnectUI = ({
               startInLoadingState
               onNavigationStateChange={handleWebViewNavigationStateChange}
             />
-          ) : (
-            <View style={{flex: 1}}>
-              {/* Scrollable Help Content */}
+          ) : expanded ? (
+            /* Full Screen Help when expanded */
+            <View style={styles.fullScreenHelp}>
               <ScrollView
-                contentContainerStyle={{padding: 15}}
-                showsVerticalScrollIndicator={true}
-                style={{flex: 1}}>
-                <Pressable style={styles.guideBox}>
-                  <FyersHelpContent expanded={expanded} />
-                </Pressable>
-              </ScrollView>
-
-              {/* Read More / See Less outside scroll */}
-              <Pressable
-                style={styles.toggleContainer}
-                onPress={() => setExpanded(!expanded)}>
-                <Text style={styles.toggleText}>
-                  {expanded ? 'See Less' : 'Read More'}
-                </Text>
-                <View style={styles.toggleIconContainer}>
-                  {expanded ? (
-                    <ChevronUp size={14} color="#000" />
-                  ) : (
-                    <ChevronDown size={14} color="#000" />
-                  )}
-                </View>
-              </Pressable>
-
-              <View
-                style={{
-                  marginHorizontal: 15,
-                  borderWidth: 0.3,
-                  borderRadius: 8,
-                  borderColor: '#c8c8c8',
-                  marginBottom: 10,
-                }}>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: '#F5F5F5',
-                    padding: 10,
-                    borderRadius: 3,
-                    marginBottom: 10,
-                  }}>
-                  <Text style={styles.connectLabel}>Connect to Fyers</Text>
-                  <Image
-                    source={fyersIcon}
-                    style={{
-                      width: 30,
-                      height: 30,
-                      backgroundColor: '#fff',
-                      borderRadius: 3,
-                    }}
-                    resizeMode="contain"
-                  />
-                </View>
-
-                {/* Sticky Inputs */}
-                <View style={styles.bottomContainer}>
-                  <View style={styles.inputWrapper}>
-                    <Text style={styles.headerLabel}>User ID:</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        value={secretKey}
-                        placeholder="Enter your User ID"
-                        placeholderTextColor="#aaa"
-                        style={[styles.inputStyles, {flex: 1}]}
-                        secureTextEntry={!isPasswordVisibleup}
-                        onChangeText={text => setSecretKey(text.trim())}
-                      />
-                      <Pressable
-                        onPress={() =>
-                          setIsPasswordVisibleup(!isPasswordVisibleup)
-                        }>
-                        {secretKey ? (
-                          isPasswordVisibleup ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </Pressable>
-                    </View>
-                  </View>
-
-                  <View style={styles.inputWrapper}>
-                    <Text style={styles.headerLabel}>API Key:</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        value={apiKey}
-                        placeholder="Enter your API key"
-                        placeholderTextColor="#aaa"
-                        style={[styles.inputStyles, {flex: 1}]}
-                        secureTextEntry={!isPasswordVisible}
-                        onChangeText={text => setApiKey(text.trim())}
-                      />
-                      <Pressable
-                        onPress={() =>
-                          setIsPasswordVisible(!isPasswordVisible)
-                        }>
-                        {apiKey ? (
-                          isPasswordVisible ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </Pressable>
-                    </View>
-                  </View>
-
+                style={{flex: 1}}
+                contentContainerStyle={{padding: 15, paddingBottom: 20}}
+                showsVerticalScrollIndicator={true}>
+                <FyersHelpContent expanded={expanded} />
+                <View style={[styles.toggleWrapper, {marginTop: 15, paddingBottom: insets.bottom + 10}]}>
                   <Pressable
-                    style={[
-                      styles.proceedButton,
-                      {
-                        backgroundColor:
-                          apiKey && secretKey ? '#0056B7' : '#d3d3d3',
-                      },
-                    ]}
-                    onPress={updateSecretKey}
-                    disabled={!(apiKey && secretKey)}>
-                    {loading ? (
-                      <ActivityIndicator size={27} color="#fff" />
-                    ) : (
-                      <Text style={styles.proceedButtonText}>
-                        Connect Fyers
-                      </Text>
-                    )}
+                    style={styles.toggleContainer}
+                    onPress={() => setExpanded(false)}>
+                    <Text style={styles.toggleText}>See Less</Text>
+                    <View style={styles.toggleIconContainer}>
+                      <ChevronUp size={14} color="#000" />
+                    </View>
                   </Pressable>
                 </View>
-              </View>
+              </ScrollView>
             </View>
+          ) : (
+            <KeyboardAvoidingView
+              style={{flex: 1}}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+              <ScrollView
+                style={{flex: 1}}
+                contentContainerStyle={{padding: 15, paddingBottom: insets.bottom + 100}}
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled">
+                {/* Help Content */}
+                <View style={[styles.guideBox, {maxHeight: 280}]}>
+                  <FyersHelpContent expanded={expanded} />
+                </View>
+
+                {/* Read More */}
+                <Pressable
+                  style={styles.toggleContainer}
+                  onPress={() => setExpanded(true)}>
+                  <Text style={styles.toggleText}>Read More</Text>
+                  <View style={styles.toggleIconContainer}>
+                    <ChevronDown size={14} color="#000" />
+                  </View>
+                </Pressable>
+
+                {/* Input Card */}
+                <View style={styles.inputCard}>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.connectLabel}>Connect to Fyers</Text>
+                    <Image
+                      source={fyersIcon}
+                      style={styles.cardIcon}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  {/* Input Fields */}
+                  <View style={styles.inputSection}>
+                    <View style={styles.inputWrapper}>
+                      <Text style={styles.headerLabel}>User ID:</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          value={secretKey}
+                          placeholder="Enter your User ID"
+                          placeholderTextColor="#aaa"
+                          style={[styles.inputStyles, {flex: 1}]}
+                          secureTextEntry={!isPasswordVisibleup}
+                          onChangeText={text => setSecretKey(text.trim())}
+                        />
+                        <Pressable
+                          onPress={() =>
+                            setIsPasswordVisibleup(!isPasswordVisibleup)
+                          }>
+                          {secretKey ? (
+                            isPasswordVisibleup ? (
+                              <EyeIcon size={24} color="#000" />
+                            ) : (
+                              <EyeOffIcon size={24} color="#000" />
+                            )
+                          ) : null}
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <View style={styles.inputWrapper}>
+                      <Text style={styles.headerLabel}>API Key:</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          value={apiKey}
+                          placeholder="Enter your API key"
+                          placeholderTextColor="#aaa"
+                          style={[styles.inputStyles, {flex: 1}]}
+                          secureTextEntry={!isPasswordVisible}
+                          onChangeText={text => setApiKey(text.trim())}
+                        />
+                        <Pressable
+                          onPress={() =>
+                            setIsPasswordVisible(!isPasswordVisible)
+                          }>
+                          {apiKey ? (
+                            isPasswordVisible ? (
+                              <EyeIcon size={24} color="#000" />
+                            ) : (
+                              <EyeOffIcon size={24} color="#000" />
+                            )
+                          ) : null}
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <Pressable
+                      style={[
+                        styles.proceedButton,
+                        {
+                          backgroundColor:
+                            apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                        },
+                      ]}
+                      onPress={updateSecretKey}
+                      disabled={!(apiKey && secretKey)}>
+                      {loading ? (
+                        <ActivityIndicator size={27} color="#fff" />
+                      ) : (
+                        <Text style={styles.proceedButtonText}>
+                          Connect Fyers
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
           )}
 
           <HelpModal
@@ -240,8 +233,8 @@ const FyersConnectUI = ({
             onClose={() => setHelpVisible(false)}
           />
         </View>
-      </KeyboardAvoidingView>
-    </FullWindowOverlay>
+      </View>
+    </CrossPlatformOverlay>
   );
 };
 
@@ -277,6 +270,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
   },
+  fullScreenHelp: {flex: 1, backgroundColor: '#fff'},
+  toggleWrapper: {
+    borderTopWidth: 1,
+    borderTopColor: '#E8E9EC',
+    backgroundColor: '#fff',
+    paddingVertical: 5,
+  },
   toggleContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -299,6 +299,30 @@ const styles = StyleSheet.create({
     borderColor: '#E8E9EC',
     padding: 15,
     backgroundColor: '#fff',
+  },
+  inputCard: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#E8E9EC',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+  },
+  cardIcon: {
+    width: 30,
+    height: 30,
+    backgroundColor: '#fff',
+    borderRadius: 3,
+  },
+  inputSection: {
+    padding: 15,
   },
   inputWrapper: {marginBottom: 10},
   headerLabel: {

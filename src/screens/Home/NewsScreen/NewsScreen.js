@@ -27,7 +27,6 @@ import { ChevronLeft, XIcon,BanIcon, CalendarDays, MinusIcon,SearchIcon, PlusIco
 import { useNavigation } from "@react-navigation/native";
 import NewsInfoScreen from "./NewsInfoScreen";
 import server from "../../../utils/serverConfig";
-import { color } from "react-native-elements/dist/helpers";
 import Coin from '../../../assets/coin.svg';
 import Icon1 from 'react-native-vector-icons/Fontisto';
 const { width: screenWidth } = Dimensions.get('window');

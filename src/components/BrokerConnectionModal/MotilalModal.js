@@ -4,7 +4,6 @@ import server from '../../utils/serverConfig';
 import CryptoJS from 'react-native-crypto-js';
 import { getAuth } from '@react-native-firebase/auth';
 import axios from 'axios';
-import Toast from 'react-native-toast-message';
 
 import { generateToken } from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
@@ -12,6 +11,7 @@ import MotilalConnectUI from '../../UIComponents/BrokerConnectionUI/MotilalConne
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06;
@@ -24,6 +24,7 @@ const MotilalModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [clientCode, setClientCode] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -104,11 +105,10 @@ const MotilalModal = ({
   const initiateAuth = () => {
     console.log('I am here--', apiKey, clientCode, userDetails?._id);
     if (!userDetails?._id || !apiKey || !clientCode) {
-      showToast('Please fill in all required fields', 'error', '');
+      showAlert('error', 'Missing Fields', 'Please fill in all required fields.');
       return;
     }
     const data = {
-      user_broker: 'Motilal Oswal',
       uid: userDetails?._id,
       apiKey: checkValidApiAnSecret(apiKey),
       clientCode: clientCode,
@@ -163,15 +163,17 @@ const MotilalModal = ({
       userDetails?.secretKey,
       userDetails,
     );
-    if (userDetails?.apiKey && userDetails?.secretKey) {
+    if (userDetails?.apiKey && userDetails?.secretKey && userDetails?.user_broker === 'Motilal Oswal' && userId) {
       setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
       setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
+      setClientCode(userDetails?.clientCode || '');
       console.log('POP:111');
+      const cleanRedirectUrl = brokerConnectRedirectURL?.replace(/^https?:\/\//, '') || '';
       let data = JSON.stringify({
-        user_broker: 'Motilal Oswal',
-        uid: '67c7072ee3aa47762a22ef3d',
+        uid: userId,
         apiKey: userDetails?.apiKey,
         clientCode: userDetails?.clientCode,
+        redirect_url: cleanRedirectUrl,
       });
       let config = {
         method: 'put',
@@ -193,15 +195,15 @@ const MotilalModal = ({
         .request(config)
         .then(response => {
           if (response) {
-            const motilalUrl = `https://invest.motilaloswal.com/OpenAPI/Login.aspx?apikey=${apiKey}&state=${cleanRedirectUrl}`;
-            console.log('here upstox:', response.data);
+            const motilalUrl = `https://invest.motilaloswal.com/OpenAPI/Login.aspx?apikey=${checkValidApiAnSecretdecrypt(userDetails?.apiKey)}&state=${cleanRedirectUrl}`;
+            console.log('here motilal:', response.data);
             setAuthUrl(motilalUrl);
             setShowWebView(true);
           }
         })
         .catch(error => {
           console.log(error);
-          showToast('Incorrect credential.Please try again', 'error', '');
+          showAlert('error', 'Incorrect Credentials', 'Please check your credentials and try again.');
         });
     }
   }, [isVisible]);
@@ -227,29 +229,6 @@ const MotilalModal = ({
   const [upstoxSessionToken, setUpstoxSessionToken] = useState(null);
   const hasConnectedUpstox = useRef(false);
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const isToastShown = useRef(false);
   const connectBrokerDbUpadte = () => {
@@ -289,13 +268,13 @@ const MotilalModal = ({
           setIsLoading(false);
           fetchBrokerStatusModal();
           eventEmitter.emit('refreshEvent', { source: 'Motilal Oswal broker connection' });
-          showToast('Your Broker Connected Successfully!.', 'success', '');
+          showAlert('success', 'Connected Successfully', 'Your Motilal Oswal broker has been connected successfully!');
           onClose();
           setShowBrokerModal(false);
         })
         .catch(error => {
           console.error('got the error here----------', error);
-          showToast('Error to connect.', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect to Motilal Oswal. Please try again.');
         });
     }
   };

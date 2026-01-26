@@ -36,7 +36,15 @@ const LogoutScreen = ({navigation}) => {
 
   const handleLogout = async () => {
     try {
-      await GoogleSignin.signOut();
+      // Try to sign out from Google (may fail if user signed in with Apple/email)
+      try {
+        await GoogleSignin.signOut();
+      } catch (googleError) {
+        // Ignore - user may not have signed in with Google
+        console.log('Google signOut skipped (user may not have used Google)');
+      }
+
+      // Sign out from Firebase (handles all auth providers)
       await signOut(auth);
       await AsyncStorage.removeItem('cartItems');
 
@@ -52,6 +60,8 @@ const LogoutScreen = ({navigation}) => {
       navigation.replace('Login');
     } catch (error) {
       console.error('Error signing out: ', error);
+      // Still navigate to login even if there's an error
+      navigation.replace('Login');
     }
   };
 

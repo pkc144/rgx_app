@@ -50,7 +50,7 @@ const SignUpRADetails = ({route}) => {
   const gradient1 = config?.gradient1 || fallbackConfig.gradient1 || '#03275B';
   const gradient2 = config?.gradient2 || fallbackConfig.gradient2 || '#0156B7';
 
-  const [raId, setRaId] = useState('RGXRESEARCH'); // Default to rgxresearch
+  const [raId, setRaId] = useState(''); // Default to rgxresearch
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
 

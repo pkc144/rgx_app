@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Animated,
   Easing,
+  Dimensions,
 } from 'react-native';
 import {
   XIcon,
@@ -27,7 +28,7 @@ import LinePattern from '../../assets/Vector.svg';
 import Icon from 'react-native-vector-icons/AntDesign';
 const Alpha100 = require('../../assets/alpha-100.png');
 import Icon1 from 'react-native-vector-icons/Feather';
-import { ScreenWidth } from 'react-native-elements/dist/helpers';
+const { width: ScreenWidth } = Dimensions.get('window');
 import moment from 'moment';
 import { useConfig } from '../../context/ConfigContext';
 

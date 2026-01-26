@@ -25,7 +25,6 @@ import {
 } from 'lucide-react-native';
 import { Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { ScreenWidth } from 'react-native-elements/dist/helpers';
 import moment from 'moment';
 const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');

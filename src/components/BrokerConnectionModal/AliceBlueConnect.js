@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Dimensions } from 'react-native';
 import { getAuth } from '@react-native-firebase/auth';
-import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import axios from 'axios';
 
@@ -12,6 +11,7 @@ import AliceBlueConnectUI from '../../UIComponents/BrokerConnectionUI/AliceBlueC
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -23,6 +23,7 @@ const AliceBlueConnect = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [clientCode, setclientCode] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -142,7 +143,7 @@ const AliceBlueConnect = ({
         console.log('success brooooohh');
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'AliceBlue broker connection' });
-        showToast('Your Broker Connected Successfully!.', 'success', '');
+        showAlert('success', 'Connected Successfully', 'Your AliceBlue broker has been connected successfully!');
         setLoading(false);
         setShowAliceblueModal(false);
         setShowBrokerModal(false);
@@ -153,33 +154,10 @@ const AliceBlueConnect = ({
           error.response ? error.response.data : error.message,
         );
         setLoading(false);
-        showToast('Error to connect.', 'error', '');
+        showAlert('error', 'Connection Error', 'Failed to connect to AliceBlue. Please try again.');
       });
   };
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const [shouldRenderContent, setShouldRenderContent] = React.useState(false);
   useEffect(() => {

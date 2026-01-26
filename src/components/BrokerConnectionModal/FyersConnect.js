@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, Dimensions } from 'react-native';
 
 import { getAuth } from '@react-native-firebase/auth';
-import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import CryptoJS from 'react-native-crypto-js';
 import axios from 'axios';
@@ -12,6 +11,7 @@ import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import FyersConnectUI from '../../UIComponents/BrokerConnectionUI/FyersConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06;
@@ -24,6 +24,7 @@ const FyersConnect = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -136,7 +137,7 @@ const FyersConnect = ({
         })
         .catch(error => {
           console.error(error);
-          showToast('Error to connect.', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect to Fyers. Please try again.');
         });
       hasConnectedFyers.current = true;
     }
@@ -159,6 +160,8 @@ const FyersConnect = ({
           uid: userId,
           user_broker: 'Fyers',
           jwtToken: fyersAccessToken,
+          clientCode: secretKey,
+          secretKey: checkValidApiAnSecret(apiKey),
         };
         let config = {
           method: 'put',
@@ -182,13 +185,13 @@ const FyersConnect = ({
             console.log('success brooooohh');
             fetchBrokerStatusModal();
             eventEmitter.emit('refreshEvent', { source: 'Fyers broker connection' });
-            showToast('Your Broker Connected Successfully!.', 'success', '');
+            showAlert('success', 'Connected Successfully', 'Your Fyers broker has been connected successfully!');
             onClose();
             setShowBrokerModal(false);
           })
           .catch(error => {
             console.log(error);
-            showToast('Error to connect.', 'error', '');
+            showAlert('error', 'Connection Error', 'Failed to connect to Fyers. Please try again.');
           });
       }
     }
@@ -256,7 +259,7 @@ const FyersConnect = ({
       })
       .catch(error => {
         console.log(error);
-        showToast('Incorrect credential.Please try again', 'error', '');
+        showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
       });
   };
 
@@ -306,29 +309,6 @@ const FyersConnect = ({
     }
   }, [isVisible]);
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const [shouldRenderContent, setShouldRenderContent] = React.useState(false);
   useEffect(() => {

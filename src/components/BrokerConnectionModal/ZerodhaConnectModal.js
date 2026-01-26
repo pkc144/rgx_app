@@ -5,12 +5,12 @@ import server from '../../utils/serverConfig';
 import axios from 'axios';
 import CryptoJS from 'react-native-crypto-js';
 import Config from 'react-native-config';
-import Toast from 'react-native-toast-message';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import ZerodhaConnectUI from '../../UIComponents/BrokerConnectionUI/ZerodhaConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06;
 
@@ -22,6 +22,7 @@ const ZerodhaConnectModal = ({
   setShowBrokerModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [authtoken, setAuthToken] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [isLoading, setLoading] = useState(false);
@@ -46,30 +47,6 @@ const ZerodhaConnectModal = ({
 
   const appURL = configData?.config?.REACT_APP_ADVISOR_TAG;
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
-
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const checkValidApiAnSecret = details => {
     const bytesKey = CryptoJS.AES.encrypt(details, 'ApiKeySecret');
@@ -186,7 +163,6 @@ const ZerodhaConnectModal = ({
       uid: userId,
       apiKey: checkValidApiAnSecret(apiKey),
       secretKey: checkValidApiAnSecret(secretKey),
-      user_broker: 'Zerodha',
       redirect_url: cleanRedirectUrl,
     });
     console.log('--------->>>>>>>', data);
@@ -218,7 +194,7 @@ const ZerodhaConnectModal = ({
       })
       .catch(error => {
         console.log(error);
-        showToast('Incorrect credential.Please try again', 'error', '');
+        showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
       });
   };
 
@@ -267,7 +243,7 @@ const ZerodhaConnectModal = ({
             if (response.data.status === 1) {
               setShowWebView(false);
               setLoading(false);
-              showToast('Incorrect credential.Please try again', 'error', '');
+              showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
             } else {
               const session_token = response.data.access_token;
               setZerodhaAccessToken(session_token);
@@ -278,7 +254,7 @@ const ZerodhaConnectModal = ({
           console.error(error);
           setShowWebView(false);
           setLoading(false);
-          showToast('Error to connect.', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect to Zerodha. Please try again.');
         });
       hasConnectedZerodha.current = true;
     }
@@ -308,6 +284,8 @@ const ZerodhaConnectModal = ({
         uid: userId,
         user_broker: 'Zerodha',
         jwtToken: zerodhaAccessToken,
+        apiKey: checkValidApiAnSecret(apiKey),
+        secretKey: checkValidApiAnSecret(secretKey),
       };
       let config = {
         method: 'put',
@@ -332,13 +310,13 @@ const ZerodhaConnectModal = ({
           setLoading(false);
           fetchBrokerStatusModal();
           eventEmitter.emit('refreshEvent', { source: 'Zerodha broker connection' });
-          showToast('Your Broker Connected Successfully!.', 'success', '');
+          showAlert('success', 'Connected Successfully', 'Your Zerodha broker has been connected successfully!');
           onClose();
           setShowBrokerModal(false);
         })
         .catch(error => {
           console.log(error);
-          showToast('Error to connect.', 'error', '');
+          showAlert('error', 'Connection Error', 'Failed to connect to Zerodha. Please try again.');
         });
     }
   };

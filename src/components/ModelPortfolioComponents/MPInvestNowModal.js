@@ -4370,6 +4370,13 @@ const MPInvestNowModal = ({
               </TouchableOpacity>
             </View>
 
+            {/* Apple App Store Compliance Disclaimer */}
+            <View style={styles.paymentDisclaimer}>
+              <Text style={styles.paymentDisclaimerText}>
+                Payments in this app are for financial research/advisory services provided by registered entities. All fees are collected on behalf of and remitted to licensed financial professionals for real-world investment services.
+              </Text>
+            </View>
+
             <TouchableOpacity
               onPress={handleDigioPayment}
               disabled={!selectedCard || loading || !consentChecked}
@@ -4947,6 +4954,21 @@ const styles = StyleSheet.create({
   linkText: {
     fontFamily: 'Satoshi-Bold',
     textDecorationLine: 'underline',
+  },
+  paymentDisclaimer: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#0284c7',
+  },
+  paymentDisclaimerText: {
+    fontSize: 11,
+    fontFamily: 'Satoshi-Regular',
+    color: '#475569',
+    lineHeight: 16,
   },
 
   paymentHeader: {

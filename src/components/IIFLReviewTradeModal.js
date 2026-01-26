@@ -22,8 +22,6 @@ import {
   AlertOctagon,
   ArrowRight,
 } from 'lucide-react-native';
-import {Input} from 'react-native-elements';
-
 import CryptoJS from 'react-native-crypto-js';
 import axios from 'axios';
 import {useNavigation, useRoute} from '@react-navigation/native';

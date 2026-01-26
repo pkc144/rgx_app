@@ -21,7 +21,7 @@ const DhanHelpContent = ({expanded, onExpandChange }) => {
           videoId="MhAfqNQKSrQ"
         />
       </View>
-      <Text style={styles.title}>Steps to Obtain API and Secret key for ICICI:</Text>
+      <Text style={styles.title}>Steps to Obtain Client ID and Access Token for Dhan:</Text>
 <View style={styles.content}>
               <Text
                           style={styles.instruction}

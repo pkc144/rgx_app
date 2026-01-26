@@ -9,6 +9,9 @@ import {
   Image,
   Dimensions,
   BackHandler,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   EyeIcon,
@@ -20,10 +23,9 @@ import {
 import WebView from 'react-native-webview';
 import LinearGradient from 'react-native-linear-gradient';
 import ZerodhaIcon from '../../assets/Zerodha.png';
-import {TextInput} from 'react-native-gesture-handler';
 import ZerodhaHelpContent from './HelpUI/ZerodhaHelpContent';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FullWindowOverlay } from 'react-native-screens';
+import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 
@@ -61,10 +63,8 @@ const ZerodhaConnectUI = ({
     return () => backHandler.remove();
   }, [isVisible, onClose]);
 
-  if (!isVisible) return null;
-
   return (
-    <FullWindowOverlay>
+    <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
         {/* HEADER */}
         <LinearGradient
@@ -96,120 +96,135 @@ const ZerodhaConnectUI = ({
 
         {/* CONTENT */}
         <View style={styles.contentContainer}>
-          {shouldRenderContent && !showWebView ? (
-            <>
-              {/* Scrollable help content with toggle expand */}
-              <View
-                style={[styles.guideBox, {maxHeight: expanded ? 420 : 320}]}>
-                <ScrollView
-                  ref={scrollViewRef}
-                  showsVerticalScrollIndicator
-                  nestedScrollEnabled
-                  contentContainerStyle={styles.helpScrollContent}>
-                  <ZerodhaHelpContent
-                    expanded={expanded}
-                    onExpandChange={setExpanded}
-                  />
-                </ScrollView>
-                <TouchableOpacity
-                  onPress={() => setExpanded(!expanded)}
-                  style={styles.toggleContainer}>
-                  <Text style={styles.toggleText}>
-                    {expanded ? 'See Less' : 'Read More'}
-                  </Text>
-                  <View style={styles.toggleIconContainer}>
-                    {expanded ? (
+          {shouldRenderContent && !showWebView && expanded ? (
+            /* Full Screen Help when expanded */
+            <View style={styles.fullScreenHelp}>
+              <ScrollView
+                ref={scrollViewRef}
+                style={{flex: 1}}
+                contentContainerStyle={{padding: 10, paddingBottom: 20}}
+                showsVerticalScrollIndicator={true}>
+                <ZerodhaHelpContent expanded={expanded} onExpandChange={setExpanded} />
+                <View style={[styles.toggleWrapper, {marginTop: 15, paddingBottom: insets.bottom + 10}]}>
+                  <TouchableOpacity
+                    style={styles.toggleContainer}
+                    onPress={() => setExpanded(false)}>
+                    <Text style={styles.toggleText}>See Less</Text>
+                    <View style={styles.toggleIconContainer}>
                       <ChevronUp size={14} color="#000" />
-                    ) : (
-                      <ChevronDown size={14} color="#000" />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              </View>
-
-              {/* Fixed input card at bottom */}
-              <View style={styles.inputCard}>
-                <View style={styles.connectRow}>
-                  <Text style={styles.connectLabel}>Connect to Zerodha</Text>
-                  <Image
-                    source={ZerodhaIcon}
-                    style={styles.connectIcon}
-                    resizeMode="contain"
-                  />
+                    </View>
+                  </TouchableOpacity>
                 </View>
-
-                <View>
-                  <Text style={styles.headerLabel}>API Key :</Text>
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      value={apiKey}
-                      placeholder="Enter your API key"
-                      placeholderTextColor="grey"
-                      style={[styles.inputStyles, {color: 'grey', flex: 1}]}
-                      secureTextEntry={!isPasswordVisibleUp}
-                      onChangeText={text => setApiKey(text.trim())}
-                    />
-                    <TouchableOpacity
-                      onPress={() =>
-                        setIsPasswordVisibleUp(!isPasswordVisibleUp)
-                      }>
-                      {apiKey ? (
-                        isPasswordVisibleUp ? (
-                          <EyeIcon size={24} color="#000" />
-                        ) : (
-                          <EyeOffIcon size={24} color="#000" />
-                        )
-                      ) : null}
-                    </TouchableOpacity>
-                  </View>
+              </ScrollView>
+            </View>
+          ) : shouldRenderContent && !showWebView ? (
+            <KeyboardAvoidingView
+              style={{flex: 1}}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+              <ScrollView
+                ref={scrollViewRef}
+                style={{flex: 1}}
+                contentContainerStyle={{padding: 10, paddingBottom: insets.bottom + 100}}
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled">
+                {/* Help content */}
+                <View style={[styles.guideBox, {maxHeight: 280}]}>
+                  <ZerodhaHelpContent expanded={expanded} onExpandChange={setExpanded} />
                 </View>
-
-                <View>
-                  <Text style={styles.headerLabel}>Secret Key :</Text>
-                  <View style={styles.inputContainer}>
-                    <TextInput
-                      value={secretKey}
-                      placeholder="Enter your Secret key"
-                      placeholderTextColor="grey"
-                      style={[styles.inputStyles, {color: 'grey', flex: 1}]}
-                      secureTextEntry={!isPasswordVisible}
-                      onChangeText={text => setSecretKey(text.trim())}
-                    />
-                    <TouchableOpacity
-                      onPress={() =>
-                        setIsPasswordVisible(!isPasswordVisible)
-                      }>
-                      {secretKey ? (
-                        isPasswordVisible ? (
-                          <EyeIcon size={24} color="#000" />
-                        ) : (
-                          <EyeOffIcon size={24} color="#000" />
-                        )
-                      ) : null}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
                 <TouchableOpacity
-                  style={[
-                    styles.proceedButton,
-                    {
-                      backgroundColor:
-                        apiKey && secretKey ? '#0056B7' : '#d3d3d3',
-                    },
-                  ]}
-                  onPress={updateSecretKey}
-                  disabled={!(apiKey && secretKey)}>
-                  {isLoading ? (
-                    <ActivityIndicator size={27} color="#fff" />
-                  ) : (
-                    <Text style={styles.proceedButtonText}>
-                      Connect Zerodha
-                    </Text>
-                  )}
+                  onPress={() => setExpanded(true)}
+                  style={styles.toggleContainer}>
+                  <Text style={styles.toggleText}>Read More</Text>
+                  <View style={styles.toggleIconContainer}>
+                    <ChevronDown size={14} color="#000" />
+                  </View>
                 </TouchableOpacity>
-              </View>
-            </>
+
+                {/* Input card */}
+                <View style={styles.inputCard}>
+                  <View style={styles.connectRow}>
+                    <Text style={styles.connectLabel}>Connect to Zerodha</Text>
+                    <Image
+                      source={ZerodhaIcon}
+                      style={styles.connectIcon}
+                      resizeMode="contain"
+                    />
+                  </View>
+
+                  <View>
+                    <Text style={styles.headerLabel}>API Key :</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        value={apiKey}
+                        placeholder="Enter your API key"
+                        placeholderTextColor="grey"
+                        style={[styles.inputStyles, {color: 'grey', flex: 1}]}
+                        secureTextEntry={!isPasswordVisibleUp}
+                        onChangeText={text => setApiKey(text.trim())}
+                      />
+                      <TouchableOpacity
+                        onPress={() =>
+                          setIsPasswordVisibleUp(!isPasswordVisibleUp)
+                        }>
+                        {apiKey ? (
+                          isPasswordVisibleUp ? (
+                            <EyeIcon size={24} color="#000" />
+                          ) : (
+                            <EyeOffIcon size={24} color="#000" />
+                          )
+                        ) : null}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View>
+                    <Text style={styles.headerLabel}>Secret Key :</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        value={secretKey}
+                        placeholder="Enter your Secret key"
+                        placeholderTextColor="grey"
+                        style={[styles.inputStyles, {color: 'grey', flex: 1}]}
+                        secureTextEntry={!isPasswordVisible}
+                        onChangeText={text => setSecretKey(text.trim())}
+                      />
+                      <TouchableOpacity
+                        onPress={() =>
+                          setIsPasswordVisible(!isPasswordVisible)
+                        }>
+                        {secretKey ? (
+                          isPasswordVisible ? (
+                            <EyeIcon size={24} color="#000" />
+                          ) : (
+                            <EyeOffIcon size={24} color="#000" />
+                          )
+                        ) : null}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.proceedButton,
+                      {
+                        backgroundColor:
+                          apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                      },
+                    ]}
+                    onPress={updateSecretKey}
+                    disabled={!(apiKey && secretKey)}>
+                    {isLoading ? (
+                      <ActivityIndicator size={27} color="#fff" />
+                    ) : (
+                      <Text style={styles.proceedButtonText}>
+                        Connect Zerodha
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
           ) : (
             <View style={styles.webViewContainer}>
               <WebView
@@ -225,7 +240,7 @@ const ZerodhaConnectUI = ({
           )}
         </View>
       </View>
-    </FullWindowOverlay>
+    </CrossPlatformOverlay>
   );
 };
 
@@ -290,6 +305,13 @@ const styles = StyleSheet.create({
     padding: 12,
     elevation: 2,
     shadowColor: '#ccc',
+  },
+  fullScreenHelp: {flex: 1, backgroundColor: '#fff'},
+  toggleWrapper: {
+    borderTopWidth: 1,
+    borderTopColor: '#E8E9EC',
+    backgroundColor: '#fff',
+    paddingVertical: 5,
   },
   helpScrollContent: {
     paddingBottom: 10,

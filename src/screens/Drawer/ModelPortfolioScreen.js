@@ -31,10 +31,9 @@ import {useTrade} from '../TradeContext';
 import CustomTabBar from './CustomTabbar';
 import RenderHTML from 'react-native-render-html';
 import LinearGradient from 'react-native-linear-gradient';
-import {ScreenWidth} from 'react-native-elements/dist/helpers';
 import {useConfig} from '../../context/ConfigContext';
 
-const {width} = Dimensions.get('window');
+const {width, width: ScreenWidth} = Dimensions.get('window');
 
 const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const {userDetails, broker, getUserDeatils, configData} = useTrade();

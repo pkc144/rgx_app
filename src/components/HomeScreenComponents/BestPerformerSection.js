@@ -10,7 +10,6 @@ import moment from 'moment';
 import Config from 'react-native-config';
 import { useTrade } from '../../screens/TradeContext';
 import LinkOpeningWeb from '../../screens/Home/NewsScreen/LinkOpeningWeb';
-import { Tile } from 'react-native-elements';
 import { Title } from 'react-native-paper';
 import PriceText from '../AdviceScreenComponents/DynamicText/PriceText';
 import BestPerformerText from '../AdviceScreenComponents/DynamicText/HomeBestPerformer';

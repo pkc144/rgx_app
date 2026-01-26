@@ -108,6 +108,8 @@ import VideosScreen from './HomeScreenComponents/KnowledgeHubScreen/VideoScreen'
 import PDFsScreen from './HomeScreenComponents/KnowledgeHubScreen/PdfScreen';
 import BlogsScreen from './HomeScreenComponents/KnowledgeHubScreen/BlogScreen';
 import SignUpRADetails from '../screens/Authentication/SignUpRADetails';
+import EmailScreenAppleLogin from '../screens/Authentication/EmailScreenAppleLogin';
+import UpdateEmailScreen from '../screens/Home/UpdateEmailScreen';
 import AccountSettingsScreen from '../screens/Home/AccountSettingsScreen';
 import KnowledgeHub from './HomeScreenComponents/KnowledgeHub';
 import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen';
@@ -123,8 +125,7 @@ const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 const {height: screenHeight} = Dimensions.get('window');
 
-const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
-const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['rgxresearch'] || {};
+const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
 const {
   logo: LogoComponent,
   themeColor,
@@ -139,7 +140,7 @@ const {
   cardverticalmargin,
   placeholderText,
   tabIconColor,
-} = variantConfig;
+} = APP_VARIANTS[selectedVariant];
 const CustomTabBarIcon = ({name, focused}) => {
   let IconComponent;
   if (name === 'Home') {
@@ -1012,6 +1013,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           options={{headerShown: false}}
         />
         <Stack.Screen
+          name="EmailScreenAppleLogin"
+          component={EmailScreenAppleLogin}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
           name="Home"
           component={DrawerNavigator}
           options={{headerShown: false}}
@@ -1114,6 +1120,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="More"
           component={AccountSettingsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="UpdateEmailScreen"
+          component={UpdateEmailScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen

@@ -11,7 +11,7 @@ import {
 import WebView from 'react-native-webview';
 import { ChevronLeft, XIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FullWindowOverlay } from 'react-native-screens';
+import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('screen');
 
@@ -31,10 +31,8 @@ const AngleOneConnectUI = ({ isVisible, onClose, authUrl, handleWebViewNavigatio
     return () => backHandler.remove();
   }, [isVisible, onClose]);
 
-  if (!isVisible) return null;
-
   return (
-    <FullWindowOverlay>
+    <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={styles.fullScreen}>
         <View style={[styles.header, { paddingTop: insets.top }]}>
           <TouchableOpacity
@@ -74,7 +72,7 @@ const AngleOneConnectUI = ({ isVisible, onClose, authUrl, handleWebViewNavigatio
           }
         />
       </View>
-    </FullWindowOverlay>
+    </CrossPlatformOverlay>
   );
 };
 

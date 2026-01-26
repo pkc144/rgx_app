@@ -198,15 +198,15 @@ const BrokerSelectionModal = ({
 
   return (
     <Modal
-      visible={showBrokerModal || OpenTokenExpireModel}
+      isVisible={showBrokerModal || OpenTokenExpireModel}
       backdropOpacity={0.5}
-      useNativeDriver
-      hideModalContentWhileAnimating
+      useNativeDriver={true}
+      useNativeDriverForBackdrop={true}
+      hideModalContentWhileAnimating={true}
       animationIn="slideInUp"
       animationOut="slideOutDown"
-      swipeDirection={['down']}
       style={styles.modal}
-      onRequestClose={onClose}>
+      onBackdropPress={onClose}>
       {showBrokerModal && (
         <LinearGradient
           colors={['#002651', '#003572', '#0053B1']}
@@ -302,9 +302,9 @@ const BrokerSelectionModal = ({
             </View>
           </SafeAreaView>
         </LinearGradient>
-      )}
+        )}
 
-      {OpenTokenExpireModel && (
+        {OpenTokenExpireModel && (
         <View style={styles.expireModalContainer}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <XIcon size={24} color="#666" />

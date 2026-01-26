@@ -6,12 +6,12 @@ import { getAuth } from '@react-native-firebase/auth';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 
-import Toast from 'react-native-toast-message';
 import axios from 'axios';
 import HDFCConnectUI from '../../UIComponents/BrokerConnectionUI/HDFCConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 
 const HDFCconnectModal = ({
   isVisible,
@@ -21,6 +21,7 @@ const HDFCconnectModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -117,29 +118,6 @@ const HDFCconnectModal = ({
   const [hdfcSessionToken, setHdfcSessionToken] = useState(null);
   const hasConnectedHdfc = useRef(false);
 
-  const showToast = (message1, type, message2) => {
-    Toast.show({
-      type: type,
-      text2: message2 + ' ' + message1,
-      position: 'top',
-      visibilityTime: 4000, // Duration the toast is visible
-      autoHide: true,
-      topOffset: 60, // Adjust this value to position the toast
-      bottomOffset: 80,
-
-      text1Style: {
-        color: 'black',
-        fontSize: 12,
-        fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
-      },
-      text2Style: {
-        color: 'black',
-        fontSize: 13,
-        fontFamily: 'Poppins-Regular', // Customize your font
-      },
-    });
-  };
 
   const connectHdfc = () => {
     if (
@@ -186,7 +164,7 @@ const HDFCconnectModal = ({
         })
         .catch(error => {
           console.error(error);
-          showToast('Invalid Credential.', 'error', '');
+          showAlert('error', 'Invalid Credentials', 'Please check your API Key and Secret Key and try again.');
         });
       hasConnectedHdfc.current = true;
     }
@@ -268,6 +246,8 @@ const HDFCconnectModal = ({
           uid: userId,
           user_broker: 'Hdfc Securities',
           jwtToken: hdfcSessionToken,
+          apiKey: checkValidApiAnSecret(apiKey),
+          secretKey: checkValidApiAnSecret(secretKey),
         };
         let config = {
           method: 'put',
@@ -291,14 +271,14 @@ const HDFCconnectModal = ({
             console.log('success brooooohh');
             fetchBrokerStatusModal();
             eventEmitter.emit('refreshEvent', { source: 'HDFC Securities broker connection' });
-            showToast('Your Broker Connected Successfully!.', 'success', '');
+            showAlert('success', 'Connected Successfully', 'Your HDFC broker has been connected successfully!');
             // setShowhdfcModal(false);
             onClose();
             setShowBrokerModal(false);
           })
           .catch(error => {
             console.log(error);
-            showToast('Error to connect.', 'error', '');
+            showAlert('error', 'Connection Error', 'Failed to connect to HDFC. Please try again.');
           });
       }
     }

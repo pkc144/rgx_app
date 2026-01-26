@@ -11,7 +11,6 @@ import {
   Pressable,
 } from 'react-native';
 import Modal from 'react-native-modal';
-import {Input} from 'react-native-elements';
 import {XIcon, EyeOffIcon, EyeIcon} from 'lucide-react-native';
 import axios from 'axios';
 import toast from 'react-native-toast-message';
@@ -178,22 +177,23 @@ const KotakProceedModal = ({isVisible, onClose, clientCode}) => {
                 keyboardType="numeric"
               />
               <Text style={styles.label}>Password :</Text>
-              <Input
-                inputContainerStyle={styles.inputContainer}
-                secureTextEntry={!isPasswordVisible}
-                rightIcon={
-                  <TouchableOpacity
-                    onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                    {isPasswordVisible ? (
-                      <EyeIcon size={24} color="#000" />
-                    ) : (
-                      <EyeOffIcon size={24} color="#000" />
-                    )}
-                  </TouchableOpacity>
-                }
-                value={password}
-                onChangeText={setPassword}
-              />
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  secureTextEntry={!isPasswordVisible}
+                  value={password}
+                  onChangeText={setPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+                  style={styles.eyeIcon}>
+                  {isPasswordVisible ? (
+                    <EyeIcon size={24} color="#000" />
+                  ) : (
+                    <EyeOffIcon size={24} color="#000" />
+                  )}
+                </TouchableOpacity>
+              </View>
               <TouchableOpacity
                 style={styles.proceedButton}
                 onPress={handleSubmit}
@@ -272,8 +272,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 10,
-    width: '106%',
-    height: commonHeight, // Apply common height
+    width: '100%',
+    height: commonHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  passwordInput: {
+    flex: 1,
+    height: '100%',
+    color: '#000101',
+  },
+  eyeIcon: {
+    padding: 5,
   },
   input: {
     height: commonHeight, // Apply common height
