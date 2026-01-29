@@ -119,6 +119,8 @@ const APP_VARIANTS = {
     basket1: '#9D2115',
     basket2: '#6B1207',
     subdomain: 'rgxresearch',
+    // Google Sign-In Web Client ID (from google-services.json for com.rgx.aq)
+    googleWebClientId: '887826618956-83tfceb7n4m4h38qk93ld1emb78uj5rh.apps.googleusercontent.com',
     // Payment Modal Colors
     paymentModal: {
       headerBg: '#0056B7',

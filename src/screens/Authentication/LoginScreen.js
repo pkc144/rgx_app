@@ -72,15 +72,16 @@ const LoginScreen = () => {
     getModelPortfolioStrategyDetails,
   } = useTrade();
 
-  // Configure Google Sign-In with googleWebClientId from database
+  // Configure Google Sign-In with correct Web client ID
+  // IMPORTANT: Must use Web client (client_type: 3), NOT iOS client (client_type: 2)
+  const WEB_CLIENT_ID = '887826618956-83tfceb7n4m4h38qk93ld1emb78uj5rh.apps.googleusercontent.com';
+
   React.useEffect(() => {
-    if (config?.googleWebClientId) {
-      GoogleSignin.configure({
-        webClientId: config.googleWebClientId,
-      });
-      console.log('Google Sign-In configured with Client ID from database:', config.googleWebClientId);
-    }
-  }, [config?.googleWebClientId]);
+    GoogleSignin.configure({
+      webClientId: WEB_CLIENT_ID,
+    });
+    console.log('Google Sign-In configured with Web Client ID:', WEB_CLIENT_ID);
+  }, []);
 
   // Navigation handler - store data and navigate
   const handlePostLoginNavigation = async (userDetails, userEmail) => {
@@ -325,7 +326,7 @@ const LoginScreen = () => {
         await handlePostLoginNavigation(userDetails, user.email);
       }
     } catch (error) {
-      // console.error('❌ Error during Google login:', error);
+      console.error('❌ Google login error:', error.code, error.message, error);
 
       // Log failed Google login attempt (fire-and-forget) - use subdomain from config
       const failedGoogleAdvisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
