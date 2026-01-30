@@ -132,8 +132,8 @@ class HoldingCard extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: isDayProfitable
-                        ? StockColors.profit.withValues(alpha: 0.1)
-                        : StockColors.loss.withValues(alpha: 0.1),
+                        ? StockColors.profit.withOpacity(0.1)
+                        : StockColors.loss.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(

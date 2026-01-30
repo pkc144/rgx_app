@@ -142,7 +142,7 @@ class AppTheme {
     ),
     chipTheme: ChipThemeData(
       backgroundColor: const Color(0xFFF5F5F5),
-      selectedColor: config.primaryColor.withValues(alpha: 0.1),
+      selectedColor: config.primaryColor.withOpacity(0.1),
       labelStyle: const TextStyle(
         fontFamily: 'Satoshi',
         fontSize: 12,

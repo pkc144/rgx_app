@@ -1,8 +1,3 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'user_model.g.dart';
-
-@JsonSerializable()
 class UserModel {
   final String? id;
   final String? email;
@@ -36,8 +31,45 @@ class UserModel {
     this.brokerConnections,
   });
 
-  factory UserModel.fromJson(Map<String, dynamic> json) => _$UserModelFromJson(json);
-  Map<String, dynamic> toJson() => _$UserModelToJson(this);
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['id'] as String?,
+      email: json['email'] as String?,
+      name: json['name'] as String?,
+      phone: json['phone'] as String?,
+      profileImage: json['profileImage'] as String?,
+      advisorCode: json['advisorCode'] as String?,
+      advisorName: json['advisorName'] as String?,
+      isVerified: json['isVerified'] as bool?,
+      isActive: json['isActive'] as bool?,
+      panNumber: json['panNumber'] as String?,
+      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
+      settings: json['settings'] != null ? UserSettings.fromJson(json['settings']) : null,
+      brokerConnections: (json['brokerConnections'] as List<dynamic>?)
+          ?.map((e) => BrokerConnection.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'name': name,
+      'phone': phone,
+      'profileImage': profileImage,
+      'advisorCode': advisorCode,
+      'advisorName': advisorName,
+      'isVerified': isVerified,
+      'isActive': isActive,
+      'panNumber': panNumber,
+      'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
+      'settings': settings?.toJson(),
+      'brokerConnections': brokerConnections?.map((e) => e.toJson()).toList(),
+    };
+  }
 
   UserModel copyWith({
     String? id,
@@ -86,7 +118,6 @@ class UserModel {
   }
 }
 
-@JsonSerializable()
 class UserSettings {
   final bool? pushNotifications;
   final bool? emailNotifications;
@@ -102,11 +133,27 @@ class UserSettings {
     this.preferredBroker,
   });
 
-  factory UserSettings.fromJson(Map<String, dynamic> json) => _$UserSettingsFromJson(json);
-  Map<String, dynamic> toJson() => _$UserSettingsToJson(this);
+  factory UserSettings.fromJson(Map<String, dynamic> json) {
+    return UserSettings(
+      pushNotifications: json['pushNotifications'] as bool?,
+      emailNotifications: json['emailNotifications'] as bool?,
+      whatsappNotifications: json['whatsappNotifications'] as bool?,
+      autoExecuteTrades: json['autoExecuteTrades'] as bool?,
+      preferredBroker: json['preferredBroker'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'pushNotifications': pushNotifications,
+      'emailNotifications': emailNotifications,
+      'whatsappNotifications': whatsappNotifications,
+      'autoExecuteTrades': autoExecuteTrades,
+      'preferredBroker': preferredBroker,
+    };
+  }
 }
 
-@JsonSerializable()
 class BrokerConnection {
   final String? id;
   final String? brokerCode;
@@ -126,8 +173,29 @@ class BrokerConnection {
     this.expiresAt,
   });
 
-  factory BrokerConnection.fromJson(Map<String, dynamic> json) => _$BrokerConnectionFromJson(json);
-  Map<String, dynamic> toJson() => _$BrokerConnectionToJson(this);
+  factory BrokerConnection.fromJson(Map<String, dynamic> json) {
+    return BrokerConnection(
+      id: json['id'] as String?,
+      brokerCode: json['brokerCode'] as String?,
+      brokerName: json['brokerName'] as String?,
+      clientId: json['clientId'] as String?,
+      isActive: json['isActive'] as bool?,
+      connectedAt: json['connectedAt'] != null ? DateTime.parse(json['connectedAt']) : null,
+      expiresAt: json['expiresAt'] != null ? DateTime.parse(json['expiresAt']) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'brokerCode': brokerCode,
+      'brokerName': brokerName,
+      'clientId': clientId,
+      'isActive': isActive,
+      'connectedAt': connectedAt?.toIso8601String(),
+      'expiresAt': expiresAt?.toIso8601String(),
+    };
+  }
 
   bool get isExpired {
     if (expiresAt == null) return false;

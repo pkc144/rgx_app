@@ -76,8 +76,8 @@ class StockAdviceCard extends ConsumerWidget {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: isBuy
-                          ? StockColors.buy.withValues(alpha: 0.1)
-                          : StockColors.sell.withValues(alpha: 0.1),
+                          ? StockColors.buy.withOpacity(0.1)
+                          : StockColors.sell.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(

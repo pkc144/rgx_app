@@ -1,7 +1,7 @@
 /// Form validation utilities
 class Validators {
   static final RegExp _emailRegex = RegExp(
-    r'^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$',
+    r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$",
   );
 
   static final RegExp _phoneRegex = RegExp(r'^[6-9]\d{9}$');
