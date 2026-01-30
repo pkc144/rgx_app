@@ -1,22 +1,17 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'stock_advice_model.g.dart';
-
-@JsonSerializable()
 class StockAdviceModel {
   final String? id;
   final String? symbol;
   final String? companyName;
   final String? exchange;
-  final String? adviceType; // BUY, SELL, HOLD
+  final String? adviceType;
   final double? entryPrice;
   final double? targetPrice;
   final double? stopLoss;
   final double? currentPrice;
   final int? quantity;
   final String? rationale;
-  final String? timeHorizon; // SHORT_TERM, MEDIUM_TERM, LONG_TERM
-  final String? riskLevel; // LOW, MEDIUM, HIGH
+  final String? timeHorizon;
+  final String? riskLevel;
   final DateTime? createdAt;
   final DateTime? expiresAt;
   final bool? isActive;
@@ -46,8 +41,53 @@ class StockAdviceModel {
     this.tags,
   });
 
-  factory StockAdviceModel.fromJson(Map<String, dynamic> json) => _$StockAdviceModelFromJson(json);
-  Map<String, dynamic> toJson() => _$StockAdviceModelToJson(this);
+  factory StockAdviceModel.fromJson(Map<String, dynamic> json) {
+    return StockAdviceModel(
+      id: json['id'] as String?,
+      symbol: json['symbol'] as String?,
+      companyName: json['companyName'] as String?,
+      exchange: json['exchange'] as String?,
+      adviceType: json['adviceType'] as String?,
+      entryPrice: (json['entryPrice'] as num?)?.toDouble(),
+      targetPrice: (json['targetPrice'] as num?)?.toDouble(),
+      stopLoss: (json['stopLoss'] as num?)?.toDouble(),
+      currentPrice: (json['currentPrice'] as num?)?.toDouble(),
+      quantity: json['quantity'] as int?,
+      rationale: json['rationale'] as String?,
+      timeHorizon: json['timeHorizon'] as String?,
+      riskLevel: json['riskLevel'] as String?,
+      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
+      expiresAt: json['expiresAt'] != null ? DateTime.parse(json['expiresAt']) : null,
+      isActive: json['isActive'] as bool?,
+      isExecuted: json['isExecuted'] as bool?,
+      advisor: json['advisor'] != null ? AdvisorInfo.fromJson(json['advisor']) : null,
+      tags: (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'symbol': symbol,
+      'companyName': companyName,
+      'exchange': exchange,
+      'adviceType': adviceType,
+      'entryPrice': entryPrice,
+      'targetPrice': targetPrice,
+      'stopLoss': stopLoss,
+      'currentPrice': currentPrice,
+      'quantity': quantity,
+      'rationale': rationale,
+      'timeHorizon': timeHorizon,
+      'riskLevel': riskLevel,
+      'createdAt': createdAt?.toIso8601String(),
+      'expiresAt': expiresAt?.toIso8601String(),
+      'isActive': isActive,
+      'isExecuted': isExecuted,
+      'advisor': advisor?.toJson(),
+      'tags': tags,
+    };
+  }
 
   double? get potentialProfit {
     if (entryPrice == null || targetPrice == null) return null;
@@ -76,7 +116,6 @@ class StockAdviceModel {
   }
 }
 
-@JsonSerializable()
 class AdvisorInfo {
   final String? id;
   final String? name;
@@ -90,6 +129,21 @@ class AdvisorInfo {
     this.imageUrl,
   });
 
-  factory AdvisorInfo.fromJson(Map<String, dynamic> json) => _$AdvisorInfoFromJson(json);
-  Map<String, dynamic> toJson() => _$AdvisorInfoToJson(this);
+  factory AdvisorInfo.fromJson(Map<String, dynamic> json) {
+    return AdvisorInfo(
+      id: json['id'] as String?,
+      name: json['name'] as String?,
+      code: json['code'] as String?,
+      imageUrl: json['imageUrl'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'code': code,
+      'imageUrl': imageUrl,
+    };
+  }
 }
