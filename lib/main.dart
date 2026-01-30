@@ -13,8 +13,13 @@ void main() async {
   // Load environment variables
   await dotenv.load(fileName: '.env');
 
-  // Initialize Firebase
-  await Firebase.initializeApp();
+  // Initialize Firebase (graceful failure for testing)
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase initialization failed: $e');
+    debugPrint('Continuing without Firebase for testing...');
+  }
 
   // Initialize Hive for local storage
   await Hive.initFlutter();

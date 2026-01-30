@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../core/config/env_config.dart';
@@ -6,6 +7,15 @@ import '../../core/network/dio_client.dart';
 import '../../core/constants/api_endpoints.dart';
 import '../../core/errors/api_exception.dart';
 import '../../data/models/user_model.dart';
+
+/// Check if Firebase is available
+bool get _isFirebaseAvailable {
+  try {
+    return Firebase.apps.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
 
 /// Auth service provider
 final authServiceProvider = Provider<AuthService>((ref) {
@@ -48,27 +58,36 @@ class AuthState {
 /// Auth service for handling authentication
 class AuthService {
   final DioClient _dioClient;
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    clientId: EnvConfig.googleWebClientId,
-  );
+  FirebaseAuth? _firebaseAuth;
+  GoogleSignIn? _googleSignIn;
 
-  AuthService(this._dioClient);
+  AuthService(this._dioClient) {
+    if (_isFirebaseAvailable) {
+      _firebaseAuth = FirebaseAuth.instance;
+      _googleSignIn = GoogleSignIn(
+        clientId: EnvConfig.googleWebClientId,
+      );
+    }
+  }
 
   /// Get current Firebase user
-  User? get currentUser => _firebaseAuth.currentUser;
+  User? get currentUser => _firebaseAuth?.currentUser;
 
   /// Check if user is logged in
   bool get isLoggedIn => currentUser != null;
 
   /// Auth state changes stream
-  Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
+  Stream<User?> get authStateChanges =>
+      _firebaseAuth?.authStateChanges() ?? Stream.value(null);
 
   /// Login with email and password
   Future<Result<UserModel>> loginWithEmail(String email, String password) async {
     try {
+      if (_firebaseAuth == null) {
+        return Result.failure(ApiException(message: 'Firebase not available'));
+      }
       // Firebase authentication
-      final credential = await _firebaseAuth.signInWithEmailAndPassword(
+      final credential = await _firebaseAuth!.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -108,8 +127,11 @@ class AuthService {
     String? phone,
   }) async {
     try {
+      if (_firebaseAuth == null) {
+        return Result.failure(ApiException(message: 'Firebase not available'));
+      }
       // Create Firebase user
-      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+      final credential = await _firebaseAuth!.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -152,7 +174,10 @@ class AuthService {
   /// Sign in with Google
   Future<Result<UserModel>> signInWithGoogle() async {
     try {
-      final googleUser = await _googleSignIn.signIn();
+      if (_firebaseAuth == null || _googleSignIn == null) {
+        return Result.failure(ApiException(message: 'Firebase not available'));
+      }
+      final googleUser = await _googleSignIn!.signIn();
       if (googleUser == null) {
         return Result.failure(ApiException(message: 'Google sign-in cancelled'));
       }
@@ -163,7 +188,7 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      final userCredential = await _firebaseAuth.signInWithCredential(credential);
+      final userCredential = await _firebaseAuth!.signInWithCredential(credential);
       if (userCredential.user == null) {
         return Result.failure(ApiException(message: 'Google sign-in failed'));
       }
@@ -195,7 +220,10 @@ class AuthService {
   /// Reset password
   Future<Result<void>> resetPassword(String email) async {
     try {
-      await _firebaseAuth.sendPasswordResetEmail(email: email);
+      if (_firebaseAuth == null) {
+        return Result.failure(ApiException(message: 'Firebase not available'));
+      }
+      await _firebaseAuth!.sendPasswordResetEmail(email: email);
       return Result.success(null);
     } on FirebaseAuthException catch (e) {
       return Result.failure(ApiException(message: _getFirebaseErrorMessage(e.code)));
@@ -207,8 +235,8 @@ class AuthService {
   /// Logout
   Future<void> logout() async {
     await Future.wait([
-      _firebaseAuth.signOut(),
-      _googleSignIn.signOut(),
+      if (_firebaseAuth != null) _firebaseAuth!.signOut(),
+      if (_googleSignIn != null) _googleSignIn!.signOut(),
     ]);
   }
 
