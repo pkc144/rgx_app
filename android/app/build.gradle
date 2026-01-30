@@ -1,138 +1,44 @@
-apply plugin: "com.android.application"
-apply plugin: "org.jetbrains.kotlin.android"
-apply plugin: "com.facebook.react"
-apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
-
-/**
- * React Native configuration
- */
-react {
-    autolinkLibrariesWithApp()
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id "dev.flutter.flutter-gradle-plugin"
 }
 
-def enableProguardInReleaseBuilds = false
-def jscFlavor = 'org.webkit:android-jsc:+'
-
 android {
-    namespace "com.rgx.aq"
+    namespace = "com.rgx.equitypro"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
 
-    compileSdk rootProject.ext.compileSdkVersion
-    buildToolsVersion rootProject.ext.buildToolsVersion
-    ndkVersion rootProject.ext.ndkVersion
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
 
-    /**
-     * ABI splits - disabled for development (enable for release builds)
-     * This creates separate APKs per architecture
-     */
-    splits {
-        abi {
-            enable false  // Disabled for dev - builds universal APK
-            reset()
-            include "arm64-v8a", "x86_64"
-            universalApk true
-        }
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8
     }
 
     defaultConfig {
-        applicationId "com.rgx.aq"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 43
-        versionName "4.3.0"
-
-        missingDimensionStrategy "store", "play"
-
-        // Only build for arm64-v8a to avoid NDK compiler crashes in react-native-reanimated
-        ndk {
-            abiFilters "arm64-v8a"
-        }
-    }
-
-    /**
-     * ✅ Correct placement (NOT inside defaultConfig)
-     */
-    packaging {
-        jniLibs {
-            useLegacyPackaging = false
-        }
-    }
-
-    /**
-     * Keep only if duplicate STL error appears
-     */
-    packagingOptions {
-        pickFirst "lib/arm64-v8a/libc++_shared.so"
-    }
-
-    signingConfigs {
-        debug {
-            storeFile file("debug.keystore")
-            storePassword "android"
-            keyAlias "androiddebugkey"
-            keyPassword "android"
-        }
-
-        release {
-            if (project.hasProperty("MYAPP_UPLOAD_STORE_FILE")) {
-                storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-            }
-        }
+        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        applicationId = "com.rgx.equitypro"
+        // You can update the following values to match your application needs.
+        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     buildTypes {
-        debug {
-            signingConfig signingConfigs.debug
-        }
-
         release {
-            signingConfig signingConfigs.release
-            minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles(
-                getDefaultProguardFile("proguard-android.txt"),
-                "proguard-rules.pro"
-            )
+            // TODO: Add your own signing config for the release build.
+            // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = signingConfigs.debug
         }
     }
 }
 
-dependencies {
-    implementation("com.facebook.react:react-android")
-    implementation project(":react-native-vector-icons")
-    implementation project(":react-native-config")
-
-    if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
-    } else {
-        implementation jscFlavor
-    }
-}
-
-apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
-apply plugin: "com.google.gms.google-services"
-
-/**
- * Variant-specific google-services.json handling
- */
-def appVariant = project.hasProperty("APP_VARIANT") ? APP_VARIANT : "arfs"
-
-android.applicationVariants.all { variant ->
-    def variantName = variant.name
-    def googleServicesFile =
-            file("${project.rootDir}/android/app/src/${variantName}/google-services.json")
-
-    if (!googleServicesFile.exists()) {
-        googleServicesFile =
-                file("${project.rootDir}/android/app/src/main/google-services.json")
-    }
-
-    if (googleServicesFile.exists()) {
-        copy {
-            from googleServicesFile
-            into "${project.rootDir}/android/app"
-            rename { "google-services.json" }
-        }
-    }
+flutter {
+    source = "../.."
 }
