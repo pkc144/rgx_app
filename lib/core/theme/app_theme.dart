@@ -31,7 +31,7 @@ class AppTheme {
         color: Colors.white,
       ),
     ),
-    cardTheme: CardThemeData(
+    cardTheme: CardTheme(
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
@@ -121,7 +121,7 @@ class AppTheme {
         fontWeight: FontWeight.w400,
       ),
     ),
-    tabBarTheme: TabBarThemeData(
+    tabBarTheme: TabBarTheme(
       labelColor: config.primaryColor,
       unselectedLabelColor: const Color(0xFF9E9E9E),
       indicatorColor: config.primaryColor,

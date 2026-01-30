@@ -1,4 +1,4 @@
-package com.rgx.equitypro
+package com.rgx.aq
 
 import io.flutter.embedding.android.FlutterActivity
 
