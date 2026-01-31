@@ -6,15 +6,9 @@ class ApiEndpoints {
   static String get ccxtBaseUrl => EnvConfig.ccxtServerUrl;
   static String get websocketUrl => EnvConfig.websocketUrl;
 
-  // Auth
-  static const String login = 'api/auth/login';
-  static const String signup = 'api/auth/signup';
-  static const String verifyEmail = 'api/auth/verify-email';
-  static const String resetPassword = 'api/auth/reset-password';
-  static const String googleSignIn = 'api/auth/google';
-  static const String appleSignIn = 'api/auth/apple';
-
-  // User
+  // User (matching RN endpoints)
+  static String getUser(String email) => 'api/user/getUser/$email';
+  static const String createUser = 'api/user/';
   static const String userProfile = 'api/user/profile';
   static const String updateProfile = 'api/user/update';
   static const String userHoldings = 'api/user/holdings';

@@ -81,12 +81,13 @@ class AuthService {
       _firebaseAuth?.authStateChanges() ?? Stream.value(null);
 
   /// Login with email and password
+  /// Flow matches RN: Firebase auth -> Get user from backend -> Create if not exists
   Future<Result<UserModel>> loginWithEmail(String email, String password) async {
     try {
       if (_firebaseAuth == null) {
         return Result.failure(ApiException(message: 'Firebase not available'));
       }
-      // Firebase authentication
+      // Step 1: Firebase authentication
       final credential = await _firebaseAuth!.signInWithEmailAndPassword(
         email: email,
         password: password,
@@ -96,21 +97,50 @@ class AuthService {
         return Result.failure(ApiException(message: 'Login failed'));
       }
 
-      // Get ID token for backend authentication
-      final idToken = await credential.user!.getIdToken();
+      final firebaseUser = credential.user!;
 
-      // Authenticate with backend
-      final response = await _dioClient.post(
-        ApiEndpoints.login,
-        data: {
-          'email': email,
-          'idToken': idToken,
-          'advisorSubdomain': EnvConfig.advisorSubdomain,
-        },
-      );
+      // Step 2: Try to get user from backend (matching RN behavior)
+      try {
+        final response = await _dioClient.get(
+          ApiEndpoints.getUser(email),
+        );
 
-      final user = UserModel.fromJson(response.data['user']);
-      return Result.success(user);
+        if (response.data != null && response.data['User'] != null) {
+          final user = UserModel.fromJson(response.data['User']);
+          return Result.success(user);
+        }
+      } catch (getUserError) {
+        // User doesn't exist in backend, create them
+        print('User does not exist in backend, creating...');
+      }
+
+      // Step 3: Create user if not found
+      try {
+        await _dioClient.post(
+          ApiEndpoints.createUser,
+          data: {
+            'email': firebaseUser.email,
+            'name': firebaseUser.displayName ?? 'New User',
+            'firebaseId': firebaseUser.uid,
+          },
+        );
+
+        // Return minimal user data
+        final user = UserModel(
+          email: firebaseUser.email ?? email,
+          name: firebaseUser.displayName ?? 'New User',
+          firebaseId: firebaseUser.uid,
+        );
+        return Result.success(user);
+      } catch (createError) {
+        // Even if create fails, return basic user data so app can proceed
+        final user = UserModel(
+          email: firebaseUser.email ?? email,
+          name: firebaseUser.displayName ?? 'New User',
+          firebaseId: firebaseUser.uid,
+        );
+        return Result.success(user);
+      }
     } on FirebaseAuthException catch (e) {
       return Result.failure(ApiException(message: _getFirebaseErrorMessage(e.code)));
     } catch (e) {
@@ -120,6 +150,7 @@ class AuthService {
   }
 
   /// Signup with email and password
+  /// Flow matches RN: Firebase create user -> Create in backend
   Future<Result<UserModel>> signupWithEmail({
     required String email,
     required String password,
@@ -130,7 +161,7 @@ class AuthService {
       if (_firebaseAuth == null) {
         return Result.failure(ApiException(message: 'Firebase not available'));
       }
-      // Create Firebase user
+      // Step 1: Create Firebase user
       final credential = await _firebaseAuth!.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -140,28 +171,33 @@ class AuthService {
         return Result.failure(ApiException(message: 'Signup failed'));
       }
 
-      // Update display name
-      await credential.user!.updateDisplayName(name);
+      final firebaseUser = credential.user!;
 
-      // Get ID token
-      final idToken = await credential.user!.getIdToken();
+      // Update display name if provided
+      if (name.isNotEmpty) {
+        await firebaseUser.updateDisplayName(name);
+      }
 
-      // Create user in backend
-      final response = await _dioClient.post(
-        ApiEndpoints.signup,
-        data: {
-          'email': email,
-          'name': name,
-          'phone': phone,
-          'idToken': idToken,
-          'advisorSubdomain': EnvConfig.advisorSubdomain,
-        },
+      // Step 2: Create user in backend (matching RN api/user/ endpoint)
+      try {
+        await _dioClient.post(
+          ApiEndpoints.createUser,
+          data: {
+            'email': firebaseUser.email,
+            'name': name.isNotEmpty ? name : 'New User',
+            'firebaseId': firebaseUser.uid,
+          },
+        );
+      } catch (e) {
+        // Ignore backend error - user is created in Firebase
+        print('Backend user creation error (ignoring): $e');
+      }
+
+      final user = UserModel(
+        email: firebaseUser.email ?? email,
+        name: name.isNotEmpty ? name : 'New User',
+        firebaseId: firebaseUser.uid,
       );
-
-      // Send verification email
-      await credential.user!.sendEmailVerification();
-
-      final user = UserModel.fromJson(response.data['user']);
       return Result.success(user);
     } on FirebaseAuthException catch (e) {
       return Result.failure(ApiException(message: _getFirebaseErrorMessage(e.code)));
@@ -172,6 +208,7 @@ class AuthService {
   }
 
   /// Sign in with Google
+  /// Flow matches RN: Google sign-in -> Firebase auth -> Create/Get user from backend
   Future<Result<UserModel>> signInWithGoogle() async {
     try {
       if (_firebaseAuth == null || _googleSignIn == null) {
@@ -193,21 +230,43 @@ class AuthService {
         return Result.failure(ApiException(message: 'Google sign-in failed'));
       }
 
-      // Get ID token
-      final idToken = await userCredential.user!.getIdToken();
+      final firebaseUser = userCredential.user!;
 
-      // Authenticate with backend
-      final response = await _dioClient.post(
-        ApiEndpoints.googleSignIn,
-        data: {
-          'idToken': idToken,
-          'email': googleUser.email,
-          'name': googleUser.displayName,
-          'advisorSubdomain': EnvConfig.advisorSubdomain,
-        },
+      // Step 1: Create/update user in backend (matching RN api/user/ POST)
+      try {
+        await _dioClient.post(
+          ApiEndpoints.createUser,
+          data: {
+            'email': firebaseUser.email,
+            'name': firebaseUser.displayName,
+            'imageUrl': firebaseUser.photoURL,
+          },
+        );
+      } catch (e) {
+        print('Backend user create/update error (ignoring): $e');
+      }
+
+      // Step 2: Get user details from backend
+      try {
+        final response = await _dioClient.get(
+          ApiEndpoints.getUser(firebaseUser.email ?? googleUser.email),
+        );
+
+        if (response.data != null && response.data['User'] != null) {
+          final user = UserModel.fromJson(response.data['User']);
+          return Result.success(user);
+        }
+      } catch (e) {
+        print('Backend getUser error (using Firebase data): $e');
+      }
+
+      // Fallback to Firebase user data
+      final user = UserModel(
+        email: firebaseUser.email ?? googleUser.email,
+        name: firebaseUser.displayName ?? googleUser.displayName ?? 'User',
+        firebaseId: firebaseUser.uid,
+        imageUrl: firebaseUser.photoURL,
       );
-
-      final user = UserModel.fromJson(response.data['user']);
       return Result.success(user);
     } on FirebaseAuthException catch (e) {
       return Result.failure(ApiException(message: _getFirebaseErrorMessage(e.code)));

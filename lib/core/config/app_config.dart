@@ -31,19 +31,20 @@ class AppConfig {
   });
 
   /// Default RGX Research configuration
+  /// Gradient colors from RN: gradient1 = #002651, gradient2 = #0056B7
   static AppConfig get rgxResearch => AppConfig(
     appName: 'EquityPro by RGXResearch',
     variant: 'rgxresearch',
-    primaryColor: const Color(0xFF1E3A5F),
-    secondaryColor: const Color(0xFF2E5077),
-    accentColor: const Color(0xFF4CAF50),
+    primaryColor: const Color(0xFF002651),
+    secondaryColor: const Color(0xFF0056B7),
+    accentColor: const Color(0xFF29A400),
     gradient: const LinearGradient(
-      colors: [Color(0xFF1E3A5F), Color(0xFF2E5077)],
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
+      colors: [Color(0xFF002651), Color(0xFF0056B7)],
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
     ),
-    logoPath: 'assets/logos/rgx_logo.png',
-    toolbarLogoPath: 'assets/logos/rgx_toolbar_logo.png',
+    logoPath: 'assets/logos/logo.png',
+    toolbarLogoPath: 'assets/logos/fadedlogo.png',
   );
 
   /// ARFS variant configuration

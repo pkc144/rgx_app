@@ -10,7 +10,14 @@ import '../../widgets/sections/educational_videos_section.dart';
 import '../../widgets/sections/educational_pdf_section.dart';
 import '../../widgets/sections/best_performers_section.dart';
 
-/// Home screen matching the React Native design exactly
+/// Home screen - EXACT replica of React Native HomeScreen.js
+/// Key styles from RN:
+/// - container: flex 1, backgroundColor '#fff'
+/// - toolbar: backgroundColor '#FDFDFD', paddingHorizontal 10, paddingVertical 10
+/// - searchBar: backgroundColor '#F8F8F8', borderRadius 5, borderColor '#E6E6E6'
+/// - coin: width 40, height 40, borderRadius 20, backgroundColor 'gold'
+/// - tabButton: borderRadius 20, borderColor '#E6E6E6', borderWidth 1
+/// - activeTab: borderColor '#000', borderWidth 1.5, backgroundColor '#002A5C1A'
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -37,20 +44,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final user = ref.watch(currentUserProvider);
 
     return Scaffold(
+      // RN: backgroundColor: '#fff'
       backgroundColor: Colors.white,
+      drawer: _buildDrawer(config),
       body: SafeArea(
         child: Column(
           children: [
-            // Custom Toolbar - matching RN exactly
+            // ========== CUSTOM TOOLBAR ==========
             _buildToolbar(config, user),
 
-            // Search and Coin Section
+            // ========== SEARCH AND COIN SECTION ==========
             _buildSearchSection(),
 
-            // Tab Navigation
+            // ========== TAB NAVIGATION ==========
             _buildTabNavigation(),
 
-            // Tab Content
+            // ========== TAB CONTENT ==========
             Expanded(
               child: _buildTabContent(),
             ),
@@ -60,31 +69,115 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildDrawer(dynamic config) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [const Color(0xFF002651), const Color(0xFF0056B7)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                config.logoPath.isNotEmpty
+                    ? Image.asset(
+                        config.logoPath,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      )
+                    : Container(),
+                const SizedBox(height: 10),
+                Text(
+                  config.appName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Poppins',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(LucideIcons.home),
+            title: const Text('Home'),
+            onTap: () => Navigator.pop(context),
+          ),
+          ListTile(
+            leading: const Icon(LucideIcons.briefcase),
+            title: const Text('Model Portfolio'),
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Navigate to Model Portfolio
+            },
+          ),
+          ListTile(
+            leading: const Icon(LucideIcons.target),
+            title: const Text('Bespoke Plans'),
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Navigate to Bespoke
+            },
+          ),
+          ListTile(
+            leading: const Icon(LucideIcons.settings),
+            title: const Text('Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              // TODO: Navigate to Settings
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildToolbar(dynamic config, dynamic user) {
+    // RN: toolbar backgroundColor: '#FDFDFD', paddingHorizontal: 10, paddingVertical: 10
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       color: const Color(0xFFFDFDFD),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left side - Menu and Logo
+          // ========== LEFT SIDE - MENU AND LOGO ==========
           Row(
             children: [
-              GestureDetector(
-                onTap: () {
-                  Scaffold.of(context).openDrawer();
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  child: const Icon(
-                    LucideIcons.alignJustify,
-                    color: Color(0xFF002A5C),
-                    size: 23,
+              // RN: AlignJustifyIcon color: '#002a5c', size: 23
+              Builder(
+                builder: (context) => GestureDetector(
+                  onTap: () {
+                    Scaffold.of(context).openDrawer();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    child: const Icon(
+                      LucideIcons.alignJustify,
+                      color: Color(0xFF002A5C),
+                      size: 23,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 5),
-              // Logo
+              // RN: logo marginLeft: 5, width: 128, height: 28
               config.logoPath.isNotEmpty
                   ? Image.asset(
                       config.logoPath,
@@ -113,12 +206,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ],
           ),
 
-          // Right side - Balance/Connect Broker and Bell
+          // ========== RIGHT SIDE - BALANCE/CONNECT BROKER AND BELL ==========
           Row(
             children: [
-              // Connect Broker Button (shown when not connected)
+              // Connect Broker Button
+              // RN: borderRadius: 5, borderColor: '#002a5c', borderWidth: 1
               Container(
-                margin: const EdgeInsets.only(right: 8),
+                margin: const EdgeInsets.only(right: 10),
                 child: GestureDetector(
                   onTap: () {
                     // TODO: Open broker connection modal
@@ -145,7 +239,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
 
-              // Bell Icon
+              // RN: Bell size: 18, color: 'black'
               GestureDetector(
                 onTap: () {
                   // TODO: Navigate to notifications
@@ -164,11 +258,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildSearchSection() {
+    // RN: flexDirection: 'row', alignItems: 'center'
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 0),
       child: Row(
         children: [
-          // Search Bar
+          // ========== SEARCH BAR ==========
+          // RN: backgroundColor: '#F8F8F8', borderRadius: 5, paddingLeft: 10, borderColor: '#E6E6E6'
           Expanded(
             child: GestureDetector(
               onTap: () {
@@ -188,19 +284,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 child: Row(
                   children: [
+                    // RN: SearchIcon size: 18, color: '#918F8F'
                     const Icon(
                       LucideIcons.search,
                       size: 18,
                       color: Color(0xFF918F8F),
                     ),
                     const SizedBox(width: 10),
+                    // RN: placeholder, fontFamily: 'Satoshi-Regular', fontSize: 13
                     Expanded(
                       child: Text(
                         'Enter "Reliance" to get latest updates',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontFamily: 'Satoshi',
                           fontSize: 13,
-                          color: const Color(0xFF918F8F),
+                          color: Color(0xFF918F8F),
                         ),
                       ),
                     ),
@@ -210,7 +308,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
 
-          // Coin Button
+          // ========== COIN BUTTON ==========
+          // RN: width: 40, height: 40, borderRadius: 20, backgroundColor: 'gold'
           Container(
             width: 40,
             height: 40,
@@ -240,6 +339,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildTabNavigation() {
+    // RN: height: 65
     return Container(
       height: 65,
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -251,6 +351,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final tab = _tabs[index];
           final isSelected = _selectedTab == tab;
 
+          // RN: filterButton - borderRadius: 20, borderColor: '#E6E6E6', borderWidth: 1
+          // RN: activeTabButton - borderWidth: 1.5, borderColor: '#000', backgroundColor: '#002A5C1A'
           return GestureDetector(
             onTap: () {
               setState(() => _selectedTab = tab);
@@ -274,6 +376,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 child: Text(
                   tab,
                   style: TextStyle(
+                    // RN: fontSize: 12, fontFamily: 'Satoshi-Regular'
                     fontSize: 12,
                     fontFamily: 'Satoshi',
                     color: isSelected

@@ -3,7 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/config/app_config.dart';
 import '../../providers/config_provider.dart';
 
-/// Splash screen matching React Native design
+/// Splash screen - EXACT replica of React Native SplashScreen.js
+/// Key styles from RN:
+/// - container: flex 1, backgroundColor '#fff', centered
+/// - logo: width 200, height 200, resizeMode contain
+/// - progressBar: fillColor '#002a5c', unfilledColor '#E9E9E9', height 7, width 50%
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
@@ -20,7 +24,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     super.initState();
     _progressController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 2500),
     )..forward();
   }
 
@@ -35,7 +39,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     final config = ref.watch(appConfigProvider);
     final screenWidth = MediaQuery.of(context).size.width;
 
+    // RN colors
+    const fillColor = Color(0xFF002A5C);
+    const unfilledColor = Color(0xFFE9E9E9);
+
     return Scaffold(
+      // RN: backgroundColor: '#fff'
       backgroundColor: Colors.white,
       body: Center(
         child: Column(
@@ -43,19 +52,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
           children: [
             const Spacer(),
 
-            // Logo Section
+            // ========== LOGO SECTION ==========
+            // RN: logo width: 200, height: 200, resizeMode: 'contain'
             Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
+              width: 200,
+              height: 200,
+              alignment: Alignment.center,
               child: config.logoPath.isNotEmpty
                   ? Image.asset(
                       config.logoPath,
-                      width: 150,
-                      height: 150,
+                      width: 200,
+                      height: 200,
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => _buildFallbackLogo(config),
                     )
@@ -64,7 +71,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
             const Spacer(),
 
-            // Progress Bar Section
+            // ========== PROGRESS BAR SECTION ==========
+            // RN: marginBottom: 70, fillColor: '#002a5c', unfilledColor: '#E9E9E9', height: 7, width: 50%
             Padding(
               padding: const EdgeInsets.only(bottom: 70),
               child: AnimatedBuilder(
@@ -74,10 +82,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     width: screenWidth * 0.5,
                     height: 7,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE9E9E9),
+                      color: unfilledColor,
                       borderRadius: BorderRadius.circular(3.5),
                       border: Border.all(
-                        color: const Color(0xFFE9E9E9),
+                        color: unfilledColor,
                         width: 1,
                       ),
                     ),
@@ -86,7 +94,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                       widthFactor: _progressController.value,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.black,
+                          color: fillColor,
                           borderRadius: BorderRadius.circular(3.5),
                         ),
                       ),
@@ -104,21 +112,22 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Widget _buildFallbackLogo(AppConfig config) {
     return Center(
       child: Container(
-        width: 100,
-        height: 100,
+        width: 120,
+        height: 120,
         decoration: BoxDecoration(
-          color: config.primaryColor,
+          color: const Color(0xFF002A5C),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Center(
           child: Text(
             config.appName.isNotEmpty
-                ? config.appName.substring(0, 2).toUpperCase()
-                : 'AQ',
+                ? config.appName.split(' ').first.substring(0, 2).toUpperCase()
+                : 'EP',
             style: const TextStyle(
-              fontSize: 40,
+              fontSize: 48,
               fontWeight: FontWeight.bold,
               color: Colors.white,
+              fontFamily: 'Poppins',
             ),
           ),
         ),
