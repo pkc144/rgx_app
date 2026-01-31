@@ -6,7 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/config_provider.dart';
 import '../../../core/router/app_router.dart';
 
-/// Settings/More screen
+/// Account Settings screen matching React Native design
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -16,280 +16,431 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('More'),
-      ),
-      body: ListView(
-        children: [
-          // Profile section
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: config.gradient,
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 32,
-                  backgroundColor: Colors.white,
-                  child: Text(
-                    (user?.name?.isNotEmpty == true)
-                        ? user!.name!.substring(0, 1).toUpperCase()
-                        : 'U',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: config.primaryColor,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              config.primaryColor,
+              config.secondaryColor,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => context.pop(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          LucideIcons.chevronLeft,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 16),
+                    const Expanded(
+                      child: Text(
+                        'Account Settings',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          fontFamily: 'Satoshi',
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        // TODO: Navigate to notifications
+                      },
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Stack(
+                          children: [
+                            const Center(
+                              child: Icon(
+                                LucideIcons.bell,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFF4444),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Expanded(
+              ),
+
+              Expanded(
+                child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        user?.name ?? 'User',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                      // Profile Section
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 24,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFC8C8C8),
+                                ),
+                              ),
+                              child: Center(
+                                child: user?.profileImage != null
+                                    ? ClipOval(
+                                        child: Image.network(
+                                          user!.profileImage!,
+                                          width: 50,
+                                          height: 50,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Text(
+                                            _getInitials(user.name),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 20,
+                                              fontFamily: 'Poppins',
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    : Text(
+                                        _getInitials(user?.name),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 20,
+                                          fontFamily: 'Poppins',
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    user?.name ?? 'User',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                      fontFamily: 'Satoshi',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    user?.email ?? '',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.white.withOpacity(0.7),
+                                      fontFamily: 'Satoshi',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        user?.email ?? '',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 14,
-                        ),
+
+                      // Account Section
+                      _buildSection(
+                        context,
+                        ref,
+                        title: 'Account',
+                        items: [
+                          _MenuItem(
+                            icon: LucideIcons.link,
+                            label: 'Broker Account',
+                            onTap: () {
+                              // TODO: Navigate to broker settings
+                            },
+                          ),
+                          _MenuItem(
+                            icon: LucideIcons.crown,
+                            label: 'My Subscription',
+                            onTap: () => context.push(AppRoutes.modelPortfolio),
+                          ),
+                          _MenuItem(
+                            icon: LucideIcons.tags,
+                            label: 'Change Manager',
+                            onTap: () {
+                              // TODO: Navigate to change advisor
+                            },
+                          ),
+                        ],
                       ),
+
+                      // Insights Section
+                      _buildSection(
+                        context,
+                        ref,
+                        title: 'Insights',
+                        items: [
+                          _MenuItem(
+                            icon: LucideIcons.bookPlus,
+                            label: 'Research Report',
+                            onTap: () {
+                              // TODO: Navigate to research reports
+                            },
+                          ),
+                          _MenuItem(
+                            icon: LucideIcons.bookmark,
+                            label: 'Watchlists',
+                            onTap: () {
+                              // TODO: Navigate to watchlists
+                            },
+                          ),
+                          _MenuItem(
+                            icon: LucideIcons.receipt,
+                            label: 'My Invoices',
+                            onTap: () {
+                              // TODO: Navigate to payment history
+                            },
+                          ),
+                          _MenuItem(
+                            icon: LucideIcons.graduationCap,
+                            label: 'Knowledge Hub',
+                            onTap: () {
+                              // TODO: Navigate to knowledge hub
+                            },
+                          ),
+                        ],
+                      ),
+
+                      // Legal Section
+                      _buildSection(
+                        context,
+                        ref,
+                        title: 'Legal',
+                        items: [
+                          _MenuItem(
+                            icon: LucideIcons.link,
+                            label: 'Privacy Policy',
+                            onTap: () {
+                              // TODO: Navigate to privacy policy
+                            },
+                          ),
+                          _MenuItem(
+                            icon: LucideIcons.link,
+                            label: 'Terms & Conditions',
+                            onTap: () {
+                              // TODO: Navigate to terms
+                            },
+                          ),
+                        ],
+                      ),
+
+                      // Logout Section
+                      _buildSection(
+                        context,
+                        ref,
+                        title: null,
+                        items: [
+                          _MenuItem(
+                            icon: LucideIcons.logOut,
+                            label: 'Log Out',
+                            isLogout: true,
+                            onTap: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Logout'),
+                                  content: const Text(
+                                      'Are you sure you want to logout?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text('Logout'),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (confirm == true) {
+                                await ref.read(authProvider.notifier).logout();
+                                if (context.mounted) {
+                                  context.go(AppRoutes.login);
+                                }
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 32),
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(LucideIcons.edit, color: Colors.white),
-                  onPressed: () {
-                    // TODO: Navigate to profile edit
-                  },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getInitials(String? name) {
+    if (name == null || name.isEmpty) return '';
+    return name[0].toUpperCase();
+  }
+
+  Widget _buildSection(
+    BuildContext context,
+    WidgetRef ref, {
+    String? title,
+    required List<_MenuItem> items,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withOpacity(0.6),
+                  fontFamily: 'Satoshi',
                 ),
-              ],
+              ),
             ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Account section
-          _buildSection(
-            context,
-            title: 'Account',
-            items: [
-              _SettingsItem(
-                icon: LucideIcons.user,
-                title: 'Profile',
-                onTap: () {
-                  // TODO: Navigate to profile
-                },
-              ),
-              _SettingsItem(
-                icon: LucideIcons.link,
-                title: 'Broker Connections',
-                onTap: () {
-                  // TODO: Navigate to broker connections
-                },
-              ),
-              _SettingsItem(
-                icon: LucideIcons.creditCard,
-                title: 'Payment History',
-                onTap: () {
-                  // TODO: Navigate to payment history
-                },
-              ),
-              _SettingsItem(
-                icon: LucideIcons.bell,
-                title: 'Notifications',
-                onTap: () {
-                  // TODO: Navigate to notification settings
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // Features section
-          _buildSection(
-            context,
-            title: 'Features',
-            items: [
-              _SettingsItem(
-                icon: LucideIcons.briefcase,
-                title: 'Model Portfolio',
-                onTap: () => context.push(AppRoutes.modelPortfolio),
-              ),
-              _SettingsItem(
-                icon: LucideIcons.target,
-                title: 'Bespoke Plans',
-                onTap: () => context.push(AppRoutes.bespoke),
-              ),
-              _SettingsItem(
-                icon: LucideIcons.bookOpen,
-                title: 'Knowledge Hub',
-                onTap: () {
-                  // TODO: Navigate to knowledge hub
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // Support section
-          _buildSection(
-            context,
-            title: 'Support',
-            items: [
-              _SettingsItem(
-                icon: LucideIcons.helpCircle,
-                title: 'Help & Support',
-                onTap: () {
-                  // TODO: Navigate to help
-                },
-              ),
-              _SettingsItem(
-                icon: LucideIcons.fileText,
-                title: 'Terms & Conditions',
-                onTap: () {
-                  // TODO: Open terms
-                },
-              ),
-              _SettingsItem(
-                icon: LucideIcons.shield,
-                title: 'Privacy Policy',
-                onTap: () {
-                  // TODO: Open privacy policy
-                },
-              ),
-              _SettingsItem(
-                icon: LucideIcons.info,
-                title: 'About',
-                onTap: () {
-                  // TODO: Show about dialog
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // Logout
-          Padding(
+          if (title != null) const SizedBox(height: 12),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Logout'),
-                    content:
-                        const Text('Are you sure you want to logout?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.08),
+                width: 0.5,
+              ),
+            ),
+            child: Column(
+              children: items.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+                final isLast = index == items.length - 1;
+
+                return Container(
+                  decoration: BoxDecoration(
+                    border: isLast
+                        ? null
+                        : const Border(
+                            bottom: BorderSide(
+                              color: Colors.white,
+                              width: 0.5,
+                            ),
+                          ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: item.onTap,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: Icon(
+                                item.icon,
+                                size: 18,
+                                color: item.isLogout
+                                    ? const Color(0xFFFF4444)
+                                    : Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                item.label,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white,
+                                  fontFamily: 'Satoshi',
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              LucideIcons.chevronRight,
+                              size: 20,
+                              color: Colors.white,
+                            ),
+                          ],
+                        ),
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Logout'),
-                      ),
-                    ],
+                    ),
                   ),
                 );
-
-                if (confirm == true) {
-                  await ref.read(authProvider.notifier).logout();
-                  if (context.mounted) {
-                    context.go(AppRoutes.login);
-                  }
-                }
-              },
-              icon: const Icon(LucideIcons.logOut),
-              label: const Text('Logout'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-              ),
+              }).toList(),
             ),
           ),
-
-          const SizedBox(height: 32),
-
-          // Version info
-          Center(
-            child: Text(
-              'Version 1.3.2',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
-                  ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
         ],
       ),
     );
   }
-
-  Widget _buildSection(
-    BuildContext context, {
-    required String title,
-    required List<_SettingsItem> items,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ),
-        Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            children: items.map((item) {
-              final isLast = items.last == item;
-              return Column(
-                children: [
-                  ListTile(
-                    leading: Icon(item.icon),
-                    title: Text(item.title),
-                    trailing: const Icon(LucideIcons.chevronRight, size: 20),
-                    onTap: item.onTap,
-                  ),
-                  if (!isLast) const Divider(height: 1, indent: 56),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-class _SettingsItem {
+class _MenuItem {
   final IconData icon;
-  final String title;
+  final String label;
   final VoidCallback onTap;
+  final bool isLogout;
 
-  _SettingsItem({
+  _MenuItem({
     required this.icon,
-    required this.title,
+    required this.label,
     required this.onTap,
+    this.isLogout = false,
   });
 }

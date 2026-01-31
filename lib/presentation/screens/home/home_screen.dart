@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../providers/config_provider.dart';
-import '../../providers/portfolio_provider.dart';
-import '../../widgets/cards/stock_advice_card.dart';
-import '../../widgets/cards/model_portfolio_card.dart';
-import '../../widgets/sections/knowledge_hub_section.dart';
+import '../../providers/auth_provider.dart';
+import '../../widgets/sections/stock_advices_section.dart';
+import '../../widgets/sections/rebalance_advices_section.dart';
+import '../../widgets/sections/educational_blogs_section.dart';
+import '../../widgets/sections/educational_videos_section.dart';
+import '../../widgets/sections/educational_pdf_section.dart';
+import '../../widgets/sections/best_performers_section.dart';
 
-/// Home screen matching the React Native design
+/// Home screen matching the React Native design exactly
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -17,85 +20,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isRefreshing = false;
-  bool _seeAllBespoke = false;
-  bool _seeAllMP = false;
+  bool _isSearchActive = false;
+  String _selectedTab = 'All';
 
-  // Mock data - replace with actual providers
-  final List<Map<String, dynamic>> _stockRecommendations = [
-    {
-      'symbol': 'RELIANCE',
-      'type': 'BUY',
-      'exchange': 'NSE',
-      'price': 2450.50,
-      'quantity': 10,
-      'orderType': 'MARKET',
-      'advisedRangeLower': 2400.0,
-      'advisedRangeHigher': 2500.0,
-      'stopLoss': 2350.0,
-      'profitTarget': 2650.0,
-      'date': DateTime.now(),
-      'tradeId': '1',
-    },
-    {
-      'symbol': 'TCS',
-      'type': 'BUY',
-      'exchange': 'NSE',
-      'price': 3850.00,
-      'quantity': 5,
-      'orderType': 'LIMIT',
-      'advisedRangeLower': 3800.0,
-      'advisedRangeHigher': 3900.0,
-      'stopLoss': 3750.0,
-      'profitTarget': 4100.0,
-      'date': DateTime.now().subtract(const Duration(hours: 2)),
-      'tradeId': '2',
-    },
-    {
-      'symbol': 'INFY',
-      'type': 'SELL',
-      'exchange': 'NSE',
-      'price': 1520.00,
-      'quantity': 15,
-      'orderType': 'MARKET',
-      'advisedRangeLower': 1500.0,
-      'advisedRangeHigher': 1550.0,
-      'stopLoss': 1580.0,
-      'profitTarget': 1420.0,
-      'date': DateTime.now().subtract(const Duration(hours: 5)),
-      'tradeId': '3',
-    },
-  ];
-
-  final List<Map<String, dynamic>> _modelPortfolios = [
-    {
-      'name': 'Growth Portfolio',
-      'description': 'High growth stocks for long-term wealth creation',
-      'cagr': 24.5,
-      'minInvestment': 50000,
-      'riskLevel': 'AGGRESSIVE',
-      'stockCount': 12,
-    },
-    {
-      'name': 'Value Portfolio',
-      'description': 'Undervalued stocks with strong fundamentals',
-      'cagr': 18.2,
-      'minInvestment': 25000,
-      'riskLevel': 'MODERATE',
-      'stockCount': 8,
-    },
-    {
-      'name': 'Dividend Portfolio',
-      'description': 'Consistent dividend paying stocks',
-      'cagr': 12.8,
-      'minInvestment': 100000,
-      'riskLevel': 'CONSERVATIVE',
-      'stockCount': 15,
-    },
-  ];
+  final List<String> _tabs = ['All', 'Bespoke', 'Rebalance', 'Blogs', 'Videos', 'PDF'];
 
   Future<void> _onRefresh() async {
     setState(() => _isRefreshing = true);
-    // TODO: Refresh data from providers
     await Future.delayed(const Duration(seconds: 1));
     setState(() => _isRefreshing = false);
   }
@@ -103,126 +34,203 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(appConfigProvider);
+    final user = ref.watch(currentUserProvider);
 
-    // If viewing all bespoke recommendations
-    if (_seeAllBespoke) {
-      return _buildSeeAllScreen(
-        title: 'Recommendations',
-        onBack: () => setState(() => _seeAllBespoke = false),
-        child: _buildAllRecommendations(),
-      );
-    }
-
-    // If viewing all model portfolios
-    if (_seeAllMP) {
-      return _buildSeeAllScreen(
-        title: 'Model Portfolios',
-        onBack: () => setState(() => _seeAllMP = false),
-        child: _buildAllModelPortfolios(),
-      );
-    }
-
-    // Main home screen
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _onRefresh,
-          color: config.primaryColor,
-          child: CustomScrollView(
-            slivers: [
-              // Model Portfolios Section
-              SliverToBoxAdapter(
-                child: _buildSectionHeader(
-                  title: 'Model Portfolios',
-                  subtitle: 'Ranked based on user feedbacks',
-                  onViewAll: () => setState(() => _seeAllMP = true),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _buildModelPortfoliosCarousel(),
-              ),
+        child: Column(
+          children: [
+            // Custom Toolbar - matching RN exactly
+            _buildToolbar(config, user),
 
-              // Stock Recommendations Section
-              SliverToBoxAdapter(
-                child: _buildSectionHeader(
-                  title: 'Recommendations',
-                  subtitle: 'Bespoke Active Recommendations',
-                  onViewAll: () => setState(() => _seeAllBespoke = true),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: _buildRecommendationsCarousel(),
-              ),
+            // Search and Coin Section
+            _buildSearchSection(),
 
-              // Knowledge Hub Section
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.only(top: 16),
-                  child: KnowledgeHubSection(),
-                ),
-              ),
+            // Tab Navigation
+            _buildTabNavigation(),
 
-              // Bottom padding
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 100),
-              ),
-            ],
-          ),
+            // Tab Content
+            Expanded(
+              child: _buildTabContent(),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildSectionHeader({
-    required String title,
-    required String subtitle,
-    required VoidCallback onViewAll,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+  Widget _buildToolbar(dynamic config, dynamic user) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      color: const Color(0xFFFDFDFD),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // Left side - Menu and Logo
+          Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: 'Satoshi',
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF212121),
+              GestureDetector(
+                onTap: () {
+                  Scaffold.of(context).openDrawer();
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  child: const Icon(
+                    LucideIcons.alignJustify,
+                    color: Color(0xFF002A5C),
+                    size: 23,
+                  ),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontFamily: 'Satoshi',
-                  fontSize: 12,
-                  color: Color(0xFF757575),
+              const SizedBox(width: 5),
+              // Logo
+              config.logoPath.isNotEmpty
+                  ? Image.asset(
+                      config.logoPath,
+                      width: 128,
+                      height: 28,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Text(
+                        config.appName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF002A5C),
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    )
+                  : Text(
+                      config.appName,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF002A5C),
+                        fontFamily: 'Poppins',
+                      ),
+                    ),
+            ],
+          ),
+
+          // Right side - Balance/Connect Broker and Bell
+          Row(
+            children: [
+              // Connect Broker Button (shown when not connected)
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                child: GestureDetector(
+                  onTap: () {
+                    // TODO: Open broker connection modal
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: const Color(0xFF002A5C),
+                        width: 1,
+                      ),
+                    ),
+                    child: const Text(
+                      'Connect Broker',
+                      style: TextStyle(
+                        color: Color(0xFF002A5C),
+                        fontFamily: 'Poppins',
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Bell Icon
+              GestureDetector(
+                onTap: () {
+                  // TODO: Navigate to notifications
+                },
+                child: const Icon(
+                  LucideIcons.bell,
+                  size: 18,
+                  color: Colors.black,
                 ),
               ),
             ],
           ),
-          TextButton(
-            onPressed: onViewAll,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              backgroundColor: const Color(0xFFF0F0F0),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 0),
+      child: Row(
+        children: [
+          // Search Bar
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _isSearchActive = true);
+              },
+              child: Container(
+                height: 40,
+                margin: const EdgeInsets.only(left: 10),
+                padding: const EdgeInsets.only(left: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F8F8),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: const Color(0xFFE6E6E6),
+                    width: 0,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      LucideIcons.search,
+                      size: 18,
+                      color: Color(0xFF918F8F),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Enter "Reliance" to get latest updates',
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          fontSize: 13,
+                          color: const Color(0xFF918F8F),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: const Text(
-              'View All',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF424242),
+          ),
+
+          // Coin Button
+          Container(
+            width: 40,
+            height: 40,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFD700), // gold
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white,
+                width: 1,
+              ),
+            ),
+            child: const Center(
+              child: Text(
+                '10',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
             ),
           ),
@@ -231,65 +239,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildModelPortfoliosCarousel() {
-    return SizedBox(
-      height: 180,
+  Widget _buildTabNavigation() {
+    return Container(
+      height: 65,
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: _modelPortfolios.length,
+        itemCount: _tabs.length,
+        padding: EdgeInsets.zero,
         itemBuilder: (context, index) {
-          final portfolio = _modelPortfolios[index];
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: ModelPortfolioCard(
-              name: portfolio['name'],
-              description: portfolio['description'],
-              cagr: portfolio['cagr'],
-              minInvestment: portfolio['minInvestment'].toDouble(),
-              riskLevel: portfolio['riskLevel'],
-              stockCount: portfolio['stockCount'],
-              onTap: () {
-                // TODO: Navigate to portfolio details
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
+          final tab = _tabs[index];
+          final isSelected = _selectedTab == tab;
 
-  Widget _buildRecommendationsCarousel() {
-    return SizedBox(
-      height: 280,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: _stockRecommendations.length,
-        itemBuilder: (context, index) {
-          final stock = _stockRecommendations[index];
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: SizedBox(
-              width: MediaQuery.of(context).size.width * 0.85,
-              child: StockAdviceCard(
-                symbol: stock['symbol'],
-                type: stock['type'],
-                exchange: stock['exchange'],
-                price: stock['price'],
-                quantity: stock['quantity'],
-                orderType: stock['orderType'],
-                advisedRangeLower: stock['advisedRangeLower'],
-                advisedRangeHigher: stock['advisedRangeHigher'],
-                stopLoss: stock['stopLoss'],
-                profitTarget: stock['profitTarget'],
-                date: stock['date'],
-                onAddToCart: () {
-                  // TODO: Add to cart
-                },
-                onTradeNow: () {
-                  // TODO: Trade now
-                },
+          return GestureDetector(
+            onTap: () {
+              setState(() => _selectedTab = tab);
+            },
+            child: Container(
+              margin: const EdgeInsets.only(left: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? const Color(0x1A002A5C) // #002A5C1A
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFF000000)
+                      : const Color(0xFFE6E6E6),
+                  width: isSelected ? 1.5 : 1,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  tab,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'Satoshi',
+                    color: isSelected
+                        ? const Color(0xFF000000)
+                        : const Color(0xFFABABAB),
+                  ),
+                ),
               ),
             ),
           );
@@ -298,82 +289,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildSeeAllScreen({
-    required String title,
-    required VoidCallback onBack,
-    required Widget child,
-  }) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: Colors.black),
-          onPressed: onBack,
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontFamily: 'Satoshi',
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF212121),
-          ),
-        ),
+  Widget _buildTabContent() {
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      child: IndexedStack(
+        index: _tabs.indexOf(_selectedTab),
+        children: [
+          // All Tab
+          _buildAllTabContent(),
+          // Bespoke Tab
+          _buildBespokeTabContent(),
+          // Rebalance Tab
+          _buildRebalanceTabContent(),
+          // Blogs Tab
+          _buildBlogsTabContent(),
+          // Videos Tab
+          _buildVideosTabContent(),
+          // PDF Tab
+          _buildPdfTabContent(),
+        ],
       ),
-      body: child,
     );
   }
 
-  Widget _buildAllRecommendations() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _stockRecommendations.length,
-      itemBuilder: (context, index) {
-        final stock = _stockRecommendations[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: StockAdviceCard(
-            symbol: stock['symbol'],
-            type: stock['type'],
-            exchange: stock['exchange'],
-            price: stock['price'],
-            quantity: stock['quantity'],
-            orderType: stock['orderType'],
-            advisedRangeLower: stock['advisedRangeLower'],
-            advisedRangeHigher: stock['advisedRangeHigher'],
-            stopLoss: stock['stopLoss'],
-            profitTarget: stock['profitTarget'],
-            date: stock['date'],
-            onAddToCart: () {},
-            onTradeNow: () {},
-          ),
-        );
-      },
+  Widget _buildAllTabContent() {
+    return ListView(
+      children: const [
+        RebalanceAdvicesSection(type: 'home'),
+        StockAdvicesSection(type: 'home'),
+        BestPerformersSection(),
+        EducationalBlogsSection(),
+        EducationalVideosSection(),
+        EducationalPdfSection(),
+        SizedBox(height: 100),
+      ],
     );
   }
 
-  Widget _buildAllModelPortfolios() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _modelPortfolios.length,
-      itemBuilder: (context, index) {
-        final portfolio = _modelPortfolios[index];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: ModelPortfolioCard(
-            name: portfolio['name'],
-            description: portfolio['description'],
-            cagr: portfolio['cagr'],
-            minInvestment: portfolio['minInvestment'].toDouble(),
-            riskLevel: portfolio['riskLevel'],
-            stockCount: portfolio['stockCount'],
-            isHorizontal: false,
-            onTap: () {},
-          ),
-        );
-      },
-    );
+  Widget _buildBespokeTabContent() {
+    return const StockAdvicesSection(type: 'All');
+  }
+
+  Widget _buildRebalanceTabContent() {
+    return const RebalanceAdvicesSection(type: 'All');
+  }
+
+  Widget _buildBlogsTabContent() {
+    return const EducationalBlogsSection(showAll: true);
+  }
+
+  Widget _buildVideosTabContent() {
+    return const EducationalVideosSection(showAll: true);
+  }
+
+  Widget _buildPdfTabContent() {
+    return const EducationalPdfSection(showAll: true);
   }
 }

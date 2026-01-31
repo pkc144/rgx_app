@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:lucide_icons/lucide_icons.dart';
 import '../../../core/router/app_router.dart';
-import '../../../core/utils/validators.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/config_provider.dart';
 
-/// Signup screen
+/// Signup screen - EXACT replica of React Native SignupScreen.js
+/// Key styles from RN:
+/// - container: backgroundColor '#fff', padding 50
+/// - button: backgroundColor '#000', borderRadius 5
+/// - input: height 40, borderColor '#ccc', borderRadius 5
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
 
@@ -16,263 +18,322 @@ class SignupScreen extends ConsumerStatefulWidget {
 }
 
 class _SignupScreenState extends ConsumerState<SignupScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
   bool _isLoading = false;
-  bool _acceptedTerms = false;
+  String? _errorMessage;
+  String? _successMessage;
+  bool _showError = false;
 
   @override
   void dispose() {
-    _nameController.dispose();
     _emailController.dispose();
-    _phoneController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
+  void _dismissError() {
+    setState(() => _showError = false);
+    FocusScope.of(context).unfocus();
+  }
+
   Future<void> _handleSignup() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (!_acceptedTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please accept the terms and conditions')),
-      );
+    setState(() {
+      _isLoading = true;
+      _showError = false;
+      _successMessage = null;
+    });
+
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'Both fields are required';
+        _showError = true;
+        _isLoading = false;
+      });
       return;
     }
 
-    setState(() => _isLoading = true);
-
     final success = await ref.read(authProvider.notifier).signupWithEmail(
-          email: _emailController.text.trim(),
+          email: _emailController.text.trim().toLowerCase(),
           password: _passwordController.text,
-          name: _nameController.text.trim(),
-          phone: _phoneController.text.trim(),
+          name: '', // Name is optional in RN version
         );
 
     setState(() => _isLoading = false);
 
     if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created! Please verify your email.'),
-        ),
-      );
-      context.go(AppRoutes.home);
+      setState(() {
+        _successMessage = 'Your account has been successfully created. Please login!';
+      });
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) {
+        context.go(AppRoutes.home);
+      }
+    } else {
+      setState(() {
+        _errorMessage = ref.read(authProvider).error ?? 'Signup failed';
+        _showError = true;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(appConfigProvider);
-    final authState = ref.watch(authProvider);
+    final screenWidth = MediaQuery.of(context).size.width;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft, color: config.primaryColor),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Title
-                Text(
-                  'Create Account',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Sign up to get started with ${config.appName}',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey,
-                      ),
-                ),
-                const SizedBox(height: 32),
-
-                // Error message
-                if (authState.error != null) ...[
+    return GestureDetector(
+      onTap: _dismissError,
+      child: Scaffold(
+        // RN: backgroundColor: '#fff'
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              // RN: padding: 50
+              padding: const EdgeInsets.all(50),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // ========== LOGO SECTION ==========
                   Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      authState.error!,
-                      style: TextStyle(color: Colors.red.shade700),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
-                // Name field
-                TextFormField(
-                  controller: _nameController,
-                  textCapitalization: TextCapitalization.words,
-                  textInputAction: TextInputAction.next,
-                  validator: (v) => Validators.validateRequired(v, 'Name'),
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name',
-                    prefixIcon: Icon(LucideIcons.user),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Email field
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  validator: Validators.validateEmail,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(LucideIcons.mail),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Phone field
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.next,
-                  validator: Validators.validatePhone,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone Number',
-                    prefixIcon: Icon(LucideIcons.phone),
-                    prefixText: '+91 ',
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Password field
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.next,
-                  validator: Validators.validatePassword,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: const Icon(LucideIcons.lock),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? LucideIcons.eyeOff
-                            : LucideIcons.eye,
-                      ),
-                      onPressed: () {
-                        setState(() => _obscurePassword = !_obscurePassword);
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Confirm password field
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: _obscureConfirmPassword,
-                  textInputAction: TextInputAction.done,
-                  validator: (value) {
-                    if (value != _passwordController.text) {
-                      return 'Passwords do not match';
-                    }
-                    return null;
-                  },
-                  onFieldSubmitted: (_) => _handleSignup(),
-                  decoration: InputDecoration(
-                    labelText: 'Confirm Password',
-                    prefixIcon: const Icon(LucideIcons.lock),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureConfirmPassword
-                            ? LucideIcons.eyeOff
-                            : LucideIcons.eye,
-                      ),
-                      onPressed: () {
-                        setState(() =>
-                            _obscureConfirmPassword = !_obscureConfirmPassword);
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Terms checkbox
-                CheckboxListTile(
-                  value: _acceptedTerms,
-                  onChanged: (v) => setState(() => _acceptedTerms = v ?? false),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                  title: RichText(
-                    text: TextSpan(
-                      style: Theme.of(context).textTheme.bodySmall,
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Column(
                       children: [
-                        const TextSpan(text: 'I agree to the '),
-                        TextSpan(
-                          text: 'Terms of Service',
-                          style: TextStyle(
-                            color: config.primaryColor,
-                            fontWeight: FontWeight.w600,
+                        // Logo image - RN: width: 65% of screen, height: 80, marginBottom: 20
+                        config.logoPath.isNotEmpty
+                            ? Image.asset(
+                                config.logoPath,
+                                width: screenWidth * 0.65,
+                                height: 80,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => _buildFallbackLogo(config, screenWidth),
+                              )
+                            : _buildFallbackLogo(config, screenWidth),
+                        const SizedBox(height: 20),
+
+                        // Subtitle
+                        Text(
+                          'Invest with ${config.appName}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            color: Color(0xFF000101),
+                            fontFamily: 'Poppins',
                           ),
+                          textAlign: TextAlign.center,
                         ),
-                        const TextSpan(text: ' and '),
-                        TextSpan(
-                          text: 'Privacy Policy',
-                          style: TextStyle(
-                            color: config.primaryColor,
-                            fontWeight: FontWeight.w600,
+                        const SizedBox(height: 20),
+
+                        // Help text
+                        Text(
+                          'Please Login To Start Trading with ${config.appName}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF9CA2AE),
+                            fontFamily: 'Poppins',
                           ),
+                          textAlign: TextAlign.center,
                         ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
 
-                // Signup button
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _handleSignup,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Create Account'),
-                ),
-                const SizedBox(height: 24),
-
-                // Login link
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('Already have an account? '),
-                    TextButton(
-                      onPressed: () => context.pop(),
-                      child: const Text('Sign In'),
+                  // ========== LOADING INDICATOR ==========
+                  // RN: color: '#0000ff'
+                  if (_isLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 10),
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF0000FF),
+                      ),
                     ),
-                  ],
-                ),
-              ],
+
+                  // ========== ERROR MESSAGE ==========
+                  // RN: color: 'red', textAlign: 'center', marginBottom: 10
+                  if (_showError && _errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontSize: 14,
+                          fontFamily: 'Poppins',
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+
+                  // ========== SUCCESS MESSAGE ==========
+                  // RN: color: 'green', textAlign: 'center', marginBottom: 10
+                  if (_successMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        _successMessage!,
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontSize: 14,
+                          fontFamily: 'Poppins',
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+
+                  // ========== BACK BUTTON ==========
+                  // RN: marginBottom: 30, arrow-left icon
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 30),
+                      child: GestureDetector(
+                        onTap: () => context.pop(),
+                        child: const Icon(
+                          Icons.arrow_back,
+                          size: 20,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ========== EMAIL INPUT ==========
+                  // RN: height: 40, borderColor: '#ccc', borderWidth: 1, borderRadius: 5, marginBottom: 15
+                  Container(
+                    height: 40,
+                    margin: const EdgeInsets.only(bottom: 15),
+                    child: TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(
+                        color: Color(0xFF000101),
+                        fontSize: 14,
+                        fontFamily: 'Poppins',
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Enter your email',
+                        hintStyle: const TextStyle(
+                          color: Color(0xFF656564),
+                          fontSize: 14,
+                          fontFamily: 'Poppins',
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(5),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCCCCCC),
+                            width: 1,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(5),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCCCCCC),
+                            width: 1,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(5),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCCCCCC),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ========== PASSWORD INPUT ==========
+                  // RN: height: 40, borderColor: '#ccc', borderWidth: 1, borderRadius: 5, marginBottom: 15
+                  Container(
+                    height: 40,
+                    margin: const EdgeInsets.only(bottom: 15),
+                    child: TextFormField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      style: const TextStyle(
+                        color: Color(0xFF000101),
+                        fontSize: 14,
+                        fontFamily: 'Poppins',
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Enter your password',
+                        hintStyle: const TextStyle(
+                          color: Color(0xFF656564),
+                          fontSize: 14,
+                          fontFamily: 'Poppins',
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(5),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCCCCCC),
+                            width: 1,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(5),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCCCCCC),
+                            width: 1,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(5),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCCCCCC),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ========== SIGNUP BUTTON ==========
+                  // RN: backgroundColor: '#000', borderRadius: 5, marginBottom: 20
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleSignup,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Signup with Email',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontFamily: 'Poppins',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallbackLogo(dynamic config, double screenWidth) {
+    return Container(
+      width: screenWidth * 0.65,
+      height: 80,
+      alignment: Alignment.center,
+      child: Text(
+        config.appName,
+        style: const TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF000101),
+          fontFamily: 'Poppins',
         ),
       ),
     );
