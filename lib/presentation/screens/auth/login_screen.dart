@@ -60,9 +60,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _passwordController.text,
         );
 
+    if (!mounted) return;
+
     setState(() => _isLoading = false);
 
-    if (success && mounted) {
+    if (success) {
       context.go(AppRoutes.home);
     } else {
       setState(() {
@@ -80,9 +82,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     final success = await ref.read(authProvider.notifier).signInWithGoogle();
 
+    if (!mounted) return;
+
     setState(() => _isLoading = false);
 
-    if (success && mounted) {
+    if (success) {
       context.go(AppRoutes.home);
     } else {
       setState(() {

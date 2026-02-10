@@ -65,7 +65,9 @@ class AuthService {
     if (_isFirebaseAvailable) {
       _firebaseAuth = FirebaseAuth.instance;
       _googleSignIn = GoogleSignIn(
-        clientId: EnvConfig.googleWebClientId,
+        // Use serverClientId for Android to get ID token
+        serverClientId: EnvConfig.googleWebClientId,
+        scopes: ['email', 'profile'],
       );
     }
   }
