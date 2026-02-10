@@ -8,6 +8,8 @@ import moment from 'moment';
 import ConsentPopup from './ConsentPopUp';
 import { useConfig } from '../../context/ConfigContext';
 import { useTrade } from '../../screens/TradeContext';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 const Alpha100 = require('../../assets/alpha-100.png');
 
@@ -37,7 +39,7 @@ const MPCard = ({
   const mainColor = config?.mainColor || 'rgba(0, 86, 183, 1)';
   const paymentModalConfig = config?.paymentModal;
   const { configData } = useTrade();
-  const configGst = configData?.config?.REACT_APP_ADVISOR_GST_CONFIGURE;
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   const handleConsentAccept = () => {
     setGlobalConsent(true);
@@ -316,7 +318,7 @@ const MPCard = ({
           {/* Price Section */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 0 }}>
             <View style={styles.priceSection}>
-              <Text style={styles.currentPrice}>₹ {currentPrice ? (currentPrice?.toFixed(2)) : 0}{configGst === 'true' ? ' + GST' : ''}</Text>
+              <Text style={styles.currentPrice}>₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}{gstLabel(configGst, configGstWithText)}</Text>
               {discount > 0 && (
                 <Text style={styles.originalPrice}>₹ {originalPrice?.toFixed(2)}</Text>
               )}

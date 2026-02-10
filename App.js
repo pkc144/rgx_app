@@ -19,6 +19,7 @@ import {SocialProofProvider} from './src/components/SocialProofProvider';
 import server from './src/utils/serverConfig';
 import {TradeProvider} from './src/screens/TradeContext';
 import {ConfigProvider} from './src/context/ConfigContext';
+import {GstConfigProvider} from './src/context/GstConfigContext';
 import ModalManager from './src/GlobalUIModals/ModalManager';
 import BrokerAlertModal from './src/GlobalUIModals/BrokerAlertModal';
 import UpdateAppModal from './src/UpdateAppModal';
@@ -167,6 +168,7 @@ const App = () => {
           <CartProvider>
             <ConfigProvider>
               <TradeProvider>
+                <GstConfigProvider>
                 <ModalProvider>
                   <SafeAreaView style={{flex: 1}}>
                     <Navigation
@@ -179,6 +181,7 @@ const App = () => {
                   <ModalManager />
                   <BrokerAlertModal />
                 </ModalProvider>
+                </GstConfigProvider>
               </TradeProvider>
             </ConfigProvider>
           </CartProvider>

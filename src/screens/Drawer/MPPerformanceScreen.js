@@ -58,6 +58,8 @@ import DistributionGrid from './DistributionRowGrid';
 import {useTrade} from '../TradeContext';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useConfig} from '../../context/ConfigContext';
+import {useGstConfig} from '../../context/GstConfigContext';
+import {withGst, gstLabel} from '../../utils/gstHelpers';
 const colorPalette = [
   '#EAE7DC',
   '#F5F3F4',
@@ -230,7 +232,7 @@ const MPPerformanceScreen = ({route}) => {
   const {modelName, specificPlan} = route.params;
   const {configData} = useTrade();
   const navigation = useNavigation();
-  const configGst = configData?.config?.REACT_APP_ADVISOR_GST_CONFIGURE;
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   // Get dynamic colors from config
   const appConfig = useConfig();
@@ -1059,7 +1061,7 @@ const MPPerformanceScreen = ({route}) => {
                       }}>
                       <View style={styles.priceSection}>
                         <Text style={styles.currentPrice}>
-                          ₹ {currentPrice?.toFixed(2)}{configGst === 'true' ? ' + GST' : ''}
+                          ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}{gstLabel(configGst, configGstWithText)}
                         </Text>
                         {discount > 0 && (
                           <Text style={styles.originalPrice}>

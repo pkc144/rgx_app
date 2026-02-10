@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useConfig } from '../../context/ConfigContext';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 
-const PricingCard = ({ pricingOptions = [], discount = 0, configGst = "false" }) => {
+const PricingCard = ({ pricingOptions = [], discount = 0 }) => {
   // Get dynamic colors from config
   const config = useConfig();
   const mainColor = config?.mainColor || '#2563EB';
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   const [selectedPricing, setSelectedPricing] = useState(pricingOptions[0]?.period || '');
 
@@ -45,8 +48,8 @@ const PricingCard = ({ pricingOptions = [], discount = 0, configGst = "false" })
       <View style={styles.priceContainer}>
         <Text style={styles.originalPrice}>₹{originalPrice.toLocaleString()}</Text>
         <Text style={styles.currentPrice}>
-          ₹{currentPrice.toLocaleString()}{' '}
-          {configGst === "true" && <Text style={styles.gstText}>+ GST</Text>}
+          ₹{configGst && configGstWithText ? withGst(currentPrice).toLocaleString() : currentPrice.toLocaleString()}{' '}
+          {configGst && <Text style={styles.gstText}>{configGstWithText ? 'including GST' : '+ GST'}</Text>}
         </Text>
         {discount > 0 && (
           <View style={styles.saveTag}>
