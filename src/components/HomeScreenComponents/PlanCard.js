@@ -1,11 +1,14 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 
 const { width } = Dimensions.get('window');
 
 const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
   const isBespoke = type === 'bespoke';
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   // 🟢 Calculate minimum amount + validity
   const { minAmount, validity } = useMemo(() => {
@@ -83,7 +86,7 @@ const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
       <View style={styles.footer}>
         <View style={styles.infoColumn}>
           <Text style={infoLabelStyle}>Min. Amt.</Text>
-          <Text style={infoValueStyle}>₹ {minAmount}</Text>
+          <Text style={infoValueStyle}>₹ {minAmount !== '-' ? (configGst && configGstWithText ? withGst(minAmount) : minAmount) : '-'}{minAmount !== '-' ? gstLabel(configGst, configGstWithText) : ''}</Text>
         </View>
 
         {data.validity && (

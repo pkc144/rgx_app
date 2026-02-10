@@ -58,6 +58,8 @@ import EmptyStateInfoMP from './EmptyStateMP';
 import ConsentPopup from '../../components/ModelPortfolioComponents/ConsentPopUp';
 import DistributionGrid from './DistributionRowGrid';
 import {useTrade} from '../TradeContext';
+import {useGstConfig} from '../../context/GstConfigContext';
+import {withGst, gstLabel} from '../../utils/gstHelpers';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 const colorPalette = [
   '#EAE7DC',
@@ -231,6 +233,7 @@ const BespokePerformanceScreen = ({route}) => {
   const {modelName, specificPlan} = route.params;
   const {configData} = useTrade();
   const navigation = useNavigation();
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   const auth = getAuth();
   const user = auth.currentUser;
@@ -1053,7 +1056,7 @@ const BespokePerformanceScreen = ({route}) => {
                       }}>
                       <View style={styles.priceSection}>
                         <Text style={styles.currentPrice}>
-                          ₹ {currentPrice?.toFixed(2)}
+                          ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}{gstLabel(configGst, configGstWithText)}
                         </Text>
                         {discount > 0 && (
                           <Text style={styles.originalPrice}>

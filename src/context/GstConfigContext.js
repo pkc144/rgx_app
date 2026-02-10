@@ -44,16 +44,23 @@ export const GstConfigProvider = ({ children }) => {
           { headers },
         );
 
-        if (response.data) {
-          const gst = response.data.gstConfigure === true || response.data.gstConfigure === 'true';
-          const gstWithText = response.data.gstWithTextConfigure === true || response.data.gstWithTextConfigure === 'true';
+        console.log('🔍 GST Config API raw response:', JSON.stringify(response.data));
+
+        // Backend returns: { success, gstConfig: { gst_configure, gst_with_text_configure } }
+        const gstConfig = response.data?.gstConfig;
+
+        if (gstConfig) {
+          const gst = gstConfig.gst_configure === true || gstConfig.gst_configure === 'true';
+          const gstWithText = gstConfig.gst_with_text_configure === true || gstConfig.gst_with_text_configure === 'true';
+          console.log('✅ GST Config parsed:', { gst_configure: gst, gst_with_text_configure: gstWithText });
           setGstConfigure(gst);
           setGstWithTextConfigure(gstWithText);
         }
       } catch (error) {
-        console.warn('GST config API failed, using fallback:', error.message);
+        console.warn('❌ GST config API failed, using fallback:', error.message, error.response?.status);
         // Fallback to configData from TradeContext
         const fallback = configData?.config?.REACT_APP_ADVISOR_GST_CONFIGURE;
+        console.log('⚠️ GST fallback value:', fallback);
         setGstConfigure(fallback === 'true' || fallback === true);
         setGstWithTextConfigure(false);
       } finally {

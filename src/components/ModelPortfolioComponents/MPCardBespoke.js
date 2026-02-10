@@ -31,6 +31,8 @@ import Icon1 from 'react-native-vector-icons/Feather';
 const { width: ScreenWidth } = Dimensions.get('window');
 import moment from 'moment';
 import { useConfig } from '../../context/ConfigContext';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 
 const MPCardBespoke = ({
   modelName,
@@ -60,6 +62,7 @@ const MPCardBespoke = ({
   const gradient1 = config?.gradient1 || '#3B82F6';
   const gradient2 = config?.gradient2 || '#1E3A8A';
   const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   const animatedHeight = useRef(new Animated.Value(0)).current; // Initialize with height 0
 
@@ -379,7 +382,7 @@ const MPCardBespoke = ({
                     marginRight: 8,
                   }}
                 >
-                  ₹ {currentPrice ? currentPrice.toFixed(2) : displayPrice || '-'}
+                  ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : displayPrice || '-'}{gstLabel(configGst, configGstWithText)}
                 </Text>
 
                
