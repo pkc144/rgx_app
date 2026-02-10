@@ -125,6 +125,8 @@ const RebalanceCard = ({
   const config = useConfig();
   const themeColor = config?.themeColor || '#0056B7';
   const mainColor = config?.mainColor || '#4CAAA0';
+  const gradient1 = config?.gradient1 || '#002651';
+  const gradient2 = config?.gradient2 || '#0672edff';
   const CardborderWidth = config?.CardborderWidth || 0;
   const cardElevation = config?.cardElevation || 3;
   const cardverticalmargin = config?.cardverticalmargin || 3;
@@ -342,8 +344,8 @@ const RebalanceCard = ({
         <LinearGradient
           colors={
             repair && userExecution?.status !== 'toExecute'
-              ? ['rgba(0, 38, 81, 1)', '#dc4108ff']
-              : ['#002651', '#0672edff']
+              ? [gradient1, '#dc4108ff']
+              : [gradient1, gradient2]
           }
           start={{x: 0, y: 1}}
           end={{x: 1, y: 1}}
@@ -468,7 +470,7 @@ const RebalanceCard = ({
                     alignItems: 'center',
                     alignSelf: 'center',
                   }}>
-                  <Text style={styles.buttonText}>
+                  <Text style={[styles.buttonText, {color: gradient2}]}>
                     {repair && userExecution?.status !== 'toExecute'
                       ? 'View/action on updates'
                       : 'View and act'}
@@ -609,7 +611,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: {
-    color: 'rgba(0, 86, 183, 1)',
+    color: '#002651',
     fontSize: 12,
     fontFamily: 'Poppins-Medium',
   },

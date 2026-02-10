@@ -1,6 +1,7 @@
 import ARFSLogo from '../assets/ARFS_Black.svg';
 import ARFSLogotool from '../assets/ARFS_FINAL3.svg';
 import MagnusLogo from '../assets/logo.png';
+import RGXLogo from '../assets/RGXResearchLogo.jpg';
 import ZamzamLogo from '../assets/AppLogo/logo.png';
 
 const APP_VARIANTS = {
@@ -99,8 +100,8 @@ const APP_VARIANTS = {
   },
   rgxresearch: {
     themeColor: '#0000ff',
-    logo: MagnusLogo,
-    toolbarlogo: MagnusLogo,
+    logo: RGXLogo,
+    toolbarlogo: RGXLogo,
     homeScreenLayout: 'layout2',
     mainColor: '#4CAAA0',
     secondaryColor: '#F0F0F0',

@@ -59,6 +59,7 @@ const MPCardBespoke = ({
   const mainColor = config?.mainColor || '#2053DB';
   const gradient1 = config?.gradient1 || '#3B82F6';
   const gradient2 = config?.gradient2 || '#1E3A8A';
+  const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
 
   const animatedHeight = useRef(new Animated.Value(0)).current; // Initialize with height 0
 
@@ -298,7 +299,7 @@ const MPCardBespoke = ({
         </View>
  {discount > 0 && (
     <LinearGradient
-      colors={['#58a100', '#1f7d00']}
+      colors={[stepCompletedColor, stepCompletedColor]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
       style={{
@@ -624,7 +625,6 @@ buttonContainer: {
   },
   investButton: {
     flex: 1,
-    backgroundColor: '#2053DB',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 3,

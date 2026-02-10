@@ -11,13 +11,14 @@ import {
 } from 'react-native';
 import {ChevronLeft} from 'lucide-react-native';
 import StepProgressBar from './StepProgressBar';
+import {useConfig} from '../../context/ConfigContext';
 
 const {width, height} = Dimensions.get('window');
 
 // Custom Checkbox
-const CheckBox = ({value, onValueChange}) => (
+const CheckBox = ({value, onValueChange, accentColor}) => (
   <TouchableOpacity
-    style={[styles.checkbox, value && styles.checkboxChecked]}
+    style={[styles.checkbox, {borderColor: accentColor}, value && [styles.checkboxChecked, {backgroundColor: accentColor}]]}
     onPress={onValueChange}>
     {value && <Text style={styles.checkmark}>✓</Text>}
   </TouchableOpacity>
@@ -28,6 +29,8 @@ const RebalancePreferenceModal = ({
   setShowCheckboxModal,
   handleConfirmPreference,
 }) => {
+  const config = useConfig();
+  const gradient2 = config?.gradient2 || '#0076FB';
   const [selectedOption, setSelectedOption] = useState('option1');
   const stepsData = [1, 2, 3];
   const currentStep = 1;
@@ -56,7 +59,7 @@ const RebalancePreferenceModal = ({
             <StepProgressBar steps={stepsData} currentStep={currentStep} />
 
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
+              <Text style={[styles.modalTitle, {color: gradient2}]}>
                 Choose your Rebalance Preference
               </Text>
             </View>
@@ -69,6 +72,7 @@ const RebalancePreferenceModal = ({
                 <CheckBox
                   value={selectedOption === 'option1'}
                   onValueChange={() => setSelectedOption('option1')}
+                  accentColor={gradient2}
                 />
                 <View style={styles.optionTextContainer}>
                   <Text style={styles.optionTitle}>
@@ -88,6 +92,7 @@ const RebalancePreferenceModal = ({
                 <CheckBox
                   value={selectedOption === 'option2'}
                   onValueChange={() => setSelectedOption('option2')}
+                  accentColor={gradient2}
                 />
                 <View style={styles.optionTextContainer}>
                   <Text style={styles.optionTitle}>
@@ -104,7 +109,7 @@ const RebalancePreferenceModal = ({
           {/* Continue Button at Bottom */}
           <TouchableOpacity
             onPress={handleConfirmPreference}
-            style={styles.confirmButton}>
+            style={[styles.confirmButton, {backgroundColor: gradient2}]}>
             <Text style={styles.confirmButtonText}>Continue</Text>
           </TouchableOpacity>
         </View>

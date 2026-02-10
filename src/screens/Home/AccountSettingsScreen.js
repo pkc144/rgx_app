@@ -65,7 +65,7 @@ const AccountSettingsScreen = ({navigation}) => {
         {
           icon: Crown,
           label: 'My Subscription',
-          onPress: () => handleMenuPress('Model Portfolio'),
+          onPress: () => handleMenuPress('MySubscriptionsScreen'),
         },
 ...((() => {
           const hideChangeManagerCodes = Config?.REACT_APP_HIDE_CHANGE_MANAGER_FOR_CODES

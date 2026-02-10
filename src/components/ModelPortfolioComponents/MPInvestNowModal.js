@@ -122,6 +122,8 @@ const CouponCodeInput = React.memo(
     handleApplyCoupon,
     couponMessage,
     appliedCoupon,
+    mainColor,
+    stepCompletedColor,
   }) => {
     // console.log('This input--');
 
@@ -152,6 +154,7 @@ const CouponCodeInput = React.memo(
           <TouchableOpacity
             style={[
               styles.button,
+              mainColor && { backgroundColor: mainColor },
               (!couponCode || isApplyingCoupon) && styles.buttonDisabled,
             ]}
             onPress={handleApplyCoupon}
@@ -168,7 +171,7 @@ const CouponCodeInput = React.memo(
           <Text
             style={[
               styles.message,
-              appliedCoupon ? styles.successMessage : styles.errorMessage,
+              appliedCoupon ? [styles.successMessage, {color: stepCompletedColor}] : styles.errorMessage,
             ]}>
             {couponMessage}
           </Text>
@@ -223,6 +226,8 @@ const StepCard = ({
   onPress,
   children,
   currentAppVariant,
+  mainColor,
+  stepCompletedColor: stepCompletedColorProp,
 }) => {
   const getStepIcon = () => {
     const IconComponent = step.icon;
@@ -242,8 +247,10 @@ const StepCard = ({
     return styles.stepCardInactive;
   };
 
+  const completedColor = stepCompletedColorProp || currentAppVariant?.paymentModal?.stepCompletedColor || '#29A400';
+
   return (
-    <View style={[styles.stepCard, getCardClasses()]}>
+    <View style={[styles.stepCard, getCardClasses(), isCompleted && { borderColor: completedColor }, isActive && mainColor && { borderColor: mainColor }]}>
       <TouchableOpacity style={styles.stepHeader} onPress={onPress}>
         <View style={styles.stepHeaderContent}>
           <View
@@ -251,8 +258,7 @@ const StepCard = ({
               styles.stepIcon,
               isCompleted
                 ? {
-                  backgroundColor:
-                    currentAppVariant?.paymentModal?.stepCompletedColor,
+                  backgroundColor: completedColor,
                 }
                 : isActive
                   ? {
@@ -270,7 +276,7 @@ const StepCard = ({
         </View>
         <View style={styles.stepStatus}>
           {isCompleted && (
-            <View style={styles.completedBadge}>
+            <View style={[styles.completedBadge, { backgroundColor: completedColor }]}>
               <Text style={styles.completedText}>✓ Done</Text>
             </View>
           )}
@@ -328,11 +334,12 @@ const MPInvestNowModal = ({
 }) => {
   const { configData } = useTrade();
 
-  // Get dynamic colors from config
+  // Get dynamic colors from config - use gradient2 as the primary accent color
   const config = useConfig();
-  const mainColor = config?.mainColor || '#0056B7';
   const gradient1 = config?.gradient1 || '#002651';
   const gradient2 = config?.gradient2 || '#0076FB';
+  const mainColor = gradient2;
+  const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
 
   // API configuration from your Postman
   const PDF_API_CONFIG = {
@@ -346,7 +353,7 @@ const MPInvestNowModal = ({
     },
   };
 
-  const [adminpaymentPlatform, setadminpaymentPlatform] = useState('razorpay');
+  const [adminpaymentPlatform, setadminpaymentPlatform] = useState(config?.paymentPlatform || 'cashfree');
 
   const getpaymentPlatform = () => {
     if (specificPlan) {
@@ -494,8 +501,22 @@ const MPInvestNowModal = ({
   const isIOS = Platform.OS === 'ios';
   const configGst = configData?.config?.REACT_APP_ADVISOR_GST_CONFIGURE;
 
-  // Get app variant configuration
-  const currentAppVariant = APP_VARIANTS[appVariant] || APP_VARIANTS.arfs;
+  // Get app variant configuration - use dynamic config colors (gradient2) from API
+  const staticVariant = APP_VARIANTS[appVariant] || APP_VARIANTS.arfs;
+  const currentAppVariant = {
+    ...staticVariant,
+    paymentModal: {
+      headerBg: gradient2,
+      stepActiveColor: gradient2,
+      buttonPrimaryBg: gradient2,
+      buttonSecondaryBg: gradient2,
+      accentColor: gradient2,
+      progressBarColor: gradient2,
+      linkColor: gradient2,
+      stepCompletedColor: stepCompletedColor,
+      checkboxActiveColor: stepCompletedColor,
+    },
+  };
   const whiteLabelText =
     configData?.config?.REACT_APP_WHITE_LABEL_TEXT || 'arfs';
 
@@ -992,7 +1013,7 @@ const MPInvestNowModal = ({
   useEffect(() => {
     getpaymentPlatform();
     getAllSubscriptionData();
-  }, []);
+  }, [specificPlan]);
 
   // Sync DOB and PAN when userDetails changes
   useEffect(() => {
@@ -3947,7 +3968,7 @@ const MPInvestNowModal = ({
                   panError
                     ? styles.errorInput
                     : panNumber && validatePan(panNumber)
-                      ? styles.successInput
+                      ? [styles.successInput, {borderColor: stepCompletedColor}]
                       : null,
                 ]}
                 value={panNumber}
@@ -3963,8 +3984,8 @@ const MPInvestNowModal = ({
                 </Text>
               )}
               {panNumber && validatePan(panNumber) && (
-                <Text style={styles.successText}>
-                  <Check size={12} color="#29A400" /> Valid PAN format
+                <Text style={[styles.successText, {color: stepCompletedColor}]}>
+                  <Check size={12} color={stepCompletedColor} /> Valid PAN format
                 </Text>
               )}
             </View>
@@ -4091,7 +4112,7 @@ const MPInvestNowModal = ({
                                         <Text style={[styles.lineThroughBlue, { color: mainColor }]}>
                                           ₹{item.amountWithoutGst}
                                         </Text>
-                                        <Text style={styles.greenPrice}>
+                                        <Text style={[[styles.greenPrice, {color: stepCompletedColor}], {color: stepCompletedColor}]}>
                                           ₹
                                           {appliedCoupon.discountType ===
                                             'percentage'
@@ -4130,7 +4151,7 @@ const MPInvestNowModal = ({
                                           {configGst === 'true' ? '+ GST' : ''}
                                         </Text>
                                       </View>
-                                      <Text style={styles.discountText}>
+                                      <Text style={[styles.discountText, {color: stepCompletedColor}]}>
                                         {discountPercentage}% OFF
                                       </Text>
                                     </>
@@ -4240,7 +4261,7 @@ const MPInvestNowModal = ({
                                                 ]
                                               }
                                             </Text>
-                                            <Text style={styles.greenPrice}>
+                                            <Text style={[styles.greenPrice, {color: stepCompletedColor}]}>
                                               ₹
                                               {Math.round(
                                                 offerDetails
@@ -4252,7 +4273,7 @@ const MPInvestNowModal = ({
                                             </Text>
                                           </View>
 
-                                          <Text style={styles.discountText}>
+                                          <Text style={[styles.discountText, {color: stepCompletedColor}]}>
                                             Coupon Applied
                                           </Text>
                                         </>
@@ -4290,7 +4311,7 @@ const MPInvestNowModal = ({
                                             </Text>
                                           </View>
 
-                                          <Text style={styles.discountText}>
+                                          <Text style={[styles.discountText, {color: stepCompletedColor}]}>
                                             {planDetails.discountPercentage}%
                                             OFF
                                           </Text>
@@ -4337,6 +4358,8 @@ const MPInvestNowModal = ({
               handleApplyCoupon={handleApplyCoupon}
               couponMessage={couponMessage}
               appliedCoupon={appliedCoupon}
+              mainColor={mainColor}
+              stepCompletedColor={stepCompletedColor}
             />
 
             <View style={styles.consentContainer}>
@@ -4383,6 +4406,7 @@ const MPInvestNowModal = ({
               style={[
                 styles.stepButton,
                 styles.stepButtonGreen,
+                { backgroundColor: stepCompletedColor },
                 (!selectedCard || loading || !consentChecked) &&
                 styles.stepButtonDisabled,
               ]}>
@@ -4439,7 +4463,7 @@ const MPInvestNowModal = ({
             steps={steps}
             currentStep={currentStep}
             currentAppVariant={currentAppVariant}
-            mainColor={mainColor}
+            mainColor={gradient2}
           />
 
           {/* Content */}
@@ -4454,7 +4478,9 @@ const MPInvestNowModal = ({
                   isActive={currentStep === index}
                   isCompleted={currentStep > index}
                   onPress={() => currentStep > index && setCurrentStep(index)}
-                  currentAppVariant={currentAppVariant}>
+                  currentAppVariant={currentAppVariant}
+                  mainColor={mainColor}
+                  stepCompletedColor={stepCompletedColor}>
                   {renderStepContent(index)}
                 </StepCard>
               ))}

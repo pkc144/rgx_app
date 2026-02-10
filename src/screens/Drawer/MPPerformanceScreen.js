@@ -57,6 +57,7 @@ import ConsentPopup from '../../components/ModelPortfolioComponents/ConsentPopUp
 import DistributionGrid from './DistributionRowGrid';
 import {useTrade} from '../TradeContext';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
+import {useConfig} from '../../context/ConfigContext';
 const colorPalette = [
   '#EAE7DC',
   '#F5F3F4',
@@ -229,6 +230,13 @@ const MPPerformanceScreen = ({route}) => {
   const {modelName, specificPlan} = route.params;
   const {configData} = useTrade();
   const navigation = useNavigation();
+  const configGst = configData?.config?.REACT_APP_ADVISOR_GST_CONFIGURE;
+
+  // Get dynamic colors from config
+  const appConfig = useConfig();
+  const gradient1 = appConfig?.gradient1 || '#002651';
+  const gradient2 = appConfig?.gradient2 || '#0076fb';
+  const mainColor = appConfig?.mainColor || '#0056B7';
 
   const auth = getAuth();
   const user = auth.currentUser;
@@ -1001,7 +1009,7 @@ const MPPerformanceScreen = ({route}) => {
               <View style={styles.container}>
                 <TouchableOpacity activeOpacity={1}>
                   <LinearGradient
-                    colors={['#002651', '#0076fb']}
+                    colors={[gradient1, gradient2]}
                     start={{x: 0, y: 1}}
                     end={{x: 1, y: 1}}
                     style={[styles.cardContainer]}>
@@ -1051,7 +1059,7 @@ const MPPerformanceScreen = ({route}) => {
                       }}>
                       <View style={styles.priceSection}>
                         <Text style={styles.currentPrice}>
-                          ₹ {currentPrice?.toFixed(2)}
+                          ₹ {currentPrice?.toFixed(2)}{configGst === 'true' ? ' + GST' : ''}
                         </Text>
                         {discount > 0 && (
                           <Text style={styles.originalPrice}>
@@ -1061,7 +1069,7 @@ const MPPerformanceScreen = ({route}) => {
                       </View>
                       {discount > 0 && (
                         <LinearGradient
-                          colors={['#58a100', '#1f7d00']}
+                          colors={[appConfig?.paymentModal?.stepCompletedColor || '#58a100', appConfig?.paymentModal?.stepCompletedColor || '#1f7d00']}
                           start={{x: 0, y: 0}}
                           end={{x: 1, y: 0}}
                           style={styles.saveTag}>
@@ -1209,7 +1217,7 @@ const MPPerformanceScreen = ({route}) => {
                           onPress={handleConsentOpen} // opens consent popup if needed
                           disabled={globalConsent} // optional: disable press if consent is already given
                         >
-                          <Text style={styles.cagrValue}>
+                          <Text style={[styles.cagrValue, {color: mainColor}]}>
                             {!globalConsent
                               ? 'View'
                               : false
@@ -1381,7 +1389,7 @@ const MPPerformanceScreen = ({route}) => {
             }}>
             <TouchableOpacity
               onPress={handleInvestNow}
-              style={styles.investButton}>
+              style={[styles.investButton, {backgroundColor: mainColor}]}>
               <Text style={styles.investButtonText}>
                 {isActive ? 'Renew now' : 'Invest now'}
               </Text>
@@ -1663,7 +1671,6 @@ const styles = StyleSheet.create({
     marginLeft: 5,
   },
   investButton: {
-    backgroundColor: '#0056B7',
     margin: 10,
     borderRadius: 5,
     flex: 1,
@@ -1834,7 +1841,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   cagrValue: {
-    color: '#60a5fa',
     fontSize: 12,
     fontFamily: 'Poppins-SemiBold',
     textAlign: 'flex-start',
@@ -1867,7 +1873,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   subscribeText: {
-    color: '#1e3a8a',
     fontSize: 12,
     fontFamily: 'Poppins-SemiBold',
   },
@@ -1885,14 +1890,12 @@ const styles = StyleSheet.create({
   },
   expandedContent: {alignItems: 'flex-start', justifyContent: 'flex-start'},
   descriptionText: {
-    color: '#2359DE',
     fontFamily: 'Poppins-Regular',
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'left',
   },
   overviewLabel: {
-    color: '#2359DE',
     fontFamily: 'Poppins-SemiBold',
     fontSize: 13,
   },

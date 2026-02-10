@@ -45,6 +45,7 @@ const RecommendationSuccessModal = ({
   const config = useConfig();
   const gradient1 = config?.gradient1 || 'rgba(0, 86, 183, 1)';
   const gradient2 = config?.gradient2 || 'rgba(0, 38, 81, 1)';
+  const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
   const getProgressBarWidth = (executed, total) => {
     return (executed / total) * 100 + '%';
   };
@@ -160,7 +161,7 @@ const RecommendationSuccessModal = ({
               {
                 backgroundColor:
                   item.transactionType.toLowerCase() === 'buy'
-                    ? '#29A400'
+                    ? stepCompletedColor
                     : '#FF2F2F',
               },
             ]}>
@@ -257,7 +258,7 @@ const RecommendationSuccessModal = ({
             {/* Success/Failure Status */}
             {successCount === totalCount && successCount !== 0 && (
               <View style={styles.statusContainer}>
-                <View style={[styles.statusIcon, { backgroundColor: '#29A400' }]}>
+                <View style={[styles.statusIcon, { backgroundColor: stepCompletedColor }]}>
                   <CheckIcon size={40} color={'white'} />
                 </View>
                 <View style={styles.statusTextContainer}>

@@ -45,6 +45,7 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { useTrade } from '../../screens/TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 
 const Icon = ({ name, size = 24, color = '#000' }) => {
   switch (name) {
@@ -110,6 +111,8 @@ const MPStatusModal = ({
   brokerStatus,
 }) => {
   const { configData, marketPrices, fetchMarketPrices } = useTrade();
+  const config = useConfig();
+  const gradient2 = config?.gradient2 || '#0076FB';
   const [viewMode, setViewMode] = useState('viewing');
   const [localStockList, setLocalStockList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -981,7 +984,7 @@ const MPStatusModal = ({
                     />
                     {isEditing && (
                       <TouchableOpacity
-                        style={styles.ltpButton}
+                        style={[styles.ltpButton, {backgroundColor: gradient2}]}
                         onPress={() => {
                           const ltpValue = getLTPForSymbol(item.symbol);
                           if (ltpValue && ltpValue !== 'N/A') {
@@ -1104,7 +1107,7 @@ const MPStatusModal = ({
 
                         <TouchableOpacity
                           onPress={handleSwitchToEdit}
-                          style={[styles.editPortfolioButton, { alignSelf: 'flex-end', paddingVertical: 4, paddingHorizontal: 8 }]}
+                          style={[styles.editPortfolioButton, { alignSelf: 'flex-end', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: gradient2 }]}
                           disabled={isUpdating}
                         >
                           <Plus size={8} color={'#fff'} />
@@ -1135,7 +1138,7 @@ const MPStatusModal = ({
 
                   {isEditing && (
                     <View style={styles.headerIconText}>
-                      <Icon name="edit-2" size={20} color="#3b82f6" />
+                      <Icon name="edit-2" size={20} color={gradient2} />
                       <Text style={styles.titleText}>
                         Edit Portfolio Holdings
                       </Text>
@@ -1159,7 +1162,7 @@ const MPStatusModal = ({
                   ]}>
                   {isLoading ? (
                     <View style={styles.centeredMessage}>
-                      <ActivityIndicator size="large" color="#3b82f6" />
+                      <ActivityIndicator size="large" color={gradient2} />
                       <Text style={styles.loadingText}>
                         Loading portfolio data...
                       </Text>
@@ -1214,7 +1217,7 @@ const MPStatusModal = ({
                 <>
                   <TouchableOpacity
                     onPress={handleClose}
-                    style={styles.nextStepButton}
+                    style={[styles.nextStepButton, {backgroundColor: gradient2}]}
                     disabled={isUpdating || showTransitionLoader}>
                     <Text style={styles.nextStepButtonText}>Continue</Text>
                   </TouchableOpacity>
@@ -1227,7 +1230,7 @@ const MPStatusModal = ({
                   )}
                   <TouchableOpacity
                     onPress={handleSwitchToEdit}
-                    style={styles.editButton}
+                    style={[styles.editButton, {backgroundColor: gradient2}]}
                     disabled={isUpdating}>
                     <Icon
                       name="edit-2"
@@ -1267,7 +1270,7 @@ const MPStatusModal = ({
                   <View style={styles.buttonRowContainer}>
                     <TouchableOpacity
                       onPress={handleClose}
-                      style={styles.nextStepButton}
+                      style={[styles.nextStepButton, {backgroundColor: gradient2}]}
                       disabled={isUpdating || showTransitionLoader}>
                       <Text style={styles.nextStepButtonText}>Continue</Text>
                     </TouchableOpacity>
@@ -1296,7 +1299,7 @@ const MPStatusModal = ({
                   <TouchableOpacity
                     onPress={() => setShowAddForm(true)}
                     style={{
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: gradient2,
                       paddingVertical: 12,
                       paddingHorizontal: 18,
                       borderRadius: 8,
@@ -1351,7 +1354,7 @@ const MPStatusModal = ({
             {showSuccessLoader && (
               <View style={styles.transitionLoaderOverlay}>
                 <View style={styles.transitionLoaderContainer}>
-                  <ActivityIndicator size="large" color="#0056B7" />
+                  <ActivityIndicator size="large" color={gradient2} />
                   <Text style={styles.transitionLoaderText}>Processing...</Text>
                 </View>
               </View>
@@ -1473,7 +1476,7 @@ const MPStatusModal = ({
                             returnKeyType="next"
                           />
                           <TouchableOpacity
-                            style={styles.ltpButton}
+                            style={[styles.ltpButton, {backgroundColor: gradient2}]}
                             onPress={() => {
                               const ltpValue = getLTPForSymbol(newSymbol);
                               if (ltpValue && ltpValue !== 'N/A') {
@@ -1508,6 +1511,7 @@ const MPStatusModal = ({
                         onPress={handleAddNewStock}
                         style={[
                           styles.addButton,
+                          {backgroundColor: gradient2},
                           (!newSymbol ||
                             !newExchange ||
                             !newQuantity ||
@@ -1554,7 +1558,7 @@ const MPStatusModal = ({
             {showTransitionLoader && (
               <View style={styles.transitionLoaderOverlay}>
                 <View style={styles.transitionLoaderContainer}>
-                  <ActivityIndicator size="large" color="#0056B7" />
+                  <ActivityIndicator size="large" color={gradient2} />
                   <Text style={styles.transitionLoaderText}>Loading...</Text>
                 </View>
               </View>

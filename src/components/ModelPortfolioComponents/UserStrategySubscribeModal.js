@@ -41,6 +41,7 @@ import Config from 'react-native-config';
 import Toast from 'react-native-toast-message';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useTrade} from '../../screens/TradeContext';
+import {useConfig} from '../../context/ConfigContext';
 const {height: screenHeight} = Dimensions.get('window');
 
 const UserStrategySubscribeModal = ({
@@ -68,6 +69,8 @@ const UserStrategySubscribeModal = ({
   setOpenTokenExpireModel,
 }) => {
   const {configData} = useTrade();
+  const appConfig = useConfig();
+  const mainColor = appConfig?.mainColor || '#000';
   const [loading, setLoading] = useState(false);
   const [confirmOrder, setConfirmOrder] = useState(false);
 
@@ -1136,7 +1139,7 @@ const UserStrategySubscribeModal = ({
               ) : (
                 // Show the TouchableOpacity button for other cases
                 <TouchableOpacity
-                  style={styles.actionButton}
+                  style={[styles.actionButton, {backgroundColor: mainColor}]}
                   onPress={calculateRebalance}
                   disabled={loading || calculatedLoading}>
                   {loading || calculatedLoading ? (
@@ -1295,7 +1298,6 @@ const styles = StyleSheet.create({
     color: 'black',
   },
   actionButton: {
-    backgroundColor: 'black',
     paddingVertical: 10,
     flex: 1,
     marginHorizontal: 40,

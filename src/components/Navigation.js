@@ -97,6 +97,7 @@ import ProfileModal from './ProfileModal';
 
 import ReviewScreen from '../screens/Drawer/ReviewScreen';
 import AfterSubscriptionScreen from '../screens/Home/AfterSubscriptionScreen';
+import MySubscriptionsScreen from '../screens/Home/MySubscriptionsScreen';
 import NewsScreen from '../screens/Home/NewsScreen/NewsScreen';
 import SplashScreen from './SplashScreen';
 import {useTrade} from '../screens/TradeContext';
@@ -1070,6 +1071,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="AfterSubscriptionScreen"
           component={AfterSubscriptionScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="MySubscriptionsScreen"
+          component={MySubscriptionsScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen
