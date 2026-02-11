@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {useNavigation} from '@react-navigation/native';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import {useConfig} from '../../context/ConfigContext';
 import APP_VARIANTS from '../../utils/Config';
 import {Key} from 'lucide-react-native';
@@ -39,8 +39,9 @@ const SignUpRADetails = ({route}) => {
   const {reloadConfigData} = useTrade();
   const navigation = useNavigation();
   const config = useConfig();
-  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
-  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[validVariant] || {};
 
   // Get logo and app name from config (S3) or fallback
   const logo = config?.logo || fallbackConfig.logo;

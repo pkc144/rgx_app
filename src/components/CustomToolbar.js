@@ -49,7 +49,7 @@ import FyersConnect from './BrokerConnectionModal/FyersConnect';
 import {useModal} from './ModalContext';
 import {useTrade} from '../screens/TradeContext';
 
-import Config from 'react-native-config';
+import Config from '../utils/safeConfig';
 import APP_VARIANTS from '../utils/Config';
 import MotilalModal from './BrokerConnectionModal/MotilalModal';
 import MarketIndices from './HomeScreenComponents/MarketIndices';
@@ -60,8 +60,9 @@ const {width, height} = Dimensions.get('window');
 const CustomToolbar = React.memo(({count, currentRoute}) => {
   const {configData, configLoading} = useTrade();
   const config = useConfig();
-  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
-  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[validVariant] || {};
 
   // Get toolbarlogo from config (S3) or fallback
   const toolbarLogo = config?.toolbarlogo || fallbackConfig.toolbarlogo || config?.logo || fallbackConfig.logo;

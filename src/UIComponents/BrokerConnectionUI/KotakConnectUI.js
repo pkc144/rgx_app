@@ -176,15 +176,11 @@ const KotakConnectUI = ({
                         label: 'Consumer Key',
                         value: consumerKey,
                         setValue: setConsumerKey,
-                        secure: !iskeyVisible,
-                        toggle: () => setIskeyVisible(!iskeyVisible),
                       },
                       {
                         label: 'Consumer Secret',
                         value: consumerSecret,
                         setValue: setConsumerSecret,
-                        secure: !issecretVisible,
-                        toggle: () => setIssecretVisible(!issecretVisible),
                       },
                       {
                         label: 'Mobile Number',
@@ -210,6 +206,8 @@ const KotakConnectUI = ({
                             placeholderTextColor="grey"
                             style={[styles.inputStyles, {flex: 1}]}
                             secureTextEntry={input.secure}
+                            autoCapitalize="none"
+                            autoCorrect={false}
                             onChangeText={input.setValue}
                           />
                           {input.toggle && input.value ? (

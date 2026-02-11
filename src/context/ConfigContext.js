@@ -1,7 +1,7 @@
 
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import Config from 'react-native-config';
+import Config from '../utils/safeConfig';
 import APP_VARIANTS from '../utils/Config';
 import { generateToken } from '../utils/SecurityTokenManager';
 
@@ -12,8 +12,10 @@ export const useConfig = () => {
 };
 
 export const ConfigProvider = ({ children }) => {
-    const selectedVariant = Config.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
-    const initialConfig = { ...APP_VARIANTS[selectedVariant], selectedVariant };
+    const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
+    // Ensure the variant exists in APP_VARIANTS, otherwise use 'rgxresearch'
+    const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+    const initialConfig = { ...APP_VARIANTS[validVariant], selectedVariant: validVariant };
     const [config, setConfig] = useState(initialConfig);
     const [loading, setLoading] = useState(true);
 
@@ -71,7 +73,7 @@ export const ConfigProvider = ({ children }) => {
                         ...initialConfig,
 
                         // Override with API data (this is the primary source)
-                        selectedVariant, // Add selectedVariant to the config
+                        selectedVariant: validVariant, // Add selectedVariant to the config
 
                         // ============================================================================
                         // BASIC INFO

@@ -159,21 +159,10 @@ const FyersConnectUI = ({
                           placeholder="Enter your User ID"
                           placeholderTextColor="#aaa"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisibleup}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={text => setSecretKey(text.trim())}
                         />
-                        <Pressable
-                          onPress={() =>
-                            setIsPasswordVisibleup(!isPasswordVisibleup)
-                          }>
-                          {secretKey ? (
-                            isPasswordVisibleup ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </Pressable>
                       </View>
                     </View>
 
@@ -185,21 +174,10 @@ const FyersConnectUI = ({
                           placeholder="Enter your API key"
                           placeholderTextColor="#aaa"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisible}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={text => setApiKey(text.trim())}
                         />
-                        <Pressable
-                          onPress={() =>
-                            setIsPasswordVisible(!isPasswordVisible)
-                          }>
-                          {apiKey ? (
-                            isPasswordVisible ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </Pressable>
                       </View>
                     </View>
 

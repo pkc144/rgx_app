@@ -151,21 +151,10 @@ const AliceBlueConnectUI = ({
                           placeholder="Enter your User ID"
                           placeholderTextColor="grey"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisibleup}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={text => setclientCode(text.trim())}
                         />
-                        <TouchableOpacity
-                          onPress={() =>
-                            setIsPasswordVisibleup(!isPasswordVisibleup)
-                          }>
-                          {clientCode ? (
-                            isPasswordVisibleup ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </TouchableOpacity>
                       </View>
                     </View>
 
@@ -178,19 +167,10 @@ const AliceBlueConnectUI = ({
                           placeholder="Enter your API Key"
                           placeholderTextColor="grey"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisible}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={text => setApiKey(text.trim())}
                         />
-                        <TouchableOpacity
-                          onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                          {apiKey ? (
-                            isPasswordVisible ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </TouchableOpacity>
                       </View>
                     </View>
 

@@ -137,9 +137,9 @@ const APP_VARIANTS = {
   },
 
   zamzamcapital: {
-//    themeColor: '#ff0000',
-   // logo: ZamzamLogo,
-  //  toolbarlogo: ZamzamLogo,
+    themeColor: '#ff0000',
+    logo: ZamzamLogo,
+    toolbarlogo: ZamzamLogo,
     homeScreenLayout: 'layout1',
     mainColor: '#0D021F',
     secondaryColor: '#ffffff',

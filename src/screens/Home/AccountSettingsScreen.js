@@ -26,7 +26,7 @@ import {
 } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {getAuth} from '@react-native-firebase/auth';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import {useTrade} from '../TradeContext';
 
 // inside your component
@@ -34,8 +34,9 @@ import {useTrade} from '../TradeContext';
 const AccountSettingsScreen = ({navigation}) => {
   const {userDetails} = useTrade();
   const config = useConfig();
-  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
-  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[validVariant] || {};
 
   // Get background logo from config (S3) or fallback
   // showBackgroundLogo: true/false - controls visibility (default: true for backwards compatibility)

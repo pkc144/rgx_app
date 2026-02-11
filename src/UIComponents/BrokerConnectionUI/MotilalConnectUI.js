@@ -176,21 +176,10 @@ const MotilalConnectUI = ({
                           placeholder="Enter your API Key"
                           placeholderTextColor="grey"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisibleup}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={text => setApiKey(text.trim())}
                         />
-                        <TouchableOpacity
-                          onPress={() =>
-                            setIsPasswordVisibleup(!isPasswordVisibleup)
-                          }>
-                          {apiKey ? (
-                            isPasswordVisibleup ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </TouchableOpacity>
                       </View>
                     </View>
 
@@ -203,21 +192,10 @@ const MotilalConnectUI = ({
                           placeholder="Enter your Client Code"
                           placeholderTextColor="grey"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisible}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={text => setClientCode(text.trim())}
                         />
-                        <TouchableOpacity
-                          onPress={() =>
-                            setIsPasswordVisible(!isPasswordVisible)
-                          }>
-                          {clientCode ? (
-                            isPasswordVisible ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </TouchableOpacity>
                       </View>
                     </View>
 

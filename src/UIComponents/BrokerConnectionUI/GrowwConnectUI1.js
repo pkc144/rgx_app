@@ -152,19 +152,10 @@ const GrowwConnectUI = ({
                           placeholder="Enter your Client ID"
                           placeholderTextColor="grey"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisibleup}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={setCliendId}
                         />
-                        <TouchableOpacity
-                          onPress={() => setIsPasswordVisibleup(!isPasswordVisibleup)}>
-                          {cliendId ? (
-                            isPasswordVisibleup ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </TouchableOpacity>
                       </View>
                     </View>
 
@@ -177,19 +168,10 @@ const GrowwConnectUI = ({
                           placeholder="Enter your Access Token"
                           placeholderTextColor="grey"
                           style={[styles.inputStyles, {flex: 1}]}
-                          secureTextEntry={!isPasswordVisible}
+                          autoCapitalize="none"
+                          autoCorrect={false}
                           onChangeText={setaccessToken}
                         />
-                        <TouchableOpacity
-                          onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                          {accessToken ? (
-                            isPasswordVisible ? (
-                              <EyeIcon size={24} color="#000" />
-                            ) : (
-                              <EyeOffIcon size={24} color="#000" />
-                            )
-                          ) : null}
-                        </TouchableOpacity>
                       </View>
                     </View>
 

@@ -101,7 +101,7 @@ import MySubscriptionsScreen from '../screens/Home/MySubscriptionsScreen';
 import NewsScreen from '../screens/Home/NewsScreen/NewsScreen';
 import SplashScreen from './SplashScreen';
 import {useTrade} from '../screens/TradeContext';
-import Config from 'react-native-config';
+import Config from '../utils/safeConfig';
 import {generateToken} from '../utils/SecurityTokenManager';
 import APP_VARIANTS from '../utils/Config';
 import {style} from 'twrnc';
@@ -126,7 +126,9 @@ const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 const {height: screenHeight} = Dimensions.get('window');
 
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
+// Ensure the variant exists in APP_VARIANTS, otherwise use 'rgxresearch'
+const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
 const {
   logo: LogoComponent,
   themeColor,
@@ -141,7 +143,7 @@ const {
   cardverticalmargin,
   placeholderText,
   tabIconColor,
-} = APP_VARIANTS[selectedVariant];
+} = APP_VARIANTS[validVariant];
 const CustomTabBarIcon = ({name, focused}) => {
   let IconComponent;
   if (name === 'Home') {

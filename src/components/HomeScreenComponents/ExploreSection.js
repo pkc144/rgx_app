@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from
 import LinearGradient from "react-native-linear-gradient";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
-import Config from "react-native-config";
+import Config from "../../utils/safeConfig";
 import { useConfig } from "../../context/ConfigContext";
 // Note: APP_VARIANTS removed - using dynamic config from useConfig()
 

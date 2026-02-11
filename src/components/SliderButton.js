@@ -18,8 +18,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import Loader from '../utils/Loader';
 import {ChevronRight} from 'lucide-react-native';
-import Config from 'react-native-config';
-const selectedVariant = Config?.APP_VARIANT || 'alphaquark'; // Default to "alphaquark" if not set
+import Config from '../utils/safeConfig';
+const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
 
 const SliderButton = ({
   loading,

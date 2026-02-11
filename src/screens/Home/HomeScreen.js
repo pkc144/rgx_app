@@ -32,7 +32,7 @@ import EducationalVideos from '../../components/HomeScreenComponents/Educational
 import EducationalPDF from '../../components/HomeScreenComponents/EducationalPDF';
 
 import StockAdvices from '../../components/AdviceScreenComponents/StockAdvices';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import {
   ArrowLeft,
   Clock,

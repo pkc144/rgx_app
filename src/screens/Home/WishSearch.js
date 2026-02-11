@@ -6,7 +6,7 @@ import axios from 'axios';
 import debounce from 'lodash.debounce';
 import MissedGainText from '../../components/AdviceScreenComponents/DynamicText/BestPerformerGainText';
 import Loader from '../../utils/Loader';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import { Dropdown } from 'react-native-element-dropdown';
 import server from '../../utils/serverConfig';
 import { generateToken } from '../../utils/SecurityTokenManager';
@@ -18,6 +18,7 @@ const WishSearch = ({ searchQuery, onBackPress, onQueryChange, onBookmark, curre
 
   // Get dynamic config from API
   const config = useConfig();
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
   const themeColor = config?.themeColor || '#0056B7';
   const mainColor = config?.mainColor || '#0056B7';
   const gradient1 = config?.gradient1 || '#0056B7';

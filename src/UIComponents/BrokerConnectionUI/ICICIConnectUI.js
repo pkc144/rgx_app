@@ -158,21 +158,10 @@ const ICICIConnectUI = ({
                         placeholder="Enter your API key"
                         placeholderTextColor="grey"
                         style={[styles.inputStyles, {color: 'grey', flex: 1}]}
-                        secureTextEntry={!isPasswordVisibleup}
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         onChangeText={text => setApiKey(text.trim())}
                       />
-                      <TouchableOpacity
-                        onPress={() =>
-                          setIsPasswordVisibleup(!isPasswordVisibleup)
-                        }>
-                        {apiKey ? (
-                          isPasswordVisibleup ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </TouchableOpacity>
                     </View>
                   </View>
 
@@ -184,19 +173,10 @@ const ICICIConnectUI = ({
                         placeholder="Enter your Secret key"
                         placeholderTextColor="grey"
                         style={[styles.inputStyles, {color: 'grey', flex: 1}]}
-                        secureTextEntry={!isPasswordVisible}
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         onChangeText={text => setSecretKey(text.trim())}
                       />
-                      <TouchableOpacity
-                        onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                        {secretKey ? (
-                          isPasswordVisible ? (
-                            <EyeIcon size={24} color="#000" />
-                          ) : (
-                            <EyeOffIcon size={24} color="#000" />
-                          )
-                        ) : null}
-                      </TouchableOpacity>
                     </View>
                   </View>
 
