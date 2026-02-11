@@ -48,6 +48,17 @@
                     android:host="test.alphaquark.in"
                     android:pathPrefix="/subscriptions" />
             </intent-filter>
+
+            <!-- Zerodha OAuth Callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="rgxapp"
+                    android:host="zerodha"
+                    android:pathPrefix="/callback" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

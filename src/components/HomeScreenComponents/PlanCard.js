@@ -86,7 +86,12 @@ const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
       <View style={styles.footer}>
         <View style={styles.infoColumn}>
           <Text style={infoLabelStyle}>Min. Amt.</Text>
-          <Text style={infoValueStyle}>₹ {minAmount !== '-' ? (configGst && configGstWithText ? withGst(minAmount) : minAmount) : '-'}{minAmount !== '-' ? gstLabel(configGst, configGstWithText) : ''}</Text>
+          <Text style={infoValueStyle}>₹ {minAmount !== '-' ? (configGst && configGstWithText ? withGst(minAmount) : minAmount) : '-'}</Text>
+          {minAmount !== '-' && configGst && (
+            <Text style={[infoLabelStyle, { fontSize: 10, marginTop: -2 }]}>
+              {configGstWithText ? 'including GST' : '+ GST'}
+            </Text>
+          )}
         </View>
 
         {data.validity && (

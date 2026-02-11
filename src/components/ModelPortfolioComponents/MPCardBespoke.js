@@ -307,11 +307,11 @@ const MPCardBespoke = ({
       end={{ x: 1, y: 0 }}
       style={{
         position: 'absolute',
-        top: 8,
+        top: 12,
         left: 0,
-        paddingVertical: 3,
-        paddingHorizontal: 10,
-  
+        paddingVertical: 4,
+        paddingHorizontal: 12,
+
         borderTopRightRadius:12,
         borderBottomRightRadius:12,
         zIndex: 10,
@@ -324,7 +324,7 @@ const MPCardBespoke = ({
     >
       <Text
         style={{
-          fontSize: 11,
+          fontSize: 10,
           color: '#fff',
           fontFamily: 'Poppins-Medium',
         }}
@@ -358,9 +358,9 @@ const MPCardBespoke = ({
               marginLeft: 20,
             }}
           >
-            <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
               {/* 💰 Current + Original Price Section */}
-              <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
                  {discount > 0 && (
                   <Text
                     style={{
@@ -368,7 +368,6 @@ const MPCardBespoke = ({
                       color: '#9CA3AF',
                       fontFamily: 'Poppins-Regular',
                       textDecorationLine: 'line-through',
-                      marginRight: 6,
                     }}
                   >
                     ₹ {originalPrice ? originalPrice.toFixed(2) : '-'}
@@ -379,13 +378,24 @@ const MPCardBespoke = ({
                     fontSize: 14,
                     color: '#1F2937',
                     fontFamily: 'Poppins-SemiBold',
-                    marginRight: 8,
                   }}
                 >
-                  ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : displayPrice || '-'}{gstLabel(configGst, configGstWithText)}
+                  ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : displayPrice || '-'}
                 </Text>
+                {configGst && (
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: '#6B7280',
+                      fontFamily: 'Poppins-Regular',
+                      marginTop: -2,
+                    }}
+                  >
+                    {configGstWithText ? 'including GST' : '+ GST'}
+                  </Text>
+                )}
 
-               
+
               </View>
 
               {/* 🎁 Save Tag */}

@@ -25,6 +25,7 @@ import { generateToken } from '../../utils/SecurityTokenManager';
 import Toast from 'react-native-toast-message';
 import DisconnectBrokerModal from './DisconnectBrokerModal';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
+import eventEmitter from '../../components/EventEmitter';
 
 const cross = require('../../assets/cross.png');
 const tick = require('../../assets/checked.png');
@@ -212,6 +213,25 @@ const SubscriptionScreen = () => {
     console.log('🔍 [SUBSCRIPTION SCREEN] isBrokerConnected:', isBrokerConnected);
   }, [brokerStatus, broker, userDetails, isBrokerConnected]);
 
+  // Listen for broker connection events and refresh data
+  useEffect(() => {
+    const refreshListener = eventEmitter.addListener('refreshEvent', async (data) => {
+      console.log('🔄 [SUBSCRIPTION SCREEN] Refresh event received:', data);
+      // Refresh all data after broker connection
+      try {
+        await getUserDeatils();
+        await fetchBrokerStatusModal();
+        await getAllFunds();
+        console.log('✅ [SUBSCRIPTION SCREEN] Data refreshed successfully after broker connection');
+      } catch (error) {
+        console.error('❌ [SUBSCRIPTION SCREEN] Error refreshing data:', error);
+      }
+    });
+
+    return () => {
+      refreshListener.remove();
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -422,6 +442,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F0F0F0',
+  },
+  scrollContent: {
+    paddingBottom: 150, // Space for "Did You Know?" section at bottom
+    flexGrow: 1,
   },
   button: {
     width: screenWidth - 100,

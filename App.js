@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, {useState, useEffect} from 'react';
-import {StatusBar, Text, TextInput, SafeAreaView} from 'react-native';
+import {StatusBar, Text, TextInput, SafeAreaView, Linking, Alert} from 'react-native';
 import Toast from 'react-native-toast-message';
 import axios from 'axios';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
@@ -11,6 +11,7 @@ import {
   useSafeAreaInsets,
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
+import { handleOAuthCallback } from './src/services/ZerodhaOAuthService';
 
 import Navigation from './src/components/Navigation';
 import {CartProvider} from './src/components/CartContext';
@@ -90,6 +91,39 @@ const App = () => {
         }
       }
     });
+
+    // Deep link listener for Zerodha OAuth callback
+    const handleDeepLink = async (event) => {
+      const url = event.url;
+      console.log('[App] Deep link received:', url);
+
+      // Check if it's a Zerodha OAuth callback
+      if (url && url.startsWith('rgxapp://zerodha/callback')) {
+        console.log('[App] Zerodha OAuth callback detected');
+
+        const result = await handleOAuthCallback(url);
+
+        if (result.success) {
+          Alert.alert('Success', result.message || 'Zerodha connected successfully!');
+        } else {
+          Alert.alert('Error', result.error || 'Failed to connect Zerodha');
+        }
+      }
+    };
+
+    // Listen for deep link events
+    const linkingSubscription = Linking.addEventListener('url', handleDeepLink);
+
+    // Handle app launch from deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => {
+      linkingSubscription.remove();
+    };
   }, []);
 
   if (Text.defaultProps) {

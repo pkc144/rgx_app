@@ -318,9 +318,21 @@ const MPCard = ({
           {/* Price Section */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 0 }}>
             <View style={styles.priceSection}>
-              <Text style={styles.currentPrice}>₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}{gstLabel(configGst, configGstWithText)}</Text>
-              {discount > 0 && (
-                <Text style={styles.originalPrice}>₹ {originalPrice?.toFixed(2)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                <Text style={styles.currentPrice}>₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}</Text>
+                {discount > 0 && (
+                  <Text style={styles.originalPrice}>₹ {originalPrice?.toFixed(2)}</Text>
+                )}
+              </View>
+              {configGst && (
+                <Text style={{
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.8)',
+                  fontFamily: 'Poppins-Regular',
+                  marginTop: -2,
+                }}>
+                  {configGstWithText ? 'including GST' : '+ GST'}
+                </Text>
               )}
             </View>
             {discount > 0 && (
