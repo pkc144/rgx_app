@@ -11,7 +11,7 @@ import {generateToken} from '../utils/SecurityTokenManager';
 import {useConfig} from '../context/ConfigContext';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {getRaId, getUserData} from '../utils/storageUtils';
+import {getRaId, getUserData, storeLoginData} from '../utils/storageUtils';
 export default function SplashScreen() {
   const [progress, setProgress] = useState(0.0);
   const screenWidth = Dimensions.get('window').width;
@@ -54,10 +54,10 @@ export default function SplashScreen() {
             if (!cachedUserData) console.log('⚠️ No cached user data found');
             if (cachedUserData?.email !== email) console.log('⚠️ Email mismatch:', cachedUserData?.email, 'vs', email);
 
-            // Otherwise, fetch fresh user details from API
-            console.log('🔄 Fetching fresh user details from API...');
+            // Otherwise, fetch fresh user details from API with inline config
+            console.log('Fetching fresh user details from API...');
             const response = await axios.get(
-              `${server.server.baseUrl}api/user/getUser/${email}`,
+              `${server.server.baseUrl}api/user/getUser/${email}?includeAdvisorConfig=true`,
               {
                 headers: {
                   'Content-Type': 'application/json',
@@ -70,12 +70,18 @@ export default function SplashScreen() {
               },
             );
             const userDetails = response.data.User;
-            const envAdvisorRaCode = Config.ADVISOR_RA_CODE;
+            const advisorConfig = response.data.advisorConfig;
+            const advisorRaCode = Config.ADVISOR_RA_CODE || userDetails?.advisor_ra_code;
+            const hasAdvisorRaCode = !!advisorRaCode;
 
-            const hasAdvisorRaCode = envAdvisorRaCode || !!userDetails?.advisor_ra_code;
-
-            console.log('📊 API User Details: RA Code =', userDetails?.advisor_ra_code);
-            console.log('📊 Has Advisor RA Code:', hasAdvisorRaCode);
+            // Store data so next cold start hits the fast cache path
+            if (hasAdvisorRaCode && advisorConfig) {
+              await storeLoginData({
+                raCode: advisorRaCode,
+                userData: {email, advisor_ra_code: advisorRaCode, ...userDetails},
+                advisorConfig,
+              });
+            }
 
             setTimeout(() => {
               navigation.replace(

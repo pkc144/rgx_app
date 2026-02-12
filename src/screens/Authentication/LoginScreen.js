@@ -31,12 +31,11 @@ import APP_VARIANTS from '../../utils/Config';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useConfig} from '../../context/ConfigContext';
 
-// Import enhanced storage utilities
+// Import storage utilities
 import {
+  storeLoginData,
   checkAndFetchAdvisorConfig,
   setUserData,
-  isUserDataComplete,
-  refreshAllAppData,
 } from '../../utils/storageUtils';
 import {
   logLoginAttempt,
@@ -86,58 +85,56 @@ const LoginScreen = () => {
   // Navigation handler - store data and navigate
   const handlePostLoginNavigation = async (userDetails, userEmail) => {
     try {
-      const hasAdvisorRaCode = Config?.ADVISOR_RA_CODE
-        ? Config?.ADVISOR_RA_CODE
-        : !!userDetails.data?.User?.advisor_ra_code;
+      const userData = userDetails.data?.User;
+      const advisorRaCode = Config?.ADVISOR_RA_CODE || userData?.advisor_ra_code;
+      const hasAdvisorRaCode = !!advisorRaCode;
 
       setIsProfileCompleted(hasAdvisorRaCode);
       await storeLoginTime();
 
-      if (hasAdvisorRaCode) {
-        const advisorRaCode = Config?.ADVISOR_RA_CODE
-          ? Config?.ADVISOR_RA_CODE
-          : userDetails.data.User.advisor_ra_code;
+      if (!hasAdvisorRaCode) {
+        await setUserData({
+          email: userEmail,
+          profileCompleted: false,
+          ...userData,
+        });
+        navigation.replace('SignUpRADetails', {userEmail});
+        return;
+      }
 
-        // Store user data
+      // Check if advisorConfig came inline from consolidated endpoint
+      const inlineConfig = userDetails.data?.advisorConfig;
+
+      if (inlineConfig) {
+        // Fast path: config returned inline with getUser response
+        await storeLoginData({
+          raCode: advisorRaCode,
+          userData: {email: userEmail, advisor_ra_code: advisorRaCode, profileCompleted: true, ...userData},
+          advisorConfig: inlineConfig,
+        });
+      } else {
+        // Fallback: old server without consolidated endpoint — fetch config separately
         await setUserData({
           email: userEmail,
           advisor_ra_code: advisorRaCode,
           profileCompleted: true,
-          ...userDetails.data.User,
+          ...userData,
         });
-
-        // Fetch advisor config
         const configResult = await checkAndFetchAdvisorConfig(advisorRaCode);
-
-        if (configResult.success) {
-          // Reload config for UI
-          await reloadConfigData();
-
-          // Load home data in background (don't wait)
-          getAllTrades().catch(err => console.error('Trade load error:', err));
-          getModelPortfolioStrategyDetails().catch(err => console.error('Portfolio load error:', err));
-
-          // Navigate to Home
-          navigation.replace('Home');
-        } else {
-          if (configResult.advisorExists === false) {
-            navigation.replace('SignUpRADetails', {
-              userEmail: userEmail,
-            });
-          } else {
-            navigation.replace('Home');
-          }
+        if (!configResult.success && configResult.advisorExists === false) {
+          navigation.replace('SignUpRADetails', {userEmail});
+          return;
         }
-      } else {
-        await setUserData({
-          email: userEmail,
-          profileCompleted: false,
-          ...userDetails?.data?.User,
-        });
-        navigation.replace('SignUpRADetails', {
-          userEmail: userEmail,
-        });
       }
+
+      // Reload config for UI
+      await reloadConfigData();
+
+      // Load home data in background (don't wait)
+      getAllTrades().catch(err => console.error('Trade load error:', err));
+      getModelPortfolioStrategyDetails().catch(err => console.error('Portfolio load error:', err));
+
+      navigation.replace('Home');
     } catch (error) {
       console.error('Login error:', error);
       navigation.replace('Home');
@@ -166,7 +163,7 @@ const LoginScreen = () => {
 
         try {
           const getResponse = await axios.get(
-            `${server.server.baseUrl}api/user/getUser/${email}`,
+            `${server.server.baseUrl}api/user/getUser/${email}?includeAdvisorConfig=true`,
             {
               headers: {
                 'Content-Type': 'application/json',
@@ -293,7 +290,7 @@ const LoginScreen = () => {
         );
 
         const userDetails = await axios.get(
-          `${server.server.baseUrl}api/user/getUser/${user.email}`,
+          `${server.server.baseUrl}api/user/getUser/${user.email}?includeAdvisorConfig=true`,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -477,7 +474,7 @@ const LoginScreen = () => {
 
       // Get user details from backend
       const userDetails = await axios.get(
-        `${server.server.baseUrl}api/user/getUser/${userEmail}`,
+        `${server.server.baseUrl}api/user/getUser/${userEmail}?includeAdvisorConfig=true`,
         {
           headers: {
             'Content-Type': 'application/json',

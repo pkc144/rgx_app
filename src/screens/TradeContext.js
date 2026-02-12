@@ -16,11 +16,13 @@ import {fetchBrokerAllHoldings} from '../FunctionCall/fetchBrokerAllHoldings';
 import {fetchBrokerSpecificHoldings} from '../FunctionCall/fetchBrokerSpecificHoldings';
 import {fetchOrderBook, fetchPendingOrders} from '../services/BrokerOrderBookAPI';
 
-import {getConfigData, isUserDataComplete} from '../utils/storageUtils';
+import {getConfigData} from '../utils/storageUtils';
 import Config from 'react-native-config';
 const TradeContext = createContext();
 import {generateToken} from '../utils/SecurityTokenManager';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
+import {isOrderSuccess, isOrderRejected} from '../utils/orderStatusUtils';
+import {saveBrokerSessionTime} from '../utils/brokerSessionUtils';
 export const useTrade = () => {
   return useContext(TradeContext);
 };
@@ -51,52 +53,23 @@ export const TradeProvider = ({children}) => {
   const [configData, setConfigData] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
 
-  // ENHANCED: Load stored data with retry mechanism and better logging
-  const loadStoredData = useCallback(async (retryCount = 3) => {
+  // Load stored config data — single read, no retries
+  const loadStoredData = useCallback(async () => {
     try {
-      const dataCheck = await isUserDataComplete();
-      if (!dataCheck.isComplete) {
-        if (retryCount > 0) {
-          setTimeout(() => loadStoredData(retryCount - 1), 1000);
-          return;
-        } else {
-          setConfigData(null);
-          setConfigLoading(false);
-          return;
-        }
-      }
       const config = await getConfigData();
-      if (config) {
-        setConfigData(config);
-        setConfigLoading(false);
-        console.log('✅ [TradeContext] Config data loaded successfully');
-      } else {
-        // If no config and we have retries left, wait and try again
-        if (retryCount > 0) {
-          setTimeout(() => loadStoredData(retryCount - 1), 1000);
-          return;
-        } else {
-          setConfigData(null);
-          setConfigLoading(false);
-        }
-      }
+      setConfigData(config);
     } catch (error) {
-      // Retry on error if we have attempts left
-      if (retryCount > 0) {
-        setTimeout(() => loadStoredData(retryCount - 1), 1000);
-        return;
-      } else {
-        setConfigData(null);
-        setConfigLoading(false);
-      }
+      console.error('[TradeContext] Error loading config:', error);
+      setConfigData(null);
+    } finally {
+      setConfigLoading(false);
     }
   }, []);
 
-  // ENHANCED: Force reload config data (called from login/signup flows)
+  // Force reload config data (called from login/signup flows)
   const reloadConfigData = useCallback(async () => {
     setConfigLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    await loadStoredData(3); // Retry up to 3 times
+    await loadStoredData();
   }, [loadStoredData]);
 
   useEffect(() => {
@@ -217,19 +190,15 @@ export const TradeProvider = ({children}) => {
       // Check if ALL BUY orders have COMPLETE status
       const allBuyComplete =
         orders.buy.length > 0 &&
-        orders.buy.every(
-          order =>
-            order.trade_place_status === 'complete' ||
-            order.trade_place_status === 'COMPLETE',
+        orders.buy.every(order =>
+          isOrderSuccess(order.trade_place_status),
         );
 
       // Check if ALL SELL orders have COMPLETE status
       const allSellComplete =
         orders.sell.length > 0 &&
-        orders.sell.every(
-          order =>
-            order.trade_place_status === 'complete' ||
-            order.trade_place_status === 'COMPLETE',
+        orders.sell.every(order =>
+          isOrderSuccess(order.trade_place_status),
         );
 
       // NEW LOGIC: Remove only if has both BUY/SELL AND both types are complete
@@ -559,21 +528,7 @@ const getAllTrades = async () => {
       return isValidSymbolExpiry(trade?.Symbol, trade?.Exchange);
     });
 
-    const rejectedStatuses = [
-      'rejected',
-      'failure',
-      'failed',
-      'REJECTED',
-      'cancelled',
-      'canceled',
-      'declined',
-      'error',
-    ];
-
-    const isRejectedStatus = status => {
-      if (!status || typeof status !== 'string') return false;
-      return rejectedStatuses.includes(status.toLowerCase());
-    };
+    const isRejectedStatus = (status) => isOrderRejected(status);
 
     const processedTrades = validTrades?.reduce(
       (acc, trade) => {
@@ -897,6 +852,9 @@ const getAllTrades = async () => {
       setBroker(user?.user_broker);
       setUserDetails(user);
       setIsBrokerConnected(!!user?.user_broker);
+      if (user?.user_broker && user?.jwtToken) {
+        saveBrokerSessionTime(user.user_broker);
+      }
       console.log(
         'user details i get final-------:',
         !!user?.user_broker,
