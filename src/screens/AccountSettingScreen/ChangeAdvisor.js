@@ -20,12 +20,10 @@ import {useTrade} from '../TradeContext';
 import {useNavigation, CommonActions} from '@react-navigation/native';
 import logo from '../../assets/fadedlogo.png';
 
-// Import the functions correctly
 import {
   updateRACodeAndConfig,
   getRaId,
   getUserData,
-  getConfigData,
 } from '../../utils/storageUtils';
 
 // Try to import RNRestart safely

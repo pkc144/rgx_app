@@ -23,11 +23,8 @@ import APP_VARIANTS from '../../utils/Config';
 import {Key} from 'lucide-react-native';
 import {getAuth} from '@react-native-firebase/auth';
 
-// Import enhanced storage utilities
 import {
   updateRACodeAndConfig,
-  refreshAllAppData,
-  isUserDataComplete,
 } from '../../utils/storageUtils';
 import {useTrade} from '../TradeContext';
 import {
