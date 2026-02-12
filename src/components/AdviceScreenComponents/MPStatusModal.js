@@ -26,6 +26,7 @@ import { Picker } from '@react-native-picker/picker';
 import { debounce } from 'lodash';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
+import { isOrderRejected } from '../../utils/orderStatusUtils';
 const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
@@ -79,12 +80,7 @@ const formatPrice = price => {
 
 const isStockFailed = stock => {
   return (
-    stock.orderStatus === 'REJECTED' ||
-    stock.orderStatus === 'rejected' ||
-    stock.orderStatus === 'Rejected' ||
-    stock.orderStatus === 'cancelled' ||
-    stock.orderStatus === 'CANCELLED' ||
-    stock.orderStatus === 'Cancelled' ||
+    isOrderRejected(stock.orderStatus) ||
     stock.rebalance_status === 'failed' ||
     stock.rebalance_status === 'failure'
   );

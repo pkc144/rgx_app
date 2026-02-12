@@ -41,6 +41,7 @@ import Config from 'react-native-config';
 import Toast from 'react-native-toast-message';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useTrade} from '../../screens/TradeContext';
+import {convertResponse} from '../../utils/tradeUtils';
 import {useConfig} from '../../context/ConfigContext';
 const {height: screenHeight} = Dimensions.get('window');
 
@@ -374,25 +375,7 @@ const UserStrategySubscribeModal = ({
       return total + investment;
     }, 0);
 
-  const convertResponse = dataArray => {
-    return dataArray.map(item => {
-      return {
-        transactionType: item.orderType,
-        exchange: item.exchange,
-        segment: 'EQUITY',
-        productType: 'DELIVERY',
-        orderType: 'MARKET',
-        price: 0,
-        tradingSymbol: item.symbol,
-        token: item?.token ? item?.token : '',
-        quantity: item.qty,
-        priority: 0,
-        user_broker: broker,
-      };
-    });
-  };
-
-  const stockDetails = convertResponse(dataArray);
+  const stockDetails = convertResponse(dataArray, broker);
 
   const totalAmount = useTotalAmount(stockDetails);
   console.log('totalAmount:::', totalAmount);

@@ -297,7 +297,7 @@ const RebalanceAdviceContent = React.memo(
         const verifyEdis = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/angelone/verify-edis',
+              `${server.ccxtServer.baseUrl}angelone/verify-edis`,
               {
                 apiKey: angelOneApiKey,
                 jwtToken: userDetails.jwtToken,
@@ -324,7 +324,7 @@ const RebalanceAdviceContent = React.memo(
         const verifyDhanEdis = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/dhan/edis-status',
+              `${server.ccxtServer.baseUrl}dhan/edis-status`,
               {
                 clientId: clientCode,
                 accessToken: userDetails.jwtToken,
@@ -349,7 +349,7 @@ const RebalanceAdviceContent = React.memo(
         const verifyZerodhaDdpi = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/zerodha/save-ddpi-status',
+              `${server.ccxtServer.baseUrl}zerodha/save-ddpi-status`,
               {
                 apiKey: zerodhaApiKey,
                 accessToken: userDetails.jwtToken,
@@ -371,7 +371,7 @@ const RebalanceAdviceContent = React.memo(
         const verifyZerodhaEdis = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/zerodha/save-edis-status',
+              `${server.ccxtServer.baseUrl}zerodha/save-edis-status`,
               {
                 userEmail: userDetails.email,
                 edis: userDetails.edis,

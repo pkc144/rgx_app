@@ -371,9 +371,13 @@ const MPInvestNowModal = ({
           },
         })
         .then(res => {
-          setadminpaymentPlatform(res?.data?.paymentPlatform);
+          if (res?.data?.paymentPlatform) {
+            setadminpaymentPlatform(res.data.paymentPlatform);
+          }
         })
-        .catch(err => console.log('here-------->>>>>>>>>>.', err.response));
+        .catch(() => {
+          setadminpaymentPlatform(config?.paymentPlatform || 'cashfree');
+        });
     }
   };
 
@@ -382,7 +386,6 @@ const MPInvestNowModal = ({
   const payu =
     String(adminpaymentPlatform).trim().toLowerCase() === 'payu';
 
-  console.log('Payment Platform-------', adminpaymentPlatform, { cashfree, payu });
 
   // PayU WebView state
   const [showPayUWebView, setShowPayUWebView] = useState(false);
@@ -3685,6 +3688,7 @@ const MPInvestNowModal = ({
       console.log('data==', data);
     } catch (err) {
       setAppliedCoupon(null);
+      setAppliedCouponId(null);
       console.log('messa---', err?.response);
       setCouponMessage(
         `❌ ${err?.response?.data?.message || 'Failed to apply coupon'}`,
@@ -3722,7 +3726,11 @@ const MPInvestNowModal = ({
     // --- RECURRING PLAN LOGIC ---
     durationText =
       selectedCard?.charAt(0)?.toUpperCase() + selectedCard?.slice(1);
-    const offerDetails = specificPlan?.offer_plans_details?.[0];
+    const offerDetails = appliedCoupon
+      ? specificPlan?.offer_plans_details?.find(
+          (detail) => detail.couponId?.toString() === appliedCouponId?.toString(),
+        )
+      : specificPlan?.offer_plans_details?.[0];
 
     if (appliedCoupon && offerDetails) {
       const originalRecurringAmount =
@@ -4268,11 +4276,12 @@ const MPInvestNowModal = ({
                                             <Text
                                               style={styles.lineThroughGray}>
                                               ₹
-                                              {
+                                              {displayAmount(
                                                 planDetails.pricingWithoutGst?.[
                                                 item
                                                 ]
-                                              }
+                                              )}
+                                              {gstText}
                                             </Text>
                                             <Text style={[styles.greenPrice, {color: stepCompletedColor}]}>
                                               ₹

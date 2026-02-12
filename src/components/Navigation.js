@@ -126,6 +126,15 @@ const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 const {height: screenHeight} = Dimensions.get('window');
 
+// Bottom sheet positioning - accounts for tab bar (~60px) + some padding
+const TAB_BAR_HEIGHT = 60;
+const BOTTOM_SHEET_PADDING = 10;
+const getBottomSheetPosition = (insets) => {
+  // Position sheet to show above tab bar with safe area consideration
+  const safeBottom = insets?.bottom || 0;
+  return screenHeight - TAB_BAR_HEIGHT - safeBottom - BOTTOM_SHEET_PADDING;
+};
+
 const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
 // Ensure the variant exists in APP_VARIANTS, otherwise use 'rgxresearch'
 const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
@@ -205,6 +214,7 @@ const MainTabNavigator = () => {
     successclosemodel,
   } = useModal();
   const insets = useSafeAreaInsets();
+  const bottomSheetPosition = getBottomSheetPosition(insets);
   const translateY = useRef(new Animated.Value(screenHeight)).current;
   const [cartCount, setCartCount1] = useState(0);
   const navigation = useNavigation();
@@ -234,7 +244,7 @@ const MainTabNavigator = () => {
     console.log('success after:', successclosemodel);
     const startTime = global.performance.now();
     Animated.timing(translateY, {
-      toValue: screenHeight - 130 - 60,
+      toValue: bottomSheetPosition,
       duration: 300,
       isInteraction: false,
       useNativeDriver: true,
@@ -263,7 +273,7 @@ const MainTabNavigator = () => {
       onMoveShouldSetPanResponder: (evt, gestureState) => gestureState.dy > 10,
       onPanResponderMove: (evt, gestureState) => {
         if (gestureState.dy > 0) {
-          translateY.setValue(screenHeight - 130 - 60 + gestureState.dy);
+          translateY.setValue(bottomSheetPosition + gestureState.dy);
         }
       },
       onPanResponderRelease: (evt, gestureState) => {
@@ -390,7 +400,7 @@ const currentName = currentTabRoute?.name || "";
             transform: [{translateY}], // Use transform with translateY instead of top
             left: 0,
             right: 0,
-            height: 120,
+            height: 100,
             elevation: 98,
             shadowColor: 'black',
             borderColor: '#eee',

@@ -58,6 +58,7 @@ import EmptyStateInfoMP from './EmptyStateMP';
 import ConsentPopup from '../../components/ModelPortfolioComponents/ConsentPopUp';
 import DistributionGrid from './DistributionRowGrid';
 import {useTrade} from '../TradeContext';
+import {convertResponse} from '../../utils/tradeUtils';
 import {useGstConfig} from '../../context/GstConfigContext';
 import {withGst, gstLabel} from '../../utils/gstHelpers';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
@@ -683,24 +684,7 @@ const BespokePerformanceScreen = ({route}) => {
       return total + investment;
     }, 0);
 
-  const convertResponse = dataArray => {
-    return dataArray.map(item => {
-      return {
-        transactionType: item.orderType,
-        exchange: item.exchange,
-        segment: 'EQUITY',
-        productType: 'DELIVERY',
-        orderType: 'MARKET',
-        price: 0,
-        tradingSymbol: item.symbol,
-        quantity: item.qty,
-        priority: 0,
-        user_broker: broker,
-      };
-    });
-  };
-
-  const stockDetails = convertResponse(dataArray);
+  const stockDetails = convertResponse(dataArray, broker);
 
   const [planDetails, setPlanDetails] = useState(null);
   const getSpecificPlan = () => {

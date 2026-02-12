@@ -26,6 +26,11 @@ import Config from 'react-native-config';
 const {height: screenHeight} = Dimensions.get('window');
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../../screens/TradeContext';
+import Toast from 'react-native-toast-message';
+import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
+import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import { convertResponse } from '../../utils/tradeUtils';
+import moment from 'moment';
 const MPReviewTradeModal = ({
   visible,
   onCloseReviewTrade,
@@ -46,6 +51,15 @@ const MPReviewTradeModal = ({
   calculatedPortfolioData,
   calculateRebalance,
   broker,
+  edisStatus,
+  dhanEdisStatus,
+  setShowDdpiModal,
+  setShowAngleOneTpinModel,
+  setShowDhanTpinModel,
+  setShowFyersTpinModal,
+  setShowOtherBrokerModel,
+  isReturningFromOtherBrokerModal,
+  setIsReturningFromOtherBrokerModal,
 }) => {
   const {configData} = useTrade();
   console.log('MPBROKER:', broker);
@@ -233,22 +247,6 @@ const MPReviewTradeModal = ({
   // };
 
   //////////////////////////////////////////////////////////////////
-  const convertResponse = TotalArray => {
-    return TotalArray.map(item => {
-      return {
-        transactionType: item.orderType,
-        exchange: item.exchange,
-        segment: 'EQUITY',
-        productType: 'DELIVERY',
-        orderType: 'MARKET',
-        price: 0,
-        tradingSymbol: item.symbol,
-        quantity: item.qty,
-        priority: 0,
-        user_broker: broker,
-      };
-    });
-  };
 
   const openSucess = () => {
     // console.log('inside success');
@@ -260,7 +258,7 @@ const MPReviewTradeModal = ({
     setOpenSucessModal(false);
   };
 
-  const stockDetails = convertResponse(totalArray);
+  const stockDetails = convertResponse(totalArray, broker);
   const [loading, setLoading] = useState(false);
   const clientCode = userDetails && userDetails?.clientCode;
   const apiKey = userDetails && userDetails?.apiKey;
@@ -283,9 +281,11 @@ const MPReviewTradeModal = ({
       return Key;
     }
   };
-  const placeOrder = () => {
+  const placeOrder = async () => {
+    const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
+    if (!sessionValid) return;
+
     setLoading(true);
-    // console.log('yahan0');
     const getBasePayload = () => ({
       modelName: strategyDetails?.model_name,
       advisor: strategyDetails?.advisor,
@@ -297,68 +297,9 @@ const MPReviewTradeModal = ({
     });
 
     const getBrokerSpecificPayload = () => {
-      switch (broker) {
-        case 'IIFL Securities':
-          // console.log('yahan1');
-          return {clientCode};
-        case 'ICICI Direct':
-        case 'Upstox':
-          return {
-            apiKey: checkValidApiAnSecret(apiKey),
-            secretKey: checkValidApiAnSecret(secretKey),
-            [broker === 'Upstox' ? 'accessToken' : 'sessionToken']: jwtToken,
-          };
-        case 'Angel One':
-          return {apiKey, jwtToken};
-        case 'Hdfc Securities':
-          return {
-            apiKey: checkValidApiAnSecret(apiKey),
-            accessToken: jwtToken,
-          };
-        case 'Dhan':
-          return {
-            clientId: clientCode,
-            accessToken: jwtToken,
-          };
-        case 'Kotak':
-          return {
-            consumerKey: checkValidApiAnSecret(apiKey),
-            consumerSecret: checkValidApiAnSecret(secretKey),
-            accessToken: jwtToken,
-            viewToken: viewToken,
-            sid: sid,
-            serverId: serverId,
-          };
-        case 'Fyers':
-          return {
-            clientId: clientCode,
-            accessToken: jwtToken,
-          };
-        case 'AliceBlue':
-          return {
-            clientId: clientCode,
-            accessToken: jwtToken,
-            apiKey: checkValidApiAnSecret(apiKey),
-          };
-        case 'Groww':
-          return {
-            accessToken: jwtToken,
-          };
-        case 'Motilal Oswal':
-          return {
-            clientCode: clientCode,
-            accessToken: jwtToken,
-            apiKey: checkValidApiAnSecret(apiKey),
-          };
-        case 'Zerodha':
-          return {
-            apiKey: checkValidApiAnSecret(apiKey),
-            secretKey: checkValidApiAnSecret(secretKey),
-            accessToken: jwtToken,
-          };
-        default:
-          return {};
-      }
+      return {
+        accessToken: jwtToken,
+      };
     };
 
     const payload = {
@@ -369,6 +310,7 @@ const MPReviewTradeModal = ({
     const config = {
       method: 'post',
       url: `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+      timeout: 120000,
 
       headers: {
         'Content-Type': 'application/json',
@@ -382,18 +324,148 @@ const MPReviewTradeModal = ({
       data: JSON.stringify(payload),
     };
 
+    const specialBrokers = [
+      'IIFL Securities',
+      'ICICI Direct',
+      'Upstox',
+      'Kotak',
+      'Hdfc Securities',
+      'AliceBlue',
+      'Motilal Oswal',
+      'Groww',
+    ];
+
     axios
       .request(config)
       .then(response => {
-        //  console.log('yahan3',response.data);
         setOrderPlacementResponse(response.data.results);
+
+        // Post-order EDIS rejection handling
+        const checkData = response?.data?.results;
+        if (checkData && checkData.length > 0) {
+          const isMixed =
+            checkData.some(s => s.transactionType === 'BUY') &&
+            checkData.some(s => s.transactionType === 'SELL');
+          const allBuy = checkData.every(s => s.transactionType === 'BUY');
+          const allSell = checkData.every(s => s.transactionType === 'SELL');
+
+          const rejectedSellCount = checkData.reduce((count, order) => {
+            return isOrderRejected(order?.orderStatus) &&
+              order.transactionType === 'SELL'
+              ? count + 1
+              : count;
+          }, 0);
+
+          const successCount = checkData.reduce((count, order) => {
+            return isOrderSuccess(order?.orderStatus) &&
+              (order.transactionType === 'SELL' || isMixed)
+              ? count + 1
+              : count;
+          }, 0);
+
+          const hasCdslError = checkData.some((order) => {
+            const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
+            return msg.includes("cdsl") || msg.includes("edis") || msg.includes("tpin") || msg.includes("validate qty");
+          });
+
+          // Dhan CDSL error check
+          if (
+            broker === 'Dhan' &&
+            (allSell || isMixed) &&
+            rejectedSellCount >= 1 &&
+            hasCdslError &&
+            setShowDhanTpinModel
+          ) {
+            setShowDhanTpinModel(true);
+            onCloseReviewTrade();
+            setLoading(false);
+            return;
+          }
+
+          // Special brokers
+          if (
+            !isReturningFromOtherBrokerModal &&
+            specialBrokers.includes(broker)
+          ) {
+            if ((allSell || isMixed) && rejectedSellCount >= 1 && successCount === 0 && setShowOtherBrokerModel) {
+              setShowOtherBrokerModel(true);
+              onCloseReviewTrade();
+              setLoading(false);
+              setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+              return;
+            }
+          }
+
+          // Angel One
+          if (
+            broker === 'Angel One' &&
+            edisStatus &&
+            edisStatus.edis === false &&
+            (allSell || isMixed) &&
+            rejectedSellCount >= 1 &&
+            successCount === 0 &&
+            setShowAngleOneTpinModel
+          ) {
+            setShowAngleOneTpinModel(true);
+            onCloseReviewTrade();
+            setLoading(false);
+            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+            return;
+          }
+
+          // Dhan live status fallback
+          if (
+            broker === 'Dhan' &&
+            (allSell || isMixed) &&
+            dhanEdisStatus?.data?.some((h) => h.edis === false) &&
+            rejectedSellCount >= 1 &&
+            successCount === 0 &&
+            setShowDhanTpinModel
+          ) {
+            setShowDhanTpinModel(true);
+            onCloseReviewTrade();
+            setLoading(false);
+            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+            return;
+          }
+
+          // Fyers
+          if (
+            broker === 'Fyers' &&
+            (allSell || isMixed) &&
+            rejectedSellCount >= 1 &&
+            successCount === 0 &&
+            setShowFyersTpinModal
+          ) {
+            setShowFyersTpinModal(true);
+            onCloseReviewTrade();
+            setLoading(false);
+            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+            return;
+          }
+
+          // Zerodha DDPI
+          if (
+            broker === 'Zerodha' &&
+            (allSell || isMixed) &&
+            !['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
+            rejectedSellCount >= 1 &&
+            successCount === 0 &&
+            setShowDdpiModal
+          ) {
+            setShowDdpiModal(true);
+            onCloseReviewTrade();
+            setLoading(false);
+            return;
+          }
+        }
+
         const updateData = {
           modelId: latestRebalance.model_Id,
           orderResults: response.data.results,
           modelName: strategyDetails?.model_name,
           userEmail: userEmail,
         };
-        // console.log('yahan4');
         return axios.post(
           `${server.server.baseUrl}api/model-portfolio-db-update`,
           updateData,
@@ -437,12 +509,42 @@ const MPReviewTradeModal = ({
         console.log('won');
         openSucess();
         console.log('open::');
-        // onClose();
       })
       .catch(error => {
-        //  console.error("Error in placeOrder:", error);
         setLoading(false);
-        // Consider adding error handling here, e.g., showing an error modal
+
+        // Determine a user-friendly error message
+        let errorMessage;
+        if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
+          errorMessage = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
+        } else if (error?.response?.status === 401 || error?.response?.status === 403) {
+          errorMessage = `${broker} session has expired. Please reconnect your broker and try again.`;
+        } else {
+          errorMessage = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Order placement failed';
+        }
+
+        // Check for CDSL/EDIS errors in catch handler for Dhan
+        const errMsg = (
+          error?.response?.data?.details?.[0]?.message_aq ||
+          error?.response?.data?.details?.[0]?.message ||
+          error?.message ||
+          ""
+        ).toLowerCase();
+        if (
+          broker === 'Dhan' &&
+          (errMsg.includes("cdsl") || errMsg.includes("edis") || errMsg.includes("tpin")) &&
+          setShowDhanTpinModel
+        ) {
+          setShowDhanTpinModel(true);
+          onCloseReviewTrade();
+          return;
+        }
+
+        Toast.show({
+          type: 'error',
+          text1: 'Order Failed',
+          text2: errorMessage,
+        });
       });
     //  console.log('yahan6');
   };
@@ -467,15 +569,39 @@ const MPReviewTradeModal = ({
   const handleWebViewNavigationStateChange = newNavState => {
     // Handle navigation state changes, e.g., success/failure redirects
     const {url} = newNavState;
-    console.log('url at Review Modal :', url);
-    if (url.includes('success') || url.includes('completed')) {
-      console.log('success url at Review Modal :', url);
+    console.log('[ZerodhaPublisher] Navigation URL:', url);
+
+    // Check for Kite redirect patterns after successful order placement
+    if (url.includes('success') || url.includes('completed') || url.includes('basket/success')) {
+      console.log('[ZerodhaPublisher] Success redirect detected - orders placed in Kite');
       setZerodhaStatus('success');
       setZerodhaRequestType('basket');
+      setWebView(false); // Close WebView
+      // checkZerodhaStatus will be called via useEffect when zerodhaStatus changes
+      return false; // Prevent navigation
     }
+
+    // Check for cancel
+    if (url.includes('cancelled') || url.includes('cancel')) {
+      console.log('[ZerodhaPublisher] User cancelled basket order');
+      setZerodhaStatus('cancelled');
+      setWebView(false);
+      setLoading(false);
+      return false;
+    }
+
+    return true; // Allow navigation
   };
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
+
+  // Helper function to get last known price
+  const getLastKnownPrice = (symbol) => {
+    const price = getLTPForSymbol(symbol);
+    return price !== null ? price : '-';
+  };
+
   const handleZerodhaRedirect = async () => {
+    setLoading(true);
     const storageKey = 'stockDetailsZerodhaOrder';
     try {
       // Clear the existing value
@@ -484,9 +610,9 @@ const MPReviewTradeModal = ({
       // Set the new value
       await AsyncStorage.setItem(storageKey, JSON.stringify(stockDetails));
 
-      console.log('Updated stockDetailsZerodhaOrder with:', stockDetails);
+      console.log('[ZerodhaPublisher] Stored stock details:', stockDetails);
     } catch (error) {
-      console.error('Error updating stockDetailsZerodhaOrder:', error);
+      console.error('[ZerodhaPublisher] Error storing stock details:', error);
     }
     const apiKey = zerodhaApiKey;
     const basket = stockDetails.map(stock => {
@@ -531,72 +657,67 @@ const MPReviewTradeModal = ({
     const currentISTDateTime = new Date();
 
     try {
-      // Update the database with the current IST date-time
-      await axios
-        .post(
-          `${server.server.baseUrl}api/zerodha/model-portfolio/update-reco-with-zerodha-model-pf`,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
+      // Step 1: Update the database with the current IST date-time (mark as placed)
+      console.log('[ZerodhaPublisher] Updating trade recommendations...');
+      const res = await axios.post(
+        `${server.server.baseUrl}api/zerodha/model-portfolio/update-reco-with-zerodha-model-pf`,
+        {
+          stockDetails: stockDetails,
+          leaving_datetime: currentISTDateTime,
+          email: userEmail,
+          trade_given_by: strategyDetails?.advisor || configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
           },
-          {
-            stockDetails: stockDetails,
-            leaving_datetime: currentISTDateTime,
-            email: userEmail,
-            trade_given_by: 'demoadvisor@alphaquark.in',
-          },
-        )
-        .then(res => {
-          const allStockDetails = res?.data?.data;
-          const filteredStockDetails = allStockDetails.map(detail => ({
-            user_email: detail.user_email,
-            trade_given_by: detail.trade_given_by,
-            tradingSymbol: detail.Symbol,
-            transactionType: detail.Type,
-            exchange: detail.Exchange,
-            segment: detail.Segment,
-            productType: detail.ProductType,
-            orderType: detail.OrderType,
-            price: detail.Price,
-            quantity: detail.Quantity,
-            priority: detail.Priority,
-            tradeId: detail.tradeId,
-            user_broker: 'Zerodha', // Manually adding this field
-          }));
+        }
+      );
 
-          setLoading(false);
-          localStorage.setItem(
-            'stockDetailsZerodhaOrder',
-            JSON.stringify(filteredStockDetails),
-          );
-        })
-        .catch(err => {
-          console.log('error', err);
-          setLoading(false);
-        });
+      const allStockDetails = res?.data?.data;
+      const filteredStockDetails = allStockDetails.map(detail => ({
+        user_email: detail.user_email,
+        trade_given_by: detail.trade_given_by,
+        tradingSymbol: detail.Symbol,
+        transactionType: detail.Type,
+        exchange: detail.Exchange,
+        segment: detail.Segment,
+        productType: detail.ProductType,
+        orderType: detail.OrderType,
+        price: detail.Price,
+        quantity: detail.Quantity,
+        priority: detail.Priority,
+        tradeId: detail.tradeId,
+        user_broker: 'Zerodha',
+      }));
 
-      // Generate HTML form content
+      // Store updated stock details for post-order processing
+      await AsyncStorage.setItem(
+        'stockDetailsZerodhaOrder',
+        JSON.stringify(filteredStockDetails),
+      );
+
+      console.log('[ZerodhaPublisher] Opening Kite basket WebView...');
+
+      // Step 2: Generate HTML form content and open WebView
       const htmlContent = generateHtmlForm(basket, apiKey);
-      // Inject the HTML form into WebView
       setHtmlContent(htmlContent);
       setWebView(true);
-      webViewRef.current.injectJavaScript(`
-        document.open();
-        document.write(\`${htmlContent}\`);
-        document.close();
-      `);
+      setLoading(false); // Stop loading, WebView will show
     } catch (error) {
-      console.error('Failed to update trade recommendation:', error);
+      console.error('[ZerodhaPublisher] Failed to update trade recommendation:', error);
+      setLoading(false);
+      alert('Failed to prepare basket order. Please try again.');
     }
   };
 
-  const appURL = 'test';
+  // Redirect URL for Kite to return after order placement
+  const appURL = 'success';
   const generateHtmlForm = (basket, apiKey) => {
     return `<html>
         <body>
@@ -642,74 +763,127 @@ const MPReviewTradeModal = ({
 
   const checkZerodhaStatus = async () => {
     await fetchData();
-    const currentISTDateTime = new Date();
-    const istDatetime = moment(currentISTDateTime).format();
-    console.log(
-      'Zerodha Stock CheckzerodhaStatus:',
-      zerodhaStockDetails,
-      'and ',
-      zerodhaAdditionalPayload,
-      'jwtToken:',
-      jwtToken,
-    );
+
+    console.log('[ZerodhaPublisher] checkZerodhaStatus - Status:', zerodhaStatus, 'Type:', zerodhaRequestType);
+    console.log('[ZerodhaPublisher] Stock Details:', zerodhaStockDetails);
+
     if (zerodhaStatus === 'success' && zerodhaRequestType === 'basket') {
+      setLoading(true);
+
+      const requestHeaders = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
+      };
+
       try {
-        let data = JSON.stringify({
-          apiKey: zerodhaApiKey,
-          jwtToken: jwtToken,
-          userEmail: userEmail,
-          returnDateTime: istDatetime,
-          trades: zerodhaStockDetails,
+        // Step 1: Record orders and fetch actual statuses from Zerodha
+        // This endpoint matches Zerodha order book with our trade list and returns actual order statuses
+        console.log('[ZerodhaPublisher] Step 1: Recording publisher orders...');
+        const recordResponse = await axios.post(
+          `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
+          {
+            stockDetails: zerodhaStockDetails,
+            publisherResults: [{ status: 'success', batchIndex: 0 }],
+            userEmail: userEmail,
+            broker: 'Zerodha',
+          },
+          { headers: requestHeaders }
+        );
+
+        console.log('[ZerodhaPublisher] Record orders response:', recordResponse.data);
+
+        const orderResults = recordResponse.data.response || recordResponse.data.results || [];
+
+        // Step 2: Update model portfolio database with order results
+        console.log('[ZerodhaPublisher] Step 2: Updating model portfolio DB...');
+        await axios.post(
+          `${server.server.baseUrl}api/model-portfolio-db-update`,
+          {
+            modelId: latestRebalance?.model_Id,
+            orderResults: orderResults,
+            modelName: strategyDetails?.model_name,
+            userEmail: userEmail,
+          },
+          { headers: requestHeaders }
+        );
+
+        // Step 3: Update portfolio holdings from Zerodha
+        console.log('[ZerodhaPublisher] Step 3: Updating portfolio holdings...');
+        await axios.post(
+          `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
+          { user_email: userEmail },
+          { headers: requestHeaders }
+        );
+
+        // Success - show results to user
+        console.log('[ZerodhaPublisher] ✅ All post-order steps completed successfully');
+        setOrderPlacementResponse(orderResults);
+        setOpenSucessModal(true);
+        onCloseReviewTrade(); // Close review modal
+        setLoading(false);
+
+        // Clean up AsyncStorage
+        await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+        await AsyncStorage.removeItem('additionalPayload');
+
+        // Reset state
+        setZerodhaStatus(null);
+        setZerodhaRequestType(null);
+
+      } catch (error) {
+        console.error('[ZerodhaPublisher] ❌ Error in post-order processing:', error);
+        console.error('[ZerodhaPublisher] Error details:', error.response?.data);
+        setLoading(false);
+
+        // Mark as pending so the async poller knows to check broker order book
+        try {
+          await axios.put(
+            `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+            {
+              userEmail: userEmail,
+              modelName: strategyDetails?.model_name,
+              executionStatus: 'pending',
+            },
+            { headers: requestHeaders }
+          );
+        } catch (statusErr) {
+          console.error('[ZerodhaPublisher] Error updating subscriber execution status:', statusErr);
+        }
+
+        // Show error to user
+        Toast.show({
+          type: 'error',
+          text1: 'Order Status Unknown',
+          text2: 'Orders may have been placed in Kite, but failed to record status. Please check your Kite app.',
         });
 
-        const config = {
-          method: 'post',
-          url: `${server.server.baseUrl}api/zerodha/order-place`,
+        // Still close the modal
+        onCloseReviewTrade();
+        setZerodhaStatus(null);
+        setZerodhaRequestType(null);
+      }
 
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
+      // Always enroll in status-check-queue regardless of record-orders success/failure.
+      // This ensures the async poller can reconcile orders from the broker's order book
+      // even if the initial record-orders call failed.
+      try {
+        console.log('[ZerodhaPublisher] Adding to status check queue...');
+        await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          {
+            userEmail: userEmail,
+            modelName: strategyDetails?.model_name,
+            advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+            broker: 'Zerodha',
           },
-
-          data: data,
-        };
-
-        // Use await instead of .then()
-        const response = await axios.request(config);
-        console.log('Status Call here:2,', response.data.response);
-        setOrderPlacementResponse(response.data.response);
-        setOpenSucessModal(true);
-        setOpenZerodhaModel(false);
-        eventEmitter.emit('OrderPlacedReferesh');
-        await getAllTrades();
-        try {
-          const config = {
-            method: 'post',
-            url: `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
-
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
-
-            data: JSON.stringify({user_email: userEmail}),
-          };
-          return await axios.request(config);
-        } catch (error) {
-          console.error(`Error updating portfolio for`, error);
-        }
-        AsyncStorage.removeItem('stockDetailsZerodhaOrder');
-        setflag(false);
-      } catch (error) {
-        console.log('Something went wrong');
+          { headers: requestHeaders }
+        );
+      } catch (queueErr) {
+        console.error('[ZerodhaPublisher] Error adding to status-check-queue:', queueErr);
       }
     }
   };
@@ -789,7 +963,14 @@ const MPReviewTradeModal = ({
                 padding: 10,
               }}>
               <View style={{alignContent: 'flex-end', alignItems: 'flex-end'}}>
-                <XIcon onPress={handleClose} size={16} color={'black'} />
+                <TouchableOpacity onPress={() => {
+                  setWebView(false);
+                  setLoading(false);
+                  setZerodhaStatus(null);
+                  setZerodhaRequestType(null);
+                }}>
+                  <XIcon size={16} color={'black'} />
+                </TouchableOpacity>
               </View>
               <WebView
                 ref={webViewRef}
@@ -916,9 +1097,42 @@ const MPReviewTradeModal = ({
 
               {confirmOrder ? (
                 <TouchableOpacity
-                  disabled={calculatedLoading}
+                  disabled={calculatedLoading || loading}
                   onPress={() => {
-                    broker === 'Zerodha' ? placeOrder() : placeOrder();
+                    // Pre-order EDIS checks
+                    const hasSellOrders = stockDetails?.some(s => s.transactionType === 'SELL');
+                    if (hasSellOrders) {
+                      // Zerodha DDPI check (before Kite redirect or server-side)
+                      if (broker === 'Zerodha' &&
+                        !['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
+                        setShowDdpiModal) {
+                        setShowDdpiModal(true);
+                        onCloseReviewTrade();
+                        return;
+                      }
+                      // Angel One EDIS check
+                      if (broker === 'Angel One' && edisStatus && edisStatus.edis === false && setShowAngleOneTpinModel) {
+                        setShowAngleOneTpinModel(true);
+                        onCloseReviewTrade();
+                        return;
+                      }
+                      // Dhan EDIS check
+                      if (broker === 'Dhan' && dhanEdisStatus?.data?.some((h) => h.edis === false) && setShowDhanTpinModel) {
+                        setShowDhanTpinModel(true);
+                        onCloseReviewTrade();
+                        return;
+                      }
+                    }
+
+                    // Use Kite Publisher for Zerodha (compliant method)
+                    // Use server-side API for other brokers
+                    if (broker === 'Zerodha') {
+                      console.log('[PlaceOrder] Using Kite Publisher for Zerodha');
+                      handleZerodhaRedirect();
+                    } else {
+                      console.log('[PlaceOrder] Using server-side API for', broker);
+                      placeOrder();
+                    }
                   }}
                   style={styles.orderButton}>
                   {0 > 1 ? (
@@ -937,7 +1151,7 @@ const MPReviewTradeModal = ({
                     </View>
                   ) : (
                     <Text style={styles.orderButtonText}>
-                      Place Order (₹{' '}
+                      {broker === 'Zerodha' ? 'Open Kite Basket' : 'Place Order'} (₹{' '}
                       {parseFloat(totalInvestmentValue).toFixed(2)})
                     </Text>
                   )}

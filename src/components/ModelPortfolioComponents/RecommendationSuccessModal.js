@@ -26,6 +26,7 @@ import {
 import { Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import moment from 'moment';
+import { isOrderSuccess, isOrderRejected, isOrderPending } from '../../utils/orderStatusUtils';
 const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');
 import { useModal } from '../ModalContext';
@@ -75,27 +76,11 @@ const RecommendationSuccessModal = ({
   console.log('Order Response : ---', orderPlacementResponse);
 
   const successCount = orderResponse?.filter(
-    item =>
-      item?.orderStatus === 'complete' ||
-      item?.orderStatus === 'COMPLETE' ||
-      item?.orderStatus === 'Placed' ||
-      item?.orderStatus === 'Executed' ||
-      item?.orderStatus === 'Ordered' ||
-      item?.orderStatus === 'open' ||
-      item?.orderStatus === 'OPEN' ||
-      item?.orderStatus === 'Transit' ||
-      item?.orderStatus === 'Traded' ||
-      item?.orderStatus === 'PENDING' ||
-      item?.orderStatus === 'TRADED',
+    item => isOrderSuccess(item?.orderStatus) || isOrderPending(item?.orderStatus),
   ).length;
 
   const failureCount = orderResponse?.filter(
-    item =>
-      item?.orderStatus === 'rejected' ||
-      item?.orderStatus === 'FAILURE' ||
-      item?.orderStatus === 'Rejected' ||
-      item?.orderStatus === 'REJECTED' ||
-      item?.orderStatus === 'cancelled',
+    item => isOrderRejected(item?.orderStatus),
   ).length;
 
   const totalCount = orderResponse?.length;
@@ -109,17 +94,7 @@ const RecommendationSuccessModal = ({
 
   const renderOrderItem = ({ item, index }) => {
     const isSuccessStatus =
-      item?.orderStatus === 'Placed' ||
-      item?.orderStatus === 'complete' ||
-      item?.orderStatus === 'COMPLETE' ||
-      item?.orderStatus === 'Executed' ||
-      item?.orderStatus === 'open' ||
-      item?.orderStatus === 'OPEN' ||
-      item?.orderStatus === 'Transit' ||
-      item?.orderStatus === 'Traded' ||
-      item?.orderStatus === 'TRADED' ||
-      item?.orderStatus === 'PENDING' ||
-      item?.orderStatus === 'Ordered';
+      isOrderSuccess(item?.orderStatus) || isOrderPending(item?.orderStatus);
 
     const cardStyle = isSuccessStatus
       ? styles.successCard

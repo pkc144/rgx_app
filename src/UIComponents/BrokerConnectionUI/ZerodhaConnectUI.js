@@ -93,7 +93,7 @@ const ZerodhaConnectUI = ({
     }
   };
 
-  // Step 1: Generate access token from request_token (same as production web)
+  // Step 1: Generate access token from request_token (same as production)
   const generateAccessToken = async (requestToken, apiKey) => {
     try {
       console.log('[ZerodhaConnectUI] Generating access token...');
@@ -101,18 +101,17 @@ const ZerodhaConnectUI = ({
         apiKey: apiKey,
         requestToken: requestToken,
       };
-
       const response = await axios.post(
         `${server.ccxtServer.baseUrl}zerodha/gen-access-token`,
         JSON.stringify(payload),
         { headers: getHeaders() }
       );
 
-      if (response.data) {
+      if (response.data && response.data.status !== 1) {
         console.log('[ZerodhaConnectUI] Access token generated successfully');
         return response.data.access_token;
       } else {
-        throw new Error('Failed to generate access token');
+        throw new Error('Invalid credentials or token exchange failed');
       }
     } catch (error) {
       console.error('[ZerodhaConnectUI] gen-access-token failed:', error);
@@ -146,7 +145,7 @@ const ZerodhaConnectUI = ({
     }
   };
 
-  // Full post-OAuth flow: extract token → gen access token → save connection
+  // Full post-OAuth flow: extract token -> gen access token -> save connection
   const processOAuthCallback = async (requestToken) => {
     try {
       setIsLoading(true);
@@ -158,7 +157,7 @@ const ZerodhaConnectUI = ({
         throw new Error('Could not fetch user details');
       }
 
-      // Generate access token via CCXT server (same as production web - only apiKey + requestToken)
+      // Generate access token via CCXT server (same as production)
       const accessToken = await generateAccessToken(requestToken, zerodhaApiKey);
 
       if (!accessToken) {
@@ -196,7 +195,6 @@ const ZerodhaConnectUI = ({
     try {
       const ccxtBaseUrl = Config?.REACT_APP_CCXT_SERVER_API_URL || server.ccxtServer.baseUrl;
       const baseUrl = Config?.REACT_APP_NODE_SERVER_API_URL || server.server.baseUrl;
-      const subdomain = Config?.REACT_APP_ADVISOR_SUBDOMAIN || Config?.REACT_APP_HEADER_NAME || 'rgxresearch';
       const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
 
       if (!zerodhaApiKey) {

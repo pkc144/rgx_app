@@ -56,10 +56,16 @@ import EmptyStateInfoMP from './EmptyStateMP';
 import ConsentPopup from '../../components/ModelPortfolioComponents/ConsentPopUp';
 import DistributionGrid from './DistributionRowGrid';
 import {useTrade} from '../TradeContext';
+import {convertResponse} from '../../utils/tradeUtils';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useConfig} from '../../context/ConfigContext';
 import {useGstConfig} from '../../context/GstConfigContext';
 import {withGst, gstLabel} from '../../utils/gstHelpers';
+import DdpiModal from '../../components/DdpiModal';
+import {DhanTpinModal} from '../../components/DdpiModal';
+import {AngleOneTpinModal} from '../../components/DdpiModal';
+import {FyersTpinModal} from '../../components/DdpiModal';
+import {OtherBrokerModel} from '../../components/DdpiModal';
 const colorPalette = [
   '#EAE7DC',
   '#F5F3F4',
@@ -521,6 +527,16 @@ const MPPerformanceScreen = ({route}) => {
   const [BrokerModel, setBrokerModel] = useState(false);
   const [OpenTokenExpireModel, setOpenTokenExpireModel] = useState(false);
 
+  // EDIS/DDPI state
+  const [edisStatus, setEdisStatus] = useState(null);
+  const [dhanEdisStatus, setDhanEdisStatus] = useState(null);
+  const [showDdpiModal, setShowDdpiModal] = useState(false);
+  const [showAngleOneTpinModel, setShowAngleOneTpinModel] = useState(false);
+  const [showDhanTpinModel, setShowDhanTpinModel] = useState(false);
+  const [showFyersTpinModal, setShowFyersTpinModal] = useState(false);
+  const [showOtherBrokerModel, setShowOtherBrokerModel] = useState(false);
+  const [isReturningFromOtherBrokerModal, setIsReturningFromOtherBrokerModal] = useState(false);
+
   const checkValidApiAnSecret = data => {
     try {
       // Decrypt the encrypted data using AES and the secret key
@@ -540,6 +556,70 @@ const MPPerformanceScreen = ({route}) => {
       return null; // Return null or handle the error as needed
     }
   };
+
+  // Fetch EDIS status on page load
+  useEffect(() => {
+    if (!userDetails || !broker) return;
+
+    // Angel One EDIS verification
+    if (broker === 'Angel One') {
+      const verifyEdis = async () => {
+        try {
+          const response = await axios.post(
+            `${server.ccxtServer.baseUrl}angelone/verify-edis`,
+            {
+              apiKey: checkValidApiAnSecret(apiKey),
+              jwtToken: userDetails.jwtToken,
+              userEmail: userDetails?.email,
+            },
+          );
+          setEdisStatus(response.data);
+        } catch (error) {
+          // silent fail
+        }
+      };
+      verifyEdis();
+    }
+
+    // Dhan EDIS verification
+    if (broker === 'Dhan') {
+      const verifyDhanEdis = async () => {
+        try {
+          const response = await axios.post(
+            `${server.ccxtServer.baseUrl}dhan/edis-status`,
+            {
+              clientId: clientCode,
+              accessToken: userDetails.jwtToken,
+            },
+          );
+          setDhanEdisStatus(response.data);
+        } catch (error) {
+          // silent fail
+        }
+      };
+      verifyDhanEdis();
+    }
+
+    // Zerodha DDPI verification
+    if (broker === 'Zerodha' && apiKey && secretKey) {
+      const verifyZerodhaDdpi = async () => {
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}zerodha/save-ddpi-status`,
+            {
+              apiKey: checkValidApiAnSecret(apiKey),
+              secretKey: checkValidApiAnSecret(secretKey),
+              accessToken: userDetails.jwtToken,
+              userEmail: userDetails.email,
+            },
+          );
+        } catch (error) {
+          // silent fail
+        }
+      };
+      verifyZerodhaDdpi();
+    }
+  }, [userDetails, broker]);
 
   const calculateRebalance = () => {
     const isMarketHours = IsMarketHours();
@@ -688,24 +768,7 @@ const MPPerformanceScreen = ({route}) => {
       return total + investment;
     }, 0);
 
-  const convertResponse = dataArray => {
-    return dataArray.map(item => {
-      return {
-        transactionType: item.orderType,
-        exchange: item.exchange,
-        segment: 'EQUITY',
-        productType: 'DELIVERY',
-        orderType: 'MARKET',
-        price: 0,
-        tradingSymbol: item.symbol,
-        quantity: item.qty,
-        priority: 0,
-        user_broker: broker,
-      };
-    });
-  };
-
-  const stockDetails = convertResponse(dataArray);
+  const stockDetails = convertResponse(dataArray, broker);
 
   const [planDetails, setPlanDetails] = useState(null);
   const getSpecificPlan = () => {
@@ -1467,6 +1530,15 @@ const MPPerformanceScreen = ({route}) => {
           calculatedLoading={calculatedLoading}
           calculatedPortfolioData={calculatedPortfolioData}
           calculateRebalance={calculateRebalance}
+          edisStatus={edisStatus}
+          dhanEdisStatus={dhanEdisStatus}
+          setShowDdpiModal={setShowDdpiModal}
+          setShowAngleOneTpinModel={setShowAngleOneTpinModel}
+          setShowDhanTpinModel={setShowDhanTpinModel}
+          setShowFyersTpinModal={setShowFyersTpinModal}
+          setShowOtherBrokerModel={setShowOtherBrokerModel}
+          isReturningFromOtherBrokerModal={isReturningFromOtherBrokerModal}
+          setIsReturningFromOtherBrokerModal={setIsReturningFromOtherBrokerModal}
         />
       )}
 
@@ -1475,6 +1547,51 @@ const MPPerformanceScreen = ({route}) => {
           openSuccessModal={openSuccessModal}
           setOpenSucessModal={setOpenSucessModal}
           orderPlacementResponse={orderPlacementResponse}
+        />
+      )}
+
+      {showDdpiModal && (
+        <DdpiModal
+          isOpen={showDdpiModal}
+          setIsOpen={setShowDdpiModal}
+          userDetails={userDetails}
+        />
+      )}
+
+      {showAngleOneTpinModel && (
+        <AngleOneTpinModal
+          isOpen={showAngleOneTpinModel}
+          setIsOpen={setShowAngleOneTpinModel}
+          userDetails={userDetails}
+          edisStatus={edisStatus}
+        />
+      )}
+
+      {showDhanTpinModel && (
+        <DhanTpinModal
+          isOpen={showDhanTpinModel}
+          setIsOpen={setShowDhanTpinModel}
+          userDetails={userDetails}
+          dhanEdisStatus={dhanEdisStatus}
+        />
+      )}
+
+      {showFyersTpinModal && (
+        <FyersTpinModal
+          isOpen={showFyersTpinModal}
+          setIsOpen={setShowFyersTpinModal}
+          userDetails={userDetails}
+        />
+      )}
+
+      {showOtherBrokerModel && (
+        <OtherBrokerModel
+          userDetails={userDetails}
+          onContinue={() => {
+            setIsReturningFromOtherBrokerModal(true);
+            setShowOtherBrokerModel(false);
+          }}
+          visible={showOtherBrokerModel}
         />
       )}
       {console.log('OPennnser', OpenSubscribeModel, latestRebalance)}

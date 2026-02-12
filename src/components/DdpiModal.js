@@ -58,7 +58,7 @@ export default function DdpiModal({
       setLoading(true); // Show loading indicator
 
       const response = await fetch(
-        `https://ccxtprod.alphaquark.in/zerodha/auth-sell`,
+        `${server.ccxtServer.baseUrl}zerodha/auth-sell`,
         {
           method: 'POST',
           headers: {
@@ -1093,12 +1093,36 @@ export function DhanTpinModal({
           });
           setMatchedIsin(matchedOrder.isin);
         } else {
-          console.log('No matching order found');
-          setShowNoHoldingModal(true);
+          console.log('No matching order found, trying fallback');
+          const fallbackOrder = dhanEdisStatus.data.find(
+            (order) => order.edis === false && order.isin,
+          );
+          if (fallbackOrder) {
+            setMatchedData({
+              isin: fallbackOrder.isin,
+              symbol: fallbackOrder.symbol,
+              exchange: fallbackOrder.exchange,
+            });
+            setMatchedIsin(fallbackOrder.isin);
+          } else {
+            setShowNoHoldingModal(true);
+          }
         }
       } else {
-        console.log('No SELL order found');
-        setShowNoHoldingModal(true);
+        console.log('No SELL order found, trying fallback');
+        const fallbackOrder = dhanEdisStatus.data.find(
+          (order) => order.edis === false && order.isin,
+        );
+        if (fallbackOrder) {
+          setMatchedData({
+            isin: fallbackOrder.isin,
+            symbol: fallbackOrder.symbol,
+            exchange: fallbackOrder.exchange,
+          });
+          setMatchedIsin(fallbackOrder.isin);
+        } else {
+          setShowNoHoldingModal(true);
+        }
       }
     } else {
       console.log('dhanEdisStatus or its data is not available');
@@ -1111,12 +1135,22 @@ export function DhanTpinModal({
   const proceedWithDhanTpin = async () => {
     setLoading(true);
 
+    if (!matchedData || !matchedData.isin) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'No holdings found to authorize.',
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       const broker = userDetails?.user_broker;
       if (broker === 'Dhan') {
         // Generate TPIN API call
         const generateTpinResponse = await fetch(
-          'https://ccxtprod.alphaquark.in/dhan/generate-tpin',
+          `${server.ccxtServer.baseUrl}dhan/generate-tpin`,
           {
             method: 'POST',
             headers: {
@@ -1139,7 +1173,7 @@ export function DhanTpinModal({
 
           // Enter TPIN API call
           const enterTpinResponse = await fetch(
-            'https://ccxtprod.alphaquark.in/dhan/enter-tpin',
+            `${server.ccxtServer.baseUrl}dhan/enter-tpin`,
             {
               method: 'POST',
               headers: {
@@ -1980,7 +2014,7 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
       if (broker === 'Fyers') {
         console.log('Generating TPIN...');
         const generateTpinResponse = await fetch(
-          'https://ccxtprod.alphaquark.in/fyers/tpin',
+          `${server.ccxtServer.baseUrl}fyers/tpin`,
           {
             method: 'POST',
             headers: {
@@ -2004,7 +2038,7 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
 
           console.log('Submitting holdings for Fyers...');
           const submitHoldingsResponse = await fetch(
-            'https://ccxtprod.alphaquark.in/fyers/submit-holdings',
+            `${server.ccxtServer.baseUrl}fyers/submit-holdings`,
             {
               method: 'POST',
               headers: {

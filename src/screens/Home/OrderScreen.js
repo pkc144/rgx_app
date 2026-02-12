@@ -42,6 +42,7 @@ import CustomTabBar from '../Drawer/CustomTabbar';
 import CustomTabBarOrder from '../Drawer/CustomTabbarOrder';
 import LinearGradient from 'react-native-linear-gradient';
 import {useTrade} from '../TradeContext';
+import {isOrderSuccess, isOrderRejected, isOrderPending, getOrderStatusDisplay} from '../../utils/orderStatusUtils';
 
 export default function OrderScreen() {
   const {configData} = useTrade();
@@ -109,8 +110,8 @@ export default function OrderScreen() {
             trade.trade_place_status !== 'ignored',
         );
         const sortedTrades = [...executedTrades].sort((a, b) => {
-          const dateA = new Date(a.exitDate || a.purchaseDate); // Use exitDate if available, otherwise use purchaseDate
-          const dateB = new Date(b.exitDate || b.purchaseDate); // Use exitDate if available, otherwise use purchaseDate
+          const dateA = new Date(a.exitDate || a.purchaseDate || a.date);
+          const dateB = new Date(b.exitDate || b.purchaseDate || b.date);
 
           // Check if either date is invalid
           if (isNaN(dateA.getTime()) && isNaN(dateB.getTime())) return 0;
@@ -130,7 +131,7 @@ export default function OrderScreen() {
         const rejectedOrders = trades.filter(trade => {
           const tradeDate = new Date(trade.date);
           return (
-            trade.trade_place_status === 'rejected' &&
+            isOrderRejected(trade.trade_place_status) &&
             (trade.rebalance_status === undefined ||
               trade.rebalance_status === null) &&
             tradeDate >= sevenDaysAgo
@@ -146,7 +147,7 @@ export default function OrderScreen() {
           .filter(
             trade =>
               trade.date === todaysDate &&
-              trade.trade_place_status === 'rejected' &&
+              isOrderRejected(trade.trade_place_status) &&
               (trade.rebalance_status === undefined ||
                 trade.rebalance_status === null),
           );
@@ -162,7 +163,7 @@ export default function OrderScreen() {
   const filterTodaysExecutedTrades = allOrders
     .map(trade => ({
       ...trade,
-      date: new Date(trade.purchaseDate || trade.exitDate).toLocaleDateString(),
+      date: new Date(trade.purchaseDate || trade.exitDate || trade.date).toLocaleDateString(),
     }))
     .filter(trade => trade.date === todaysDate);
 
@@ -187,12 +188,12 @@ export default function OrderScreen() {
   }, []);
 
   const renderStatusIcon = () => {
-    if (item.trade_place_status === 'complete') {
+    if (isOrderSuccess(item.trade_place_status)) {
       return <Icon name="check" size={18} color={color2} />;
-    } else if (item.status === 'rejected') {
+    } else if (isOrderRejected(item.trade_place_status)) {
       return <Icon name="close" size={18} color={color2} />;
     }
-    return null; // Default case, if needed
+    return null;
   };
 
   const fetchUserProfile = async () => {
@@ -320,17 +321,9 @@ export default function OrderScreen() {
               alignSelf: 'center',
             }}
             name={
-              item.trade_place_status === 'complete' ||
-              item.trade_place_status === 'Complete' ||
-              item.trade_place_status === 'COMPLETE' ||
-              item.trade_place_status === 'Placed' ||
-              item.trade_place_status === 'Traded' ||
-              item.trade_place_status === 'TRADED'
+              isOrderSuccess(item.trade_place_status)
                 ? 'check'
-                : item?.trade_place_status?.toLowerCase() === 'pending' ||
-                  item?.trade_place_status?.toLowerCase() === 'open' ||
-                  item?.trade_place_status?.toLowerCase() === 'requested' ||
-                  item?.trade_place_status?.toLowerCase() === 'ordered'
+                : isOrderPending(item.trade_place_status)
                 ? 'pause'
                 : 'close'
             }
@@ -338,30 +331,17 @@ export default function OrderScreen() {
             color={color2}
           />
           <Text style={[styles.status, {color: color2}]}>
-            {item.trade_place_status === 'complete' ||
-            item.trade_place_status === 'Complete' ||
-            item.trade_place_status === 'COMPLETE' ||
-            item.trade_place_status === 'Placed' ||
-            item.trade_place_status === 'Traded' ||
-            item.trade_place_status === 'TRADED'
-              ? 'Complete'
-              : item?.trade_place_status?.toLowerCase() === 'pending' ||
-                item?.trade_place_status?.toLowerCase() === 'open' ||
-                item?.trade_place_status?.toLowerCase() === 'requested' ||
-                item?.trade_place_status?.toLowerCase() === 'ordered'
-              ? 'Pending'
-              : 'Rejected'}{' '}
+            {getOrderStatusDisplay(item.trade_place_status)}{' '}
           </Text>
         </View>
       </View>
     );
   };
   const getStatusColors = status => {
-    const lowerCaseStatus = status?.toLowerCase() || '';
-    if (['complete', 'placed', 'traded'].includes(lowerCaseStatus)) {
+    if (isOrderSuccess(status)) {
       return {color1: '#F0FFE8', color2: '#16A085'};
     }
-    if (['pending', 'open', 'requested', 'ordered'].includes(lowerCaseStatus)) {
+    if (isOrderPending(status)) {
       return {color1: '#F9F0E6', color2: '#D49244'};
     }
     // Default for rejected, cancelled, etc.

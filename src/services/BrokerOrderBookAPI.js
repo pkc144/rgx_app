@@ -8,6 +8,10 @@ import CryptoJS from 'react-native-crypto-js';
 import server from '../utils/serverConfig';
 import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
+import {normalizeOrderStatus} from '../utils/orderStatusUtils';
+
+// Re-export for consumers that import from this file
+export {normalizeOrderStatus};
 
 /**
  * Decrypt API key/secret from stored encrypted value
@@ -22,42 +26,6 @@ const decryptCredential = (encryptedValue) => {
     console.error('[BrokerOrderBookAPI] Decryption error:', error.message);
     return null;
   }
-};
-
-/**
- * Normalize order status across different brokers to standard values
- */
-export const normalizeOrderStatus = (status, broker) => {
-  if (!status) return 'unknown';
-
-  const statusLower = status.toLowerCase();
-
-  // Completed/Executed statuses
-  if (['complete', 'completed', 'traded', 'filled', 'executed'].includes(statusLower)) {
-    return 'complete';
-  }
-
-  // Pending/Open statuses
-  if (['open', 'pending', 'trigger pending', 'trigger_pending', 'requested', 'ordered', 'transit', 'am', 'after market'].includes(statusLower)) {
-    return 'pending';
-  }
-
-  // Rejected statuses
-  if (['rejected', 'failed', 'failure', 'error'].includes(statusLower)) {
-    return 'rejected';
-  }
-
-  // Cancelled statuses
-  if (['cancelled', 'canceled', 'cancelled by user', 'cancelled by system'].includes(statusLower)) {
-    return 'cancelled';
-  }
-
-  // Partial fill
-  if (['partially filled', 'partial', 'partially_filled'].includes(statusLower)) {
-    return 'partial';
-  }
-
-  return statusLower;
 };
 
 /**

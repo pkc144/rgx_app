@@ -24,7 +24,11 @@ const { height: screenHeight } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
 import { useTrade } from '../../screens/TradeContext';
+import Toast from 'react-native-toast-message';
 import debounce from 'lodash.debounce';
+import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
+import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import { convertResponse } from '../../utils/tradeUtils';
 
 const RebalanceModal = ({
   userEmail,
@@ -55,6 +59,9 @@ const RebalanceModal = ({
   setIsReturningFromOtherBrokerModal,
   isReturningFromOtherBrokerModal,
   rebalanceExecutionStatus,
+  edisStatus,
+  dhanEdisStatus,
+  setShowDdpiModal,
 }) => {
   const { brokerStatus, configData } = useTrade();
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
@@ -289,27 +296,43 @@ const RebalanceModal = ({
     setShowDummyBrokerModal(false);
   };
 
-  const convertResponse = dataArray => {
-    return dataArray.map(item => {
-      return {
-        transactionType: item.orderType,
-        exchange: item.exchange,
-        segment: 'EQUITY',
-        productType: 'DELIVERY',
-        orderType: 'MARKET',
-        price: 0,
-        tradingSymbol: item.symbol,
-        quantity: item.qty,
-        priority: 0,
-        user_broker: broker,
-      };
-    });
-  };
-
-  const stockDetails = convertResponse(dataArray);
+  const stockDetails = convertResponse(dataArray, broker);
 
   const placeOrder = async () => {
+    const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
+    if (!sessionValid) return;
+
     setLoading(true);
+
+    // Pre-order EDIS checks
+    const allSellPre = stockDetails?.every(s => s.transactionType === 'SELL');
+    const isMixedPre = stockDetails?.some(s => s.transactionType === 'BUY') &&
+      stockDetails?.some(s => s.transactionType === 'SELL');
+
+    if (broker === 'Dhan' && (allSellPre || isMixedPre) &&
+      dhanEdisStatus?.data?.some((h) => h.edis === false)) {
+      setShowDhanTpinModel(true);
+      setOpenRebalanceModal(false);
+      setLoading(false);
+      return;
+    }
+
+    if (broker === 'Zerodha' && (allSellPre || isMixedPre) &&
+      !['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status)) {
+      setShowDdpiModal && setShowDdpiModal(true);
+      setOpenRebalanceModal(false);
+      setLoading(false);
+      return;
+    }
+
+    if (broker === 'Angel One' && (allSellPre || isMixedPre) &&
+      edisStatus && edisStatus.edis === false) {
+      setShowAngleOneTpinModel(true);
+      setOpenRebalanceModal(false);
+      setLoading(false);
+      return;
+    }
+
     const matchingRepairTrade =
       modelPortfolioRepairTrades &&
       modelPortfolioRepairTrades?.find(
@@ -324,68 +347,9 @@ const RebalanceModal = ({
     });
 
     const getBrokerSpecificPayload = () => {
-      console.log('Broker Clientcode:', clientCode);
-      switch (broker) {
-        case 'IIFL Securities':
-          return { clientCode };
-        case 'ICICI Direct':
-        case 'Upstox':
-          return {
-            apiKey: checkValidApiAnSecret(apiKey),
-            secretKey: checkValidApiAnSecret(secretKey),
-            [broker === 'Upstox' ? 'accessToken' : 'sessionToken']: jwtToken,
-          };
-        case 'Zerodha':
-          return {
-            apiKey: checkValidApiAnSecret(apiKey),
-            secretKey: checkValidApiAnSecret(secretKey),
-            accessToken: jwtToken,
-          };
-        case 'Angel One':
-          return { apiKey, jwtToken };
-        case 'Hdfc Securities':
-          return {
-            apiKey: checkValidApiAnSecret(apiKey),
-            accessToken: jwtToken,
-          };
-        case 'Dhan':
-          return {
-            clientId: clientCode,
-            accessToken: jwtToken,
-          };
-        case 'Kotak':
-          return {
-            consumerKey: checkValidApiAnSecret(apiKey),
-            consumerSecret: checkValidApiAnSecret(secretKey),
-            accessToken: jwtToken,
-            viewToken: viewToken,
-            sid: sid,
-            serverId: serverId ? serverId : "",
-          };
-        case 'AliceBlue':
-          return {
-            clientId: clientCode,
-            accessToken: jwtToken,
-            apiKey: apiKey,
-          };
-        case 'Fyers':
-          return {
-            clientId: clientCode,
-            accessToken: jwtToken,
-          };
-        case "Groww":
-          return {
-            accessToken: jwtToken,
-          };
-        case "Motilal Oswal":
-          return {
-            clientCode: clientCode,
-            accessToken: jwtToken,
-            apiKey: checkValidApiAnSecret(apiKey),
-          };
-        default:
-          return {};
-      }
+      return {
+        accessToken: jwtToken,
+      };
     };
 
     const getAdditionalPayload = () => {
@@ -424,6 +388,7 @@ const RebalanceModal = ({
     const config = {
       method: 'post',
       url: `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+      timeout: 120000,
 
       headers: {
         'Content-Type': 'application/json',
@@ -443,6 +408,23 @@ const RebalanceModal = ({
         const checkData = response?.data?.results;
         setOrderPlacementResponse(response?.data?.results);
 
+        // Empty results CDSL check - detect EDIS/TPIN errors from response message
+        if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
+          const responseMsg = (response?.data?.message || '').toLowerCase();
+          if (
+            broker === 'Dhan' &&
+            (responseMsg.includes('cdsl') ||
+              responseMsg.includes('edis') ||
+              responseMsg.includes('tpin') ||
+              responseMsg.includes('validate qty'))
+          ) {
+            setShowDhanTpinModel(true);
+            setOpenRebalanceModal(false);
+            setLoading(false);
+            return;
+          }
+        }
+
         const isMixed =
           checkData?.some(stock => stock.transactionType === 'BUY') &&
           checkData?.some(stock => stock.transactionType === 'SELL');
@@ -453,14 +435,9 @@ const RebalanceModal = ({
           stock => stock.transactionType === 'SELL',
         );
 
-        const rejectedSellCount = response.data.results.reduce(
+        const rejectedSellCount = (checkData || []).reduce(
           (count, order) => {
-            return (order?.orderStatus === 'Rejected' ||
-              order?.orderStatus === 'rejected' ||
-              order?.orderStatus === 'Rejected' ||
-              order?.orderStatus === 'cancelled' ||
-              order?.orderStatus === 'CANCELLED' ||
-              order?.orderStatus === 'Cancelled') &&
+            return isOrderRejected(order?.orderStatus) &&
               order.transactionType === 'SELL'
               ? count + 1
               : count;
@@ -468,84 +445,91 @@ const RebalanceModal = ({
           0,
         );
 
-        const successCount = response.data.results.reduce((count, order) => {
-          return (order?.orderStatus === 'COMPLETE' ||
-            order?.orderStatus === 'Complete' ||
-            order?.orderStatus === 'complete' ||
-            order?.orderStatus === 'COMPLETE' ||
-            order?.orderStatus === 'Placed' ||
-            order?.orderStatus === 'PLACED' ||
-            order?.orderStatus === 'Executed' ||
-            order?.orderStatus === 'Ordered' ||
-            order?.orderStatus === 'open' ||
-            order?.orderStatus === 'OPEN' ||
-            order?.orderStatus === 'Traded' ||
-            order?.orderStatus === 'TRADED' ||
-            order?.orderStatus === 'Transit' ||
-            order?.orderStatus === 'TRANSIT') &&
+        const successCount = (checkData || []).reduce((count, order) => {
+          return isOrderSuccess(order?.orderStatus) &&
             (order.transactionType === 'SELL' || isMixed)
             ? count + 1
             : count;
         }, 0);
+
+        // Check for CDSL/EDIS/TPIN error messages in rejected orders
+        const hasCdslError = (checkData || []).some((order) => {
+          const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
+          return msg.includes("cdsl") || msg.includes("edis") || msg.includes("tpin") || msg.includes("validate qty");
+        });
+
+        // Dhan: Check CDSL error messages first
+        if (
+          broker === 'Dhan' &&
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          hasCdslError
+        ) {
+          setShowDhanTpinModel(true);
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          return;
+        }
 
         if (
           !isReturningFromOtherBrokerModal &&
           specialBrokers.includes(broker)
         ) {
           if (allBuy) {
-            // Proceed with order placement for BUY
             setOpenSucessModal(true);
             setOpenRebalanceModal(false);
           } else if (
             (allSell || isMixed) &&
-            !userDetails?.is_authorized_for_sell &&
-            rejectedSellCount >= 1
+            rejectedSellCount >= 1 &&
+            successCount === 0
           ) {
             setShowOtherBrokerModel(true);
             setOpenRebalanceModal(false);
             setLoading(false);
-            return; // Exit the function early
+            return;
           } else {
             setOpenSucessModal(true);
             setOpenRebalanceModal(false);
           }
+        } else if (
+          broker === 'Angel One' &&
+          (allSell || isMixed) &&
+          edisStatus &&
+          edisStatus.edis === false &&
+          rejectedSellCount >= 1 &&
+          successCount === 0
+        ) {
+          setOpenSucessModal(false);
+          setShowAngleOneTpinModel(true);
+          return;
+        } else if (
+          broker === 'Dhan' &&
+          (allSell || isMixed) &&
+          dhanEdisStatus?.data?.some((h) => h.edis === false) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0
+        ) {
+          setShowDhanTpinModel(true);
+          setOpenSucessModal(false);
+          return;
+        } else if (
+          broker === 'Fyers' &&
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0
+        ) {
+          setOpenSucessModal(false);
+          setShowFyersTpinModal(true);
+          return;
         } else {
-          if (
-            broker === 'Angel One' &&
-            (allSell || isMixed) &&
-            !userDetails?.is_authorized_for_sell &&
-            rejectedSellCount >= 1
-          ) {
-            setOpenSucessModal(false);
-            setShowAngleOneTpinModel(true);
-            return;
-          } else if (
-            broker === 'Dhan' &&
-            (allSell || isMixed) &&
-            !userDetails?.is_authorized_for_sell &&
-            rejectedSellCount >= 1
-          ) {
-            setShowDhanTpinModel(true);
-            setOpenSucessModal(false);
-            return;
-          } else if (
-            broker === 'Fyers' &&
-            (allSell || isMixed) &&
-            !userDetails?.is_authorized_for_sell &&
-            rejectedSellCount >= 1
-          ) {
-            setOpenSucessModal(false);
-            setShowFyersTpinModal(true);
-          } else {
-            setOpenSucessModal(true);
-            setOpenRebalanceModal(false);
-          }
+          setOpenSucessModal(true);
+          setOpenRebalanceModal(false);
         }
 
         getRebalanceRepair();
         const updateData = {
           modelId: modelPortfolioModelId,
-          orderResults: response.data.results,
+          orderResults: checkData,
           userEmail: userEmail,
           modelName: filteredData[0]['model_name'],
         };
@@ -595,6 +579,38 @@ const RebalanceModal = ({
       })
       .catch(error => {
         setLoading(false);
+
+        // Determine a user-friendly error message
+        let errorMessage;
+        if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
+          errorMessage = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
+        } else if (error?.response?.status === 401 || error?.response?.status === 403) {
+          errorMessage = `${broker} session has expired. Please reconnect your broker and try again.`;
+        } else {
+          errorMessage = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Order placement failed';
+        }
+
+        // Check for CDSL/EDIS errors in catch handler for Dhan
+        const errMsg = (
+          error?.response?.data?.details?.[0]?.message_aq ||
+          error?.response?.data?.details?.[0]?.message ||
+          error?.message ||
+          ""
+        ).toLowerCase();
+        if (
+          broker === 'Dhan' &&
+          (errMsg.includes("cdsl") || errMsg.includes("edis") || errMsg.includes("tpin"))
+        ) {
+          setShowDhanTpinModel(true);
+          setOpenRebalanceModal(false);
+          return;
+        }
+
+        Toast.show({
+          type: 'error',
+          text1: 'Order Failed',
+          text2: errorMessage,
+        });
         getModelPortfolioStrategyDetails();
       });
     setIsReturningFromOtherBrokerModal(false);
