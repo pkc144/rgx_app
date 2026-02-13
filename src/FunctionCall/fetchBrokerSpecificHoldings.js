@@ -6,6 +6,7 @@ import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
 
 const checkValidApiAnSecret = details => {
+  if (!details) return null;
   try {
     const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
@@ -83,7 +84,7 @@ export const fetchBrokerSpecificHoldings = async (
     case 'Zerodha':
       if (!jwtToken) return null;
       data = JSON.stringify({
-        apiKey: checkValidApiAnSecret(apiKey),
+        apiKey: configData?.config?.REACT_APP_ZERODHA_API_KEY,
         accessToken: jwtToken,
       });
       url = `${server.ccxtServer.baseUrl}zerodha/holdings`;

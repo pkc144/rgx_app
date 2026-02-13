@@ -148,6 +148,7 @@ const AddToCartModal = ({
   };
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {

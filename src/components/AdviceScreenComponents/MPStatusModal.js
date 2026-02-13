@@ -631,28 +631,26 @@ const MPStatusModal = ({
       setTimeout(async () => {
         try {
           setSuccessMessage(null);
+          setShowSuccessLoader(false);
 
           console.log('🔄 Moving to step 3...');
           if (setCurrentStep) {
             setCurrentStep(3);
           }
 
-          // Wait a bit for step 3 to be ready
-          await new Promise(resolve => setTimeout(resolve, 500));
-
           console.log('🔄 Calling handleAcceptRebalance...');
           if (handleAcceptRebalance) {
-            await handleAcceptRebalance();
-            console.log('✅ handleAcceptRebalance completed');
+            handleAcceptRebalance();
+            console.log('✅ handleAcceptRebalance called');
+
+            // Wait longer to ensure RebalanceModal state is set and rendered
+            // before closing this modal
+            await new Promise(resolve => setTimeout(resolve, 800));
+            onClose();
           } else {
             console.warn('⚠️ handleAcceptRebalance not provided');
+            onClose();
           }
-
-          // Wait another moment to ensure the next screen is rendered
-          await new Promise(resolve => setTimeout(resolve, 300));
-
-          setShowSuccessLoader(false);
-          onClose();
         } catch (error) {
           console.error('❌ Error in post-update flow:', error);
           setShowSuccessLoader(false);

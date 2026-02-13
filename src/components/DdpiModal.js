@@ -33,6 +33,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTrade} from '../screens/TradeContext';
 const {height: screenHeight, width: screenWidth} = Dimensions.get('window');
 const checkValidApiAnSecret = data => {
+  if (!data) return null;
   const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
   const Key = bytesKey.toString(CryptoJS.enc.Utf8);
   if (Key) {

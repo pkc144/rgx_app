@@ -5,9 +5,10 @@ import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
 import {useTrade} from '../screens/TradeContext';
 const checkValidApiAnSecret = details => {
+  if (!details) return null;
   try {
     const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8); // Convert to UTF-8 string
+    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
 
     if (Key) {
       return Key;
@@ -74,11 +75,9 @@ export const fetchFunds = async (
     case 'Zerodha':
       if (!jwtToken) return;
       data = JSON.stringify({
-        apiKey: checkValidApiAnSecret(apiKey),
-        secretkey: checkValidApiAnSecret(secretKey),
+        apiKey: configData?.config?.REACT_APP_ZERODHA_API_KEY,
         accessToken: jwtToken,
       });
-      // console.log('data f-:', data);
       url = `${server.ccxtServer.baseUrl}zerodha/funds`;
       break;
     case 'Hdfc Securities':

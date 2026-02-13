@@ -225,6 +225,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {

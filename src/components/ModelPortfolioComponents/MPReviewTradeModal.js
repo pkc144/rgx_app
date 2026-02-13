@@ -275,6 +275,7 @@ const MPReviewTradeModal = ({
   ///////////////////////////////////////////////
   //console.log('details--->',strategyDetails?.model_name,strategyDetails?.advisor,latestRebalance.model_Id,calculatedPortfolioData?.uniqueId,broker,userEmail,stockDetails)
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {

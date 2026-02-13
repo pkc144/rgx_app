@@ -163,6 +163,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   }, [modelPortfolioStrategy]);
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
@@ -170,6 +171,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
     }
   };
 
+  const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
   // zerodha start
   const fetchBrokerStatusModal = async () => {
     if (userEmail) {
@@ -372,9 +374,6 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const handleStockListUpdate = updatedOrderResultsList => {
     setApiResponseData(currentApiResponse => {
       if (!currentApiResponse?.data?.user_net_pf_model) {
-        console.error(
-          'Cannot update state: Current API response data is missing or incomplete.',
-        );
         return currentApiResponse;
       }
       const updatedResponse = JSON.parse(JSON.stringify(currentApiResponse));
@@ -407,7 +406,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         userEmail: userEmail,
         userBroker: "DummyBroker",
         modelName: storeModalName,
-        advisor: configData?.config?.REACT_APP_ADVISOR_TAG,
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: "0",
         flag: selectedOption === "option1" ? 1 : 0,
@@ -430,6 +429,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       axios
         .request(config)
         .then((response) => {
+          console.log("Rebalance Calculate API Response (DummyBroker):", JSON.stringify(response.data));
           setCalculatedPortfolioData(response.data);
           setOpenRebalanceModal(true);
           setStoreModalName(storeModalName);
@@ -472,8 +472,8 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       let payload = {
         userEmail: userEmail,
         userBroker: broker ? broker : "DummyBroker",
-        modelName: storeModalName,
-        advisor: configData?.config?.REACT_APP_ADVISOR_TAG,
+        modelName: storeModalName?.trim(),
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
         flag: selectedOption === "option1" ? 1 : 0,
@@ -506,8 +506,6 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       } else if (broker === "Zerodha") {
         payload = {
           ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          SecretKey: checkValidApiAnSecret(secretKey),
           accessToken: jwtToken,
         };
       } else if (broker === "Dhan") {
@@ -571,9 +569,11 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           ),
         },
       };
+      console.log("Rebalance Calculate Payload:", JSON.stringify(payload));
       axios
         .request(config)
         .then((response) => {
+          console.log("Rebalance Calculate API Response:", JSON.stringify(response.data));
           const { buy, sell } = response.data;
 
           const updatedStockTypeAndSymbol = [

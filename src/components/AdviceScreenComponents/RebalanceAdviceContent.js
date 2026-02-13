@@ -303,6 +303,16 @@ const RebalanceAdviceContent = React.memo(
                 jwtToken: userDetails.jwtToken,
                 userEmail: userDetails?.email,
               },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
+              },
             );
             setEdisStatus(response.data);
             console.log('AngleOne response', response.data);
@@ -328,6 +338,16 @@ const RebalanceAdviceContent = React.memo(
               {
                 clientId: clientCode,
                 accessToken: userDetails.jwtToken,
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
               },
             );
             console.log('Dhan Reponse', response.data);
@@ -355,6 +375,16 @@ const RebalanceAdviceContent = React.memo(
                 accessToken: userDetails.jwtToken,
                 userEmail: userDetails.email,
               },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
+              },
             );
             setZerodhaDdpiStatus(response.data);
           } catch (error) {
@@ -375,6 +405,16 @@ const RebalanceAdviceContent = React.memo(
               {
                 userEmail: userDetails.email,
                 edis: userDetails.edis,
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
               },
             );
 

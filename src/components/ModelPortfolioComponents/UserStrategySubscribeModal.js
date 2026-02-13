@@ -153,6 +153,7 @@ const UserStrategySubscribeModal = ({
   };
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     console.log('data erty:', data);
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);

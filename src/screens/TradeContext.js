@@ -28,11 +28,17 @@ export const useTrade = () => {
 };
 
 const checkValidApiAnSecret = data => {
-  const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
-  const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-  if (Key) {
-    return Key;
+  if (!data) return null;
+  try {
+    const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
+    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
+    if (Key) {
+      return Key;
+    }
+  } catch (error) {
+    console.error('Error during decryption:', error.message);
   }
+  return null;
 };
 
 export const TradeProvider = ({children}) => {

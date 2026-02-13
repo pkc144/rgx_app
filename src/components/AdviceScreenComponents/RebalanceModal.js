@@ -20,6 +20,10 @@ import DummyBrokerHoldingConfirmation from './DummyBrokerHoldingConfirmation';
 import CryptoJS from 'react-native-crypto-js';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
+import WebView from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import moment from 'moment';
+import eventEmitter from '../../components/EventEmitter';
 const { height: screenHeight } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
@@ -65,6 +69,14 @@ const RebalanceModal = ({
 }) => {
   const { brokerStatus, configData } = useTrade();
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
+  const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
+
+  // Zerodha WebView state
+  const webViewRef = useRef(null);
+  const [webView, setWebView] = useState(false);
+  const [htmlContent, setHtmlContent] = useState('');
+  const [zerodhaStatus, setZerodhaStatus] = useState(null);
+  const [zerodhaRequestType, setZerodhaRequestType] = useState(null);
   console.log("Calculated Portfolio Data---", calculatedPortfolioData);
 
   // Parse skipped stocks message
@@ -115,6 +127,7 @@ const RebalanceModal = ({
   const [loading, setLoading] = useState();
 
   const checkValidApiAnSecret = apiKey => {
+    if (!apiKey) return null;
     const bytesKey = CryptoJS.AES.decrypt(apiKey, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
@@ -297,6 +310,304 @@ const RebalanceModal = ({
   };
 
   const stockDetails = convertResponse(dataArray, broker);
+
+  // --- Zerodha Publisher Flow Functions ---
+
+  const generateHtmlForm = (basket, apiKey) => {
+    return `<html>
+      <body>
+        <form id="zerodhaForm" method="POST" action="https://kite.zerodha.com/connect/basket">
+          <input type="hidden" name="api_key" value="${apiKey}" />
+          <input type="hidden" name="data" value='${JSON.stringify(basket)}' />
+          <input type="hidden" name="redirect_params" value="test=true" />
+        </form>
+        <script>
+          document.getElementById('zerodhaForm').submit();
+        </script>
+      </body>
+    </html>`;
+  };
+
+  const getAdditionalPayload = () => {
+    const matchingRepairTrade =
+      modelPortfolioRepairTrades &&
+      modelPortfolioRepairTrades?.find(
+        trade => trade.modelId === modelPortfolioModelId,
+      );
+    if (matchingRepairTrade) {
+      return {
+        modelName: matchingRepairTrade.modelName,
+        advisor: advisorTag,
+        unique_id: matchingRepairTrade?.uniqueId,
+        model_id: modelPortfolioModelId,
+        broker: broker,
+      };
+    } else {
+      return {
+        modelName: filteredData[0]['model_name'],
+        advisor: advisorTag,
+        unique_id: calculatedPortfolioData?.uniqueId,
+        model_id: modelPortfolioModelId,
+        broker: broker,
+      };
+    }
+  };
+
+  const additionalPayload = getAdditionalPayload();
+
+  const handleWebViewNavigationStateChange = newNavState => {
+    const { url } = newNavState;
+    console.log('Rebalance WebView URL:', url);
+    if (url.includes('success') || url.includes('completed')) {
+      console.log('Zerodha success redirect detected:', url);
+      setZerodhaStatus('success');
+      setZerodhaRequestType('rebalance');
+    }
+  };
+
+  const handleZerodhaRedirect = async () => {
+    setLoading(true);
+    try {
+      await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+      await AsyncStorage.removeItem('zerodhaAdditionalPayload');
+      await AsyncStorage.setItem(
+        'zerodhaAdditionalPayload',
+        JSON.stringify(additionalPayload),
+      );
+
+      const basket = stockDetails.map(stock => {
+        let baseOrder = {
+          variety: 'regular',
+          tradingsymbol: stock.tradingSymbol,
+          exchange: stock.exchange,
+          transaction_type: stock.transactionType,
+          order_type: stock.orderType,
+          quantity: stock.quantity,
+          readonly: false,
+        };
+
+        const ltp = getLTPForSymbol(stock.tradingSymbol);
+        if (ltp && ltp !== '-') {
+          baseOrder.price = parseFloat(ltp);
+        }
+
+        if (stock.orderType === 'LIMIT') {
+          baseOrder.price = parseFloat(stock.price || 0);
+        } else if (stock.orderType === 'MARKET') {
+          const ltpVal = getLTPForSymbol(stock.tradingSymbol);
+          if (ltpVal && ltpVal !== '-') {
+            baseOrder.price = parseFloat(ltpVal);
+          } else {
+            baseOrder.price = 0;
+          }
+        }
+
+        if (stock.quantity > 100) {
+          baseOrder.readonly = true;
+        }
+        return baseOrder;
+      });
+
+      const currentISTDateTime = new Date();
+
+      await axios
+        .post(
+          `${server.server.baseUrl}api/zerodha/model-portfolio/update-reco-with-zerodha-model-pf`,
+          {
+            stockDetails: stockDetails,
+            leaving_datetime: currentISTDateTime,
+            email: userEmail,
+            trade_given_by: advisorTag,
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        )
+        .then(res => {
+          const allStockDetails = res?.data?.data;
+          const filteredStockDetails = allStockDetails.map(detail => ({
+            user_email: detail.user_email,
+            trade_given_by: detail.trade_given_by,
+            tradingSymbol: detail.Symbol,
+            transactionType: detail.Type,
+            exchange: detail.Exchange,
+            segment: detail.Segment,
+            productType: detail.ProductType,
+            orderType: detail.OrderType,
+            price: detail.Price,
+            quantity: detail.Quantity,
+            priority: detail.Priority,
+            tradeId: detail.tradeId,
+            user_broker: 'Zerodha',
+          }));
+
+          setLoading(false);
+          AsyncStorage.setItem(
+            'stockDetailsZerodhaOrder',
+            JSON.stringify(filteredStockDetails),
+          );
+        })
+        .catch(err => {
+          console.log('Error updating Zerodha reco:', err);
+          setLoading(false);
+        });
+
+      const htmlForm = generateHtmlForm(basket, zerodhaApiKey);
+      setHtmlContent(htmlForm);
+      setWebView(true);
+    } catch (error) {
+      console.error('Failed to handle Zerodha redirect:', error);
+      setLoading(false);
+    }
+  };
+
+  const fetchZerodhaData = async () => {
+    try {
+      const pendingOrderData = await AsyncStorage.getItem(
+        'stockDetailsZerodhaOrder',
+      );
+      const payloadData = await AsyncStorage.getItem(
+        'zerodhaAdditionalPayload',
+      );
+      const zerodhaStockDetails = pendingOrderData
+        ? JSON.parse(pendingOrderData)
+        : null;
+      const zerodhaAdditionalPayload = payloadData
+        ? JSON.parse(payloadData)
+        : null;
+      return { zerodhaStockDetails, zerodhaAdditionalPayload };
+    } catch (error) {
+      console.error('Error fetching Zerodha data from AsyncStorage:', error);
+      return { zerodhaStockDetails: null, zerodhaAdditionalPayload: null };
+    }
+  };
+
+  const checkZerodhaStatus = async () => {
+    const { zerodhaStockDetails, zerodhaAdditionalPayload } =
+      await fetchZerodhaData();
+    const currentISTDateTime = new Date();
+    const istDatetime = moment(currentISTDateTime).format();
+
+    if (
+      zerodhaStatus !== null &&
+      zerodhaAdditionalPayload !== null &&
+      zerodhaStockDetails !== null &&
+      zerodhaRequestType === 'rebalance'
+    ) {
+      try {
+        let data = JSON.stringify({
+          apiKey: zerodhaApiKey,
+          accessToken: jwtToken,
+          user_email: userEmail,
+          user_broker: zerodhaAdditionalPayload.broker,
+          modelName: zerodhaAdditionalPayload.modelName,
+          advisor: zerodhaAdditionalPayload.advisor,
+          model_id: zerodhaAdditionalPayload.model_id,
+          unique_id: zerodhaAdditionalPayload.unique_id,
+          returnDateTime: istDatetime,
+          trades: zerodhaStockDetails,
+        });
+
+        const config = {
+          method: 'post',
+          url: `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+          data: data,
+        };
+
+        const response = await axios.request(config);
+        setOrderPlacementResponse(response.data.results);
+        setOpenSucessModal(true);
+        setOpenRebalanceModal(false);
+        eventEmitter.emit('OrderPlacedReferesh');
+
+        try {
+          await axios.request({
+            method: 'post',
+            url: `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+            data: JSON.stringify({ user_email: userEmail }),
+          });
+
+          const statusCheckData = {
+            userEmail: userEmail,
+            modelName: zerodhaAdditionalPayload.modelName,
+            advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+            broker: 'Zerodha',
+          };
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+            statusCheckData,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain':
+                  configData?.config?.REACT_APP_HEADER_NAME,
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            },
+          );
+        } catch (error) {
+          console.error('Error updating Zerodha portfolio:', error);
+        }
+
+        AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+        AsyncStorage.removeItem('zerodhaAdditionalPayload');
+        getRebalanceRepair();
+        getModelPortfolioStrategyDetails();
+      } catch (error) {
+        console.log('Error in checkZerodhaStatus:', error);
+      }
+    }
+  };
+
+  // Watch zerodhaStatus changes
+  useEffect(() => {
+    const fetchAndProcessData = async () => {
+      try {
+        const { zerodhaStockDetails, zerodhaAdditionalPayload } =
+          await fetchZerodhaData();
+        if (
+          zerodhaStatus !== null &&
+          zerodhaAdditionalPayload !== null &&
+          zerodhaStockDetails !== null &&
+          zerodhaRequestType === 'rebalance' &&
+          jwtToken !== undefined
+        ) {
+          checkZerodhaStatus();
+        }
+      } catch (error) {
+        console.error('Error in fetchAndProcessData:', error);
+      }
+    };
+    fetchAndProcessData();
+  }, [zerodhaStatus, zerodhaRequestType, userEmail, jwtToken]);
+
+  // --- End Zerodha Publisher Flow Functions ---
 
   const placeOrder = async () => {
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
@@ -617,11 +928,16 @@ const RebalanceModal = ({
   };
 
   const handleClose = () => {
+    setWebView(false);
     setOpenRebalanceModal(false);
   };
 
   const onSlideComplete = () => {
-    placeOrder();
+    if (broker === 'Zerodha') {
+      handleZerodhaRedirect();
+    } else {
+      placeOrder();
+    }
   };
 
   const isMarketHours = IsMarketHours();
@@ -750,6 +1066,26 @@ const RebalanceModal = ({
     <Modal transparent={true} visible={visible} onRequestClose={handleClose}>
       <SafeAreaView style={styles.modalOverlay}>
         <View style={[styles.modalContainer, { width: width * 1 }]}>
+          {webView ? (
+            <View style={{ flex: 1, backgroundColor: 'white', padding: 10 }}>
+              <View style={{ alignContent: 'flex-end', alignItems: 'flex-end' }}>
+                <TouchableOpacity
+                  onPress={() => setWebView(false)}
+                  style={styles.closeButton}>
+                  <XIcon size={24} color="#000" />
+                </TouchableOpacity>
+              </View>
+              <WebView
+                ref={webViewRef}
+                style={{ flex: 1 }}
+                source={{ html: htmlContent }}
+                onNavigationStateChange={handleWebViewNavigationStateChange}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                onError={e => console.error('WebView error:', e.nativeEvent)}
+              />
+            </View>
+          ) : (
           <View style={{ flex: 1 }}>
             <FlatList
               data={isBrokerDisconnected ? editableData : dataArray}
@@ -986,6 +1322,7 @@ const RebalanceModal = ({
               />
             )}
           </View>
+          )}
         </View>
       </SafeAreaView>
 

@@ -518,22 +518,17 @@ const BespokePerformanceScreen = ({route}) => {
   const [OpenTokenExpireModel, setOpenTokenExpireModel] = useState(false);
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     try {
-      // Decrypt the encrypted data using AES and the secret key
       const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
-
-      // Convert the decrypted bytes to a UTF-8 string
       const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-
-      // Check if the Key is valid and return it
       if (Key) {
         return Key;
       } else {
         throw new Error('Invalid Key');
       }
     } catch (error) {
-      //  console.error('Decryption failed: ', error);
-      return null; // Return null or handle the error as needed
+      return null;
     }
   };
 
