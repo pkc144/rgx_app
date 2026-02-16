@@ -215,7 +215,7 @@ const SubscriptionScreen = () => {
 
   // Listen for broker connection events and refresh data
   useEffect(() => {
-    const refreshListener = eventEmitter.addListener('refreshEvent', async (data) => {
+    const handleRefresh = async (data) => {
       console.log('🔄 [SUBSCRIPTION SCREEN] Refresh event received:', data);
       // Refresh all data after broker connection
       try {
@@ -226,10 +226,12 @@ const SubscriptionScreen = () => {
       } catch (error) {
         console.error('❌ [SUBSCRIPTION SCREEN] Error refreshing data:', error);
       }
-    });
+    };
+
+    eventEmitter.on('refreshEvent', handleRefresh);
 
     return () => {
-      refreshListener.remove();
+      eventEmitter.off('refreshEvent', handleRefresh);
     };
   }, []);
 

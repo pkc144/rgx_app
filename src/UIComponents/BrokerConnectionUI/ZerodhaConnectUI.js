@@ -264,12 +264,28 @@ const ZerodhaConnectUI = ({
     if (!isVisible) return;
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isLoading) {
+        // Don't allow back during OAuth processing
+        return true;
+      }
+      if (showWebView) {
+        // Go back from WebView to help content instead of closing modal
+        setShowWebView(false);
+        setAuthUrl('');
+        hasProcessedCallback.current = false;
+        return true;
+      }
+      if (expanded) {
+        // Collapse expanded help content
+        setExpanded(false);
+        return true;
+      }
       onClose();
       return true;
     });
 
     return () => backHandler.remove();
-  }, [isVisible, onClose]);
+  }, [isVisible, onClose, showWebView, isLoading, expanded]);
 
   return (
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>

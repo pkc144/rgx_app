@@ -293,9 +293,9 @@ const RebalanceCard = ({
       specificPlan: modelName,
     });
   };
-  const handleConfirmPreference = () => {
+  const handleConfirmPreference = async () => {
     try {
-      handleCheckBroker();
+      await handleCheckBroker();
     } catch (error) {
       console.error('Error in handleConfirmPreference:', error);
       setLoading(false);
@@ -321,6 +321,7 @@ const RebalanceCard = ({
       } else {
         const isMarketHours = IsMarketHours();
         if (funds?.status === 1 || funds?.status === 2 || funds === null) {
+          setShowCheckboxModal(false);
           if (setOpenTokenExpireModel) {
             setOpenTokenExpireModel(true);
           }
