@@ -167,7 +167,7 @@ const AfterSubscriptionScreen = ({route}) => {
         )}&modelName=${encodeURIComponent(
           strategyDetails?.model_name,
         )}&user_broker=${encodeURIComponent(
-          userDetails?.user_broker ? userDetails?.user_broker : 'DummyBroker',
+          userDetails?.user_broker || "",
         )}`,
         {
           headers: {
@@ -202,28 +202,35 @@ const AfterSubscriptionScreen = ({route}) => {
     (a, b) => new Date(b.execDate) - new Date(a.execDate),
   )?.[0];
 
+  // Filter out rejected/failed/cancelled orders from calculations
+  const rejectedStatuses = ["rejected", "failure", "cancelled", "failed", "unplaced"];
+  const validOrderResults = net_portfolio_updated?.order_results?.filter((order) => {
+    const status = (order.orderStatus || "").toLowerCase();
+    return !rejectedStatuses.includes(status) && Number(order.quantity || 0) > 0;
+  });
+
   const {getLTPForSymbol} = useWebSocketCurrentPrice(
-    net_portfolio_updated?.order_results,
+    validOrderResults,
   );
 
   const totalUpdatedQty =
-    net_portfolio_updated?.order_results?.reduce(
+    validOrderResults?.reduce(
       (total, ele) => total + (ele?.quantity || 0),
       0,
     ) || 0;
 
   const totalInvested =
-    net_portfolio_updated?.order_results?.reduce((total, stock) => {
+    validOrderResults?.reduce((total, stock) => {
       return total + stock.averagePrice * stock.quantity;
     }, 0) || 0;
 
   const totalCurrent =
-    net_portfolio_updated?.order_results?.reduce((total, stock) => {
+    validOrderResults?.reduce((total, stock) => {
       return total + getLTPForSymbol(stock.symbol) * stock.quantity;
     }, 0) || 0;
 
   const tableData =
-    net_portfolio_updated?.order_results?.map(stock => ({
+    validOrderResults?.map(stock => ({
       symbol: stock.symbol,
       currentPrice: getLTPForSymbol(stock?.symbol)
         ? getLTPForSymbol(stock?.symbol)
@@ -372,7 +379,7 @@ const AfterSubscriptionScreen = ({route}) => {
                       {latestRebalance?.adviceEntries?.length ? (
                         <DistributionGrid
                           adviceEntries={latestRebalance.adviceEntries}
-                          holdings={net_portfolio_updated?.order_results}
+                          holdings={validOrderResults}
                           getLTPForSymbol={getLTPForSymbol}
                           totalCurrent={totalCurrent}
                         />

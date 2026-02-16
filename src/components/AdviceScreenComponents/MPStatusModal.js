@@ -105,6 +105,7 @@ const MPStatusModal = ({
   setgoBack,
   handlefirstBack,
   brokerStatus,
+  isRetryRebalance = false,
 }) => {
   const { configData, marketPrices, fetchMarketPrices } = useTrade();
   const config = useConfig();
@@ -953,6 +954,11 @@ const MPStatusModal = ({
           {isFailed && <Text style={styles.failedText}>(Failed)</Text>}
         </View>
       </View>
+      {isFailed && item.orderStatusMessage && (
+        <Text style={styles.failedReasonText}>
+          {item.orderStatusMessage}
+        </Text>
+      )}
 
         {true && (
           <View style={[styles.editRow, styles.topSpacing]}>
@@ -1091,24 +1097,29 @@ const MPStatusModal = ({
                       <View style={styles.titleText1}>
                         <View>
                           <Text style={styles.titleText}>
-                            YOUR PORTFOLIO balance in current {'\n'}
-                            model portfolio (before the update)
+                            {isRetryRebalance
+                              ? `Review your current holdings in ${modelName} Portfolio`
+                              : `YOUR PORTFOLIO balance in current \nmodel portfolio (before the update)`}
                           </Text>
                           <Text style={styles.titleText2}>
-                            (ONLY specific to this portfolio - as recorded before this update{' '}
+                            {isRetryRebalance
+                              ? "These will be used to generate the remaining rebalance instructions. Click 'Continue' to proceed."
+                              : "(ONLY specific to this portfolio - as recorded before this update "}
                           </Text>
                         </View>
 
-                        <TouchableOpacity
-                          onPress={handleSwitchToEdit}
-                          style={[styles.editPortfolioButton, { alignSelf: 'flex-end', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: gradient2 }]}
-                          disabled={isUpdating}
-                        >
-                          <Plus size={8} color={'#fff'} />
-                          <Text style={[styles.editPortfolioButtonText, { fontSize: 10 }]}>
-                            Add or Edit stocks
-                          </Text>
-                        </TouchableOpacity>
+                        {!isRetryRebalance && (
+                          <TouchableOpacity
+                            onPress={handleSwitchToEdit}
+                            style={[styles.editPortfolioButton, { alignSelf: 'flex-end', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: gradient2 }]}
+                            disabled={isUpdating}
+                          >
+                            <Plus size={8} color={'#fff'} />
+                            <Text style={[styles.editPortfolioButtonText, { fontSize: 10 }]}>
+                              Add or Edit stocks
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     )}
                   </View>
@@ -1760,6 +1771,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#dc2626',
     fontWeight: '500',
+  },
+  failedReasonText: {
+    fontSize: 10,
+    color: '#dc2626',
+    marginTop: 2,
+    lineHeight: 14,
   },
   exchangeText: {
     fontSize: 12,

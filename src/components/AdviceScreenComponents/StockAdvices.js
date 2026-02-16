@@ -1346,9 +1346,10 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         console.log('All sells got');
 
         // Handle DDPI modal logic for SELL or mixed trades
-        if (
-          ['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status)
-        ) {
+        // If user has completed TPIN authorization or has active DDPI, proceed
+        const canSell = userDetails?.is_authorized_for_sell ||
+          ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+        if (canSell) {
           console.log('Valid DDPI status, no modal needed');
           setShowDdpiModal(false); // Hide DDPI Modal
           setOpenReviewTrade(true); // Proceed with Zerodha modal
@@ -1431,9 +1432,10 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       if (allBuy) {
         setOpenReviewTrade(true);
       } else if (allSell || isMixed) {
-        if (
-          ['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status)
-        ) {
+        // If user has completed TPIN authorization or has active DDPI, proceed
+        const canSellZerodha = userDetails?.is_authorized_for_sell ||
+          ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+        if (canSellZerodha) {
           setShowDdpiModal(false);
           setOpenReviewTrade(true);
         } else {
@@ -2017,9 +2019,10 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
             setStockDetails([newStock]);
             setOpenReviewTrade(true);
           } else if (isSellOrder && !allFNO) {
-            if (
-              ['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status)
-            ) {
+            // If user has completed TPIN authorization or has active DDPI, proceed
+            const canSellSingle = userDetails?.is_authorized_for_sell ||
+              ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+            if (canSellSingle) {
               setShowDdpiModal(false);
               setStockDetails([newStock]);
               setOpenReviewTrade(true);
@@ -2042,7 +2045,10 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       await handleSelectStock(symbol, tradeId, 'add', 'handlesingle');
       // Handling broker-specific logic
       if (broker === 'Zerodha') {
-        if (isSellOrder && !['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status)) {
+        // If user has completed TPIN authorization or has active DDPI, proceed
+        const canSellBatch = userDetails?.is_authorized_for_sell ||
+          ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+        if (isSellOrder && !canSellBatch) {
           setShowDdpiModal(true);
         } else {
           setStockDetails([newStock]);

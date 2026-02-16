@@ -231,8 +231,11 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
 
     if (!latest) return null;
 
+    // Find execution for this user AND current broker
     const userExecution = latest?.subscriberExecutions?.find(
-      execution => execution?.user_email === userEmail,
+      execution =>
+        execution?.user_email === userEmail &&
+        (!broker || execution?.user_broker === broker),
     );
 
     return {userExecution, latest, matchingPortfolioItem};
@@ -393,7 +396,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const [modelObjectId,setModelObjectId]=useState();
 const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
 
-  const handleAcceptRebalance = () => {
+  const handleAcceptRebalance = async () => {
     setStoreModalName(storeModalName);
     setRebalanceExecutionStatus(userExecution?.status);
     setLoading(true);
@@ -426,20 +429,19 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         },
       };
 
-      axios
-        .request(config)
-        .then((response) => {
-          console.log("Rebalance Calculate API Response (DummyBroker):", JSON.stringify(response.data));
-          setCalculatedPortfolioData(response.data);
-          setOpenRebalanceModal(true);
-          setStoreModalName(storeModalName);
-          setModelObjectId(modelPortfolioModelId);
-          setLoading(false);
-        })
-        .catch((error) => {
-          console.log(error);
-          setLoading(false);
-        });
+      try {
+        const response = await axios.request(config);
+        console.log("Rebalance Calculate API Response (DummyBroker):", JSON.stringify(response.data));
+        setCalculatedPortfolioData(response.data);
+        setOpenRebalanceModal(true);
+        setStoreModalName(storeModalName);
+        setModelObjectId(modelPortfolioModelId);
+        setLoading(false);
+      } catch (error) {
+        console.log(error);
+        setLoading(false);
+        throw error; // Re-throw to let caller know it failed
+      }
       return;
     }
 
@@ -570,40 +572,40 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         },
       };
       console.log("Rebalance Calculate Payload:", JSON.stringify(payload));
-      axios
-        .request(config)
-        .then((response) => {
-          console.log("Rebalance Calculate API Response:", JSON.stringify(response.data));
-          const { buy, sell } = response.data;
 
-          const updatedStockTypeAndSymbol = [
-            ...buy.map((item) => ({
-              Symbol: item.symbol,
-              Type: "BUY",
-              Exchange: item.exchange,
-              Quantity: item.quantity,
-            })),
-            ...sell.map((item) => ({
-              Symbol: item.symbol,
-              Type: "SELL",
-              Exchange: item.exchange,
-              Quantity: item.quantity,
-            })),
-          ];
+      try {
+        const response = await axios.request(config);
+        console.log("Rebalance Calculate API Response:", JSON.stringify(response.data));
+        const { buy, sell } = response.data;
 
-          setStockTypeAndSymbol(updatedStockTypeAndSymbol);
-          setLoading(false);
-          setCalculatedPortfolioData(response.data);
-          console.log("Here response data",response.data);
-          setOpenRebalanceModal(true);
-          setStoreModalName(storeModalName);
-          setModelObjectId(modelId);
-        })
-        .catch((error) => {
-          console.log(error);
-          console.log("Here error",error.response);
-          setLoading(false);
-        });
+        const updatedStockTypeAndSymbol = [
+          ...buy.map((item) => ({
+            Symbol: item.symbol,
+            Type: "BUY",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+          ...sell.map((item) => ({
+            Symbol: item.symbol,
+            Type: "SELL",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+        ];
+
+        setStockTypeAndSymbol(updatedStockTypeAndSymbol);
+        setLoading(false);
+        setCalculatedPortfolioData(response.data);
+        console.log("Here response data",response.data);
+        setOpenRebalanceModal(true);
+        setStoreModalName(storeModalName);
+        setModelObjectId(modelId);
+      } catch (error) {
+        console.log(error);
+        console.log("Here error",error.response);
+        setLoading(false);
+        throw error; // Re-throw to let caller know it failed
+      }
     }
   };
 
@@ -863,6 +865,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           stepsData={stepsData}
           setCurrentStep={setCurrentStep}
           brokerStatus={brokerStatus}
+          isRetryRebalance={!!matchfailed}
         />
       ) : null}
 

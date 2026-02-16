@@ -195,9 +195,15 @@ const HomeScreen = ({ }) => {
       //  console.log('sorted',sortedRebalances[0]);
       if (!latest) return null;
 
+      // Find execution for this user AND current broker
+      // A user may execute the same rebalance with multiple brokers,
+      // so we check broker match to allow re-execution with a different broker
       const userExecution = latest?.subscriberExecutions?.find(
-        execution => execution?.user_email === userEmail,
+        execution =>
+          execution?.user_email === userEmail &&
+          (!broker || execution?.user_broker === broker),
       );
+      // Check if rebalance is already executed with the CURRENT broker
       if (userExecution && userExecution.status === 'executed') {
         return null;
       }

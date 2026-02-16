@@ -628,8 +628,10 @@ const RebalanceModal = ({
       return;
     }
 
-    if (broker === 'Zerodha' && (allSellPre || isMixedPre) &&
-      !['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status)) {
+    // If user has completed TPIN authorization or has active DDPI, proceed
+    const canSellZerodha = userDetails?.is_authorized_for_sell ||
+      ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+    if (broker === 'Zerodha' && (allSellPre || isMixedPre) && !canSellZerodha) {
       setShowDdpiModal && setShowDdpiModal(true);
       setOpenRebalanceModal(false);
       setLoading(false);
@@ -718,6 +720,51 @@ const RebalanceModal = ({
       .then(async response => {
         const checkData = response?.data?.results;
         setOrderPlacementResponse(response?.data?.results);
+
+        // If backend returned per-order error details and ALL orders failed, show error toast
+        const backendOrderErrors = response?.data?.orderErrors || [];
+        const allOrdersFailed = checkData?.every((order) => {
+          const s = (order?.orderStatus || "").toUpperCase();
+          return s === "REJECTED" || s === "CANCELLED" || s === "FAILURE" || s === "FAILED";
+        });
+
+        if (allOrdersFailed && backendOrderErrors.length > 0) {
+          const errorMsg = response?.data?.message || "All orders were rejected by the broker.";
+          Toast.show({
+            type: 'error',
+            text1: 'Orders Rejected',
+            text2: errorMsg,
+          });
+          setOpenRebalanceModal(false);
+          setLoading(false);
+
+          // Still enroll in status-check-queue
+          try {
+            await axios.post(
+              `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+              {
+                userEmail: userEmail,
+                modelName: filteredData[0]['model_name'],
+                advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+                broker: broker,
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
+              },
+            );
+          } catch (queueErr) {
+            console.error("Error adding to status-check-queue after all-failed:", queueErr);
+          }
+          getModelPortfolioStrategyDetails();
+          return;
+        }
 
         // Empty results CDSL check - detect EDIS/TPIN errors from response message
         if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
