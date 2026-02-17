@@ -134,6 +134,9 @@ const AliceBlueConnect = ({
     axios
       .request(config)
       .then(response => {
+        console.log('[AliceBlue] Broker connected successfully, updating model portfolio...');
+
+        // Update model portfolio with broker information
         let newBrokerData = {
           user_email: userEmail,
           user_broker: 'AliceBlue',
@@ -151,7 +154,12 @@ const AliceBlueConnect = ({
             ),
           },
         };
-        console.log('success brooooohh');
+
+        // Execute the model portfolio broker update
+        return axios.request(A1_broker);
+      })
+      .then(response => {
+        console.log('[AliceBlue] Model portfolio updated successfully');
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'AliceBlue broker connection' });
         showAlert('success', 'Connected Successfully', 'Your AliceBlue broker has been connected successfully!');

@@ -446,10 +446,13 @@ const MPReviewTradeModal = ({
           }
 
           // Zerodha DDPI
+          // Don't gate on is_authorized_for_sell DB flag — it persists across
+          // sessions but EDIS authorization expires per-session
           if (
             broker === 'Zerodha' &&
             (allSell || isMixed) &&
-            !['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
+            !userDetails?.is_authorized_for_sell &&
+            !['physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
             rejectedSellCount >= 1 &&
             successCount === 0 &&
             setShowDdpiModal
@@ -466,6 +469,7 @@ const MPReviewTradeModal = ({
           orderResults: response.data.results,
           modelName: strategyDetails?.model_name,
           userEmail: userEmail,
+          user_broker: broker,
         };
         return axios.post(
           `${server.server.baseUrl}api/model-portfolio-db-update`,
@@ -820,8 +824,60 @@ const MPReviewTradeModal = ({
           { headers: requestHeaders }
         );
 
+        // Step 4: Update subscriber execution status
+        // Only count fully completed orders as success — not 'placed', 'open', 'transit'
+        // which are intermediate states that may still get rejected
+        if (orderResults && orderResults.length > 0) {
+          const successStatuses = ['complete', 'executed', 'traded'];
+          const pubSuccessCount = orderResults.filter(r =>
+            successStatuses.includes((r.orderStatus || '').toLowerCase())
+          ).length;
+
+          let executionStatus;
+          if (pubSuccessCount === orderResults.length) {
+            executionStatus = 'executed';
+          } else if (pubSuccessCount > 0) {
+            executionStatus = 'partial';
+          }
+
+          try {
+            await axios.put(
+              `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+              {
+                userEmail: userEmail,
+                modelName: strategyDetails?.model_name,
+                executionStatus: executionStatus || 'pending',
+                user_broker: 'Zerodha',
+              },
+              { headers: requestHeaders }
+            );
+          } catch (statusErr) {
+            console.error('[ZerodhaPublisher] Error updating subscriber execution status:', statusErr);
+          }
+
+          // Step 5: Record order results in model_portfolio_user (advice_executed + user_net_pf_model)
+          try {
+            await axios.post(
+              `${server.ccxtServer.baseUrl}rebalance/record-publisher-results`,
+              {
+                modelName: strategyDetails?.model_name,
+                model_id: latestRebalance?.model_Id,
+                unique_id: calculatedPortfolioData?.uniqueId,
+                advisor: strategyDetails?.advisor,
+                order_results: orderResults,
+                user_email: userEmail,
+                user_broker: 'Zerodha',
+              },
+              { headers: requestHeaders }
+            );
+            console.log('[ZerodhaPublisher] Successfully recorded order results in model_portfolio_user');
+          } catch (recordErr) {
+            console.error('[ZerodhaPublisher] Error recording publisher results:', recordErr);
+          }
+        }
+
         // Success - show results to user
-        console.log('[ZerodhaPublisher] ✅ All post-order steps completed successfully');
+        console.log('[ZerodhaPublisher] All post-order steps completed successfully');
         setOrderPlacementResponse(orderResults);
         setOpenSucessModal(true);
         onCloseReviewTrade(); // Close review modal
@@ -1104,8 +1160,11 @@ const MPReviewTradeModal = ({
                     const hasSellOrders = stockDetails?.some(s => s.transactionType === 'SELL');
                     if (hasSellOrders) {
                       // Zerodha DDPI check (before Kite redirect or server-side)
+                      // If user has completed TPIN authorization (is_authorized_for_sell), allow sell
+                      // If DDPI is active (physical/ddpi status), allow sell
                       if (broker === 'Zerodha' &&
-                        !['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
+                        !userDetails?.is_authorized_for_sell &&
+                        !['physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
                         setShowDdpiModal) {
                         setShowDdpiModal(true);
                         onCloseReviewTrade();
