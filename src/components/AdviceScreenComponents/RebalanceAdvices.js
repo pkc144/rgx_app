@@ -1009,7 +1009,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           stepsData={stepsData}
           setCurrentStep={setCurrentStep}
           brokerStatus={brokerStatus}
-          isRetryRebalance={!!matchfailed}
+          isRetryRebalance={!!matchfailed || userExecution?.status === 'partial'}
         />
       ) : null}
 

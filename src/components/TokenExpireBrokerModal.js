@@ -207,9 +207,11 @@ const TokenExpireBrokerModal = ({
             <Info size={48} color="#00000080" />
           </View>
           <Text style={styles.title}>
-            {isOAuthBroker
-              ? `Your ${broker} session has expired. Please reconnect to continue.`
-              : 'Please login to your broker to continue investments'}
+            {broker === 'Zerodha'
+              ? 'Your Zerodha session has expired. Please reconnect to Kite to continue.'
+              : isOAuthBroker
+                ? `Your ${broker} session has expired. Please reconnect to continue.`
+                : 'Please login to your broker to continue investments'}
           </Text>
           <View style={styles.inputContainer}>
             {isOAuthBroker && (

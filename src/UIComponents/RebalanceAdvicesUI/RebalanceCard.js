@@ -34,6 +34,8 @@ import {generateToken} from '../../utils/SecurityTokenManager';
 import RebalancePreferenceModal from './RebalancePreferenceModal';
 import RebalanceDetailsModal from '../../components/AdviceScreenComponents/RebalanceDetailsModal';
 import RebalanceChangeDetailModal from '../../components/RebalanceChangeDetailModal';
+import PendingOrdersModal from '../../components/ModelPortfolioComponents/PendingOrdersModal';
+import {cancelOrder} from '../../services/BrokerOrderBookAPI';
 import {useTrade} from '../../screens/TradeContext';
 
 const RebalanceCard = ({
@@ -156,7 +158,11 @@ const RebalanceCard = ({
     });
   };
 
-  // const [showstatusModal, setShowstatusModal] = useState(false);
+  // Pending orders modal state
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingOrders, setPendingOrders] = useState([]);
+  const [pendingRefreshLoading, setPendingRefreshLoading] = useState(false);
+  const [cancelRetryLoading, setCancelRetryLoading] = useState(false);
 
   const [showCheckboxModal, setShowCheckboxModal] = useState(false);
   const [apiResponseData, setApiResponseData] = useState(null);
@@ -243,6 +249,201 @@ const RebalanceCard = ({
   const handleBrokerConnect = () => {
     eventEmitter.emit('openBrokerConnect', {isOpen2: true});
   };
+
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+    'aq-encrypted-key': generateToken(
+      Config.REACT_APP_AQ_KEYS,
+      Config.REACT_APP_AQ_SECRET,
+    ),
+  };
+
+  // Refresh pending order statuses from broker and show modal if still pending
+  const handlePendingRefresh = async () => {
+    setPendingRefreshLoading(true);
+
+    try {
+      // 1. Trigger live order status refresh from broker
+      await axios.post(
+        `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+        {
+          userEmail: userEmail,
+          modelName: modelName,
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+          broker: broker,
+        },
+        {headers: requestHeaders},
+      );
+
+      // 2. Wait for the poller to process
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // 3. Re-fetch strategy data
+      if (getUserDetails) {
+        await getUserDetails();
+      }
+
+      // 4. Re-check execution status after refresh
+      const latestResponse = await axios.get(
+        `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${userEmail}/${modelName}`,
+        {headers: requestHeaders},
+      );
+
+      const userNetPfModel = latestResponse.data?.data?.user_net_pf_model;
+      let latestPortfolio;
+      if (Array.isArray(userNetPfModel)) {
+        latestPortfolio = userNetPfModel.sort(
+          (a, b) => new Date(b.execDate) - new Date(a.execDate),
+        )[0];
+      } else {
+        latestPortfolio = userNetPfModel;
+      }
+
+      const orderResults = latestPortfolio?.order_results || [];
+      const latestStatus = latestResponse.data?.data?.subscriberExecution?.status;
+
+      if (latestStatus === 'executed' || latestStatus === 'partial') {
+        Toast.show({
+          type: 'success',
+          text1: latestStatus === 'executed'
+            ? 'All orders have been executed successfully!'
+            : 'Some orders were partially executed. You can retry the remaining ones.',
+        });
+        setPendingRefreshLoading(false);
+        return;
+      }
+
+      // 5. Still pending — show PendingOrdersModal with order details
+      setPendingOrders(orderResults);
+      setShowPendingModal(true);
+    } catch (error) {
+      console.error('Error refreshing pending orders:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to refresh order status',
+        text2: 'Please try again.',
+      });
+    }
+
+    setPendingRefreshLoading(false);
+  };
+
+  // Cancel open orders via API and re-open rebalance flow
+  const handleCancelAndRetry = async () => {
+    setCancelRetryLoading(true);
+
+    try {
+      const cancellableStatuses = ['OPEN', 'PENDING', 'TRANSIT', 'TRIGGER PENDING', 'AFTER MARKET ORDER REQ RECEIVED'];
+      const ordersToCancelList = pendingOrders.filter(
+        (o) => o.orderId && cancellableStatuses.includes((o.orderStatus || '').toUpperCase()),
+      );
+
+      let cancelSuccess = 0;
+      let cancelFail = 0;
+
+      for (const order of ordersToCancelList) {
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}order/cancel`,
+            {
+              userId: userEmail,
+              brokerName: broker,
+              advisorDb: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+              orderId: order.orderId,
+            },
+            {headers: requestHeaders},
+          );
+          cancelSuccess++;
+        } catch (cancelErr) {
+          console.error(`Failed to cancel order ${order.orderId}:`, cancelErr);
+          cancelFail++;
+        }
+      }
+
+      if (cancelFail > 0) {
+        Toast.show({
+          type: 'error',
+          text1: `Cancelled ${cancelSuccess} orders, ${cancelFail} failed`,
+          text2: 'Proceeding with retry...',
+        });
+      } else if (cancelSuccess > 0) {
+        Toast.show({
+          type: 'success',
+          text1: `Cancelled ${cancelSuccess} pending orders.`,
+        });
+      }
+
+      // Reset execution status to toExecute
+      await axios.put(
+        `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+        {
+          userEmail: userEmail,
+          modelName: modelName,
+          executionStatus: 'toExecute',
+          user_broker: broker,
+        },
+        {headers: requestHeaders},
+      );
+
+      // Refresh data
+      if (getUserDetails) {
+        await getUserDetails();
+      }
+
+      // Close pending modal and open normal rebalance flow
+      setShowPendingModal(false);
+      setCancelRetryLoading(false);
+      handleAcceptClick();
+    } catch (error) {
+      console.error('Error in cancel and retry:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Something went wrong during cancel & retry',
+        text2: 'Please try again.',
+      });
+      setCancelRetryLoading(false);
+    }
+  };
+
+  // Retry without cancelling (for publisher brokers or when no cancellable orders remain)
+  const handleRetryOnly = async () => {
+    setCancelRetryLoading(true);
+
+    try {
+      // Reset execution status to toExecute
+      await axios.put(
+        `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+        {
+          userEmail: userEmail,
+          modelName: modelName,
+          executionStatus: 'toExecute',
+          user_broker: broker,
+        },
+        {headers: requestHeaders},
+      );
+
+      // Refresh data
+      if (getUserDetails) {
+        await getUserDetails();
+      }
+
+      // Close pending modal and open normal rebalance flow
+      setShowPendingModal(false);
+      setCancelRetryLoading(false);
+      handleAcceptClick();
+    } catch (error) {
+      console.error('Error in retry:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Something went wrong during retry',
+        text2: 'Please try again.',
+      });
+      setCancelRetryLoading(false);
+    }
+  };
+
+  const isPendingVerification = userExecution?.status === 'pending';
 
   const handleAcceptClick = () => {
     try {
@@ -441,6 +642,17 @@ const RebalanceCard = ({
               </Text>
             </View>
           </View>
+          {/* Pending verification message */}
+          {isPendingVerification && (
+            <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
+              <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
+                <Text style={{color: 'rgba(255,255,255,0.9)', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
+                  Verifying Order Status...
+                </Text>
+              </View>
+            </View>
+          )}
+
           <View
             style={{
               flexDirection: 'row',
@@ -459,10 +671,14 @@ const RebalanceCard = ({
               <Text style={styles.viewMoreText}>Detail on portfolio</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => handleChangeCheck()}
-              style={styles.button}>
-              {loading ? (
-                <ActivityIndicator size={14} color="#FFF" />
+              onPress={isPendingVerification ? handlePendingRefresh : handleChangeCheck}
+              disabled={pendingRefreshLoading}
+              style={[
+                styles.button,
+                isPendingVerification && {borderWidth: 1, borderColor: '#EAB308'},
+              ]}>
+              {loading || pendingRefreshLoading ? (
+                <ActivityIndicator size={14} color={gradient2} />
               ) : (
                 <View
                   style={{
@@ -473,9 +689,11 @@ const RebalanceCard = ({
                     alignSelf: 'center',
                   }}>
                   <Text style={[styles.buttonText, {color: gradient2}]}>
-                    {repair && userExecution?.status !== 'toExecute'
-                      ? 'View/action on updates'
-                      : 'View and act'}
+                    {isPendingVerification
+                      ? 'Check Order Status'
+                      : repair && userExecution?.status !== 'toExecute'
+                        ? 'View/action on updates'
+                        : 'View and act'}
                   </Text>
                 </View>
               )}
@@ -527,6 +745,16 @@ const RebalanceCard = ({
           holdingsData={allRebalanceHoldingData}
         />
       )}
+
+      <PendingOrdersModal
+        isOpen={showPendingModal}
+        onClose={() => setShowPendingModal(false)}
+        orders={pendingOrders}
+        broker={broker}
+        onCancelAndRetry={handleCancelAndRetry}
+        onRetryOnly={handleRetryOnly}
+        cancelLoading={cancelRetryLoading}
+      />
     </View>
   );
 };
