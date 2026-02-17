@@ -833,7 +833,8 @@ const IgnoreTradesScreen = () => {
 
     if (zerodhaStatus !== null && zerodhaRequestType === 'basket') {
       const data = JSON.stringify({
-        apiKey: zerodhaApiKey,
+        // Don't send apiKey - let backend use env variable or fetch from DB
+        // This fixes "Invalid api_key" error for OAuth flow
         jwtToken: jwtToken,
         userEmail: userEmail,
         returnDateTime: istDatetime,

@@ -523,7 +523,8 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
         if (zerodhaStatus === "success" && zerodhaRequestType === "basket") {
           try {
             let data = JSON.stringify({
-              apiKey: zerodhaApiKey,
+              // Don't send apiKey - let backend use env variable or fetch from DB
+              // This fixes "Invalid api_key" error for OAuth flow
               advisor: Config.REACT_APP_ADVISOR_SPECIFIC_TAG,
               jwtToken: jwtToken,
               userEmail: userEmail,

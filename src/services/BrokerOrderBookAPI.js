@@ -97,8 +97,11 @@ const buildOrderBookPayload = (broker, credentials) => {
       return {
         url: `${server.ccxtServer.baseUrl}zerodha/order-book`,
         data: {
-          apiKey: decryptCredential(apiKey) || zerodhaApiKey,
-          secretkey: decryptCredential(secretKey),
+          // For Zerodha OAuth, apiKey is stored as plain text (not encrypted)
+          // Don't try to decrypt it - just use it directly or fall back to env
+          apiKey: apiKey || zerodhaApiKey,
+          // secretkey is optional for Zerodha OAuth flow
+          secretkey: secretKey ? decryptCredential(secretKey) : undefined,
           accessToken: jwtToken,
         },
       };
@@ -250,7 +253,9 @@ const buildCancelOrderPayload = (broker, credentials, orderId, orderDetails = {}
       return {
         url: `${server.ccxtServer.baseUrl}zerodha/cancel-order`,
         data: {
-          apiKey: decryptCredential(apiKey) || zerodhaApiKey,
+          // For Zerodha OAuth, apiKey is stored as plain text (not encrypted)
+          // Don't try to decrypt it - just use it directly or fall back to env
+          apiKey: apiKey || zerodhaApiKey,
           accessToken: jwtToken,
           orderId,
           order: orderDetails,
