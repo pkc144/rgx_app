@@ -1504,6 +1504,8 @@ export function OtherBrokerModel({
     onContinue();
     setLoadingRebalance(true);
 
+    // Simplified payload - backend fetches credentials server-side
+    // Only send accessToken for authentication
     let payload = {
       userEmail: userEmail,
       userBroker: broker,
@@ -1511,61 +1513,8 @@ export function OtherBrokerModel({
       advisor: advisorName,
       model_id: modelPortfolioModelId,
       userFund: funds?.data?.availablecash,
+      accessToken: jwtToken,
     };
-    if (broker === 'IIFL Securities') {
-      payload = {
-        ...payload,
-        clientCode: clientCode,
-      };
-    } else if (broker === 'ICICI Direct') {
-      payload = {
-        ...payload,
-        apiKey: checkValidApiAnSecret(apiKey),
-        secretKey: checkValidApiAnSecret(secretKey),
-        sessionToken: jwtToken,
-      };
-    } else if (broker === 'Upstox') {
-      payload = {
-        ...payload,
-        apiKey: checkValidApiAnSecret(apiKey),
-        apiSecret: checkValidApiAnSecret(secretKey),
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Angel One') {
-      payload = {
-        ...payload,
-        apiKey: angelOneApiKey,
-        jwtToken: jwtToken,
-      };
-    } else if (broker === 'Zerodha') {
-      payload = {
-        ...payload,
-        apiKey: zerodhaApiKey,
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Dhan') {
-      payload = {
-        ...payload,
-        clientId: clientCode,
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Hdfc Securities') {
-      payload = {
-        ...payload,
-        apiKey: checkValidApiAnSecret(apiKey),
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Kotak') {
-      payload = {
-        ...payload,
-        consumerKey: checkValidApiAnSecret(apiKey),
-        consumerSecret: checkValidApiAnSecret(secretKey),
-        accessToken: jwtToken,
-        viewToken: viewToken,
-        sid: sid,
-        serverId: serverId,
-      };
-    }
     let config = {
       method: 'post',
       url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
