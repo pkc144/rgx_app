@@ -95,16 +95,27 @@ const AliceBlueConnect = ({
   };
 
   const connectBrokerDbUpadte = () => {
+    // Validate inputs before connecting
+    if (!clientCode || !apiKey) {
+      showAlert('error', 'Missing Information', 'Please enter both Client ID and API Key.');
+      return;
+    }
+
+    if (!userId) {
+      showAlert('error', 'User Not Found', 'Unable to fetch user details. Please try again.');
+      return;
+    }
+
     setLoading(true);
-    console.log('heref');
-    // isToastShown.current = true; // Prevent further execution
+    console.log('[AliceBlue] Connecting broker...');
+
     let brokerData = {
       uid: userId,
       user_broker: 'AliceBlue',
-      clientCode: clientCode,
-      apiKey: apiKey,
+      clientCode: clientCode.trim(),
+      apiKey: apiKey.trim(),
     };
-    console.log('broker data:', brokerData);
+    console.log('[AliceBlue] Broker data:', { ...brokerData, apiKey: '***' }); // Hide API key in logs
     let config = {
       method: 'put',
       url: `${server.server.baseUrl}api/user/connect-broker`,
@@ -134,7 +145,7 @@ const AliceBlueConnect = ({
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': encryptApiKey(
+            'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
             ),
@@ -149,12 +160,18 @@ const AliceBlueConnect = ({
         setShowBrokerModal(false);
       })
       .catch(error => {
-        console.log(
-          'Error:----',
-          error.response ? error.response.data : error.message,
-        );
+        console.error('[AliceBlue] Connection error:', error);
+        console.error('[AliceBlue] Error details:', error.response ? error.response.data : error.message);
+
         setLoading(false);
-        showAlert('error', 'Connection Error', 'Failed to connect to AliceBlue. Please try again.');
+
+        // Provide more specific error message
+        const errorMessage = error.response?.data?.message
+          || error.response?.data?.error
+          || error.message
+          || 'Failed to connect to AliceBlue. Please verify your Client ID and API Key.';
+
+        showAlert('error', 'Connection Error', errorMessage);
       });
   };
 
