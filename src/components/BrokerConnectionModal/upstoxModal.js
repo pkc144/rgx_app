@@ -41,6 +41,12 @@ const UpstoxModal = ({
   const brokerConnectRedirectURL =
     configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
 
+  // Debug: Log redirect URL configuration
+  useEffect(() => {
+    console.log('[Upstox] Broker Connect Redirect URL:', brokerConnectRedirectURL);
+    console.log('[Upstox] Config Data:', configData?.config);
+  }, [brokerConnectRedirectURL, configData]);
+
   const [loading, setLoading] = useState(false);
 
   const checkValidApiAnSecret = details => {
@@ -103,6 +109,12 @@ const UpstoxModal = ({
   };
 
   const updateSecretKey = () => {
+    // Validate redirect URL before proceeding
+    if (!brokerConnectRedirectURL) {
+      showAlert('error', 'Configuration Error', 'Broker redirect URL is not configured. Please contact support.');
+      return;
+    }
+
     setIsLoading(true);
     let data = JSON.stringify({
       uid: userId,
@@ -149,6 +161,12 @@ const UpstoxModal = ({
       userDetails,
     );
     if (userDetails?.apiKey && userDetails?.secretKey) {
+      // Validate redirect URL before proceeding
+      if (!brokerConnectRedirectURL) {
+        console.error('[Upstox] Broker redirect URL is not configured');
+        return;
+      }
+
       setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
       setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
       console.log('POP:111');
@@ -215,6 +233,13 @@ const UpstoxModal = ({
     setUpstoxSessionToken(null);
     // console.log('this get called',upstoxCode,apiKey,secretKey);
     if (upstoxCode !== null && apiKey && secretKey) {
+      // Validate redirect URL before proceeding
+      if (!brokerConnectRedirectURL) {
+        console.error('[Upstox] Broker redirect URL is not configured');
+        showAlert('error', 'Configuration Error', 'Broker redirect URL is not configured. Please contact support.');
+        return;
+      }
+
       let data = JSON.stringify({
         apiKey: apiKey,
         apiSecret: secretKey,
@@ -346,6 +371,12 @@ const UpstoxModal = ({
       userDetails?.secretKey &&
       userDetails?.user_broker === 'Upstox'
     ) {
+      // Validate redirect URL before proceeding
+      if (!brokerConnectRedirectURL) {
+        console.error('[Upstox] Broker redirect URL is not configured');
+        return;
+      }
+
       setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
       setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
       let data = JSON.stringify({
