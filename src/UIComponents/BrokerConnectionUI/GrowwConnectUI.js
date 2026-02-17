@@ -70,49 +70,86 @@ const GrowwConnectUI = ({ isVisible, onClose, authUrl, handleWebViewNavigationSt
           ref={webViewRef}
           source={{ uri: sanitizeUrl(authUrl) }}
           style={styles.webView}
-          nestedScrollEnabled={true}
           onNavigationStateChange={handleWebViewNavigationStateChange}
           javaScriptEnabled={true}
           domStorageEnabled={true}
-          startInLoadingState={true}
-          cacheEnabled={true}
-          sharedCookiesEnabled={true}
           thirdPartyCookiesEnabled={true}
-          scrollEnabled={true}
+          sharedCookiesEnabled={true}
+          startInLoadingState={true}
           originWhitelist={['*']}
-          mixedContentMode="compatibility"
-          setSupportMultipleWindows={false}
-          incognito={false}
-          allowsBackForwardNavigationGestures={false}
-          userAgent={
-            Platform.OS === 'android'
-              ? 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
-              : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile Safari/604.1'
-          }
+          setSupportMultipleWindows={true}
           injectedJavaScript={`
-            // Debug script to log page info
+            // Intercept Google Sign-In transform page
             (function() {
-              console.log('📍 Page loaded:', window.location.href);
-              console.log('📄 Document title:', document.title);
-              console.log('🔍 Query params:', window.location.search);
-              console.log('🔗 Hash:', window.location.hash);
+              const currentUrl = window.location.href;
+              console.log('[Groww Injected JS] Page loaded:', currentUrl);
 
-              // Check if page is blank
-              if (document.body && document.body.innerHTML.trim() === '') {
-                console.log('⚠️ Page is blank!');
-                window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'blank_page',
-                  url: window.location.href
-                }));
+              // Check if we're on the gsi/transform page
+              if (currentUrl.includes('gsi/transform')) {
+                console.log('[Groww Injected JS] Detected gsi/transform - setting up interceptor');
+
+                // Monitor for any redirects or postMessage events
+                let checkCount = 0;
+                const maxChecks = 30; // Check for 3 seconds (100ms * 30)
+
+                const checkForRedirect = setInterval(() => {
+                  checkCount++;
+
+                  // Check if URL has changed
+                  if (window.location.href !== currentUrl) {
+                    console.log('[Groww Injected JS] URL changed to:', window.location.href);
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'url_changed',
+                      url: window.location.href
+                    }));
+                    clearInterval(checkForRedirect);
+                    return;
+                  }
+
+                  // Check if there's any form that might auto-submit
+                  const forms = document.querySelectorAll('form');
+                  if (forms.length > 0) {
+                    console.log('[Groww Injected JS] Found', forms.length, 'form(s) on page');
+                    forms.forEach((form, idx) => {
+                      console.log('[Groww Injected JS] Form', idx, 'action:', form.action);
+                      if (form.action && !form.action.includes('gsi/transform')) {
+                        // Form redirects elsewhere - might be the callback
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                          type: 'form_detected',
+                          action: form.action,
+                          method: form.method
+                        }));
+                      }
+                    });
+                  }
+
+                  if (checkCount >= maxChecks) {
+                    console.log('[Groww Injected JS] Timeout - no redirect detected');
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'transform_timeout',
+                      url: currentUrl
+                    }));
+                    clearInterval(checkForRedirect);
+                  }
+                }, 100);
+
+                // Intercept postMessage calls
+                const originalPostMessage = window.postMessage;
+                window.postMessage = function(...args) {
+                  console.log('[Groww Injected JS] postMessage intercepted:', args);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'postmessage_intercepted',
+                    data: args
+                  }));
+                  return originalPostMessage.apply(this, args);
+                };
               }
 
-              // Send page info back to React Native
+              // Send page info back
               window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'page_info',
-                url: window.location.href,
-                title: document.title,
-                search: window.location.search,
-                hash: window.location.hash
+                type: 'page_loaded',
+                url: currentUrl,
+                title: document.title
               }));
             })();
             true;
@@ -122,9 +159,13 @@ const GrowwConnectUI = ({ isVisible, onClose, authUrl, handleWebViewNavigationSt
               const data = JSON.parse(event.nativeEvent.data);
               console.log('📨 [Groww WebView Message]:', data);
 
-              if (data.type === 'blank_page') {
-                console.log('⚠️ Detected blank page via injected script');
-                setLoadError('Page loaded but appears blank');
+              if (data.type === 'transform_timeout') {
+                console.log('⚠️ [Groww] Transform page timeout - OAuth may have failed');
+                setLoadError('Google authentication timed out. Please try again.');
+              } else if (data.type === 'url_changed') {
+                console.log('🔄 [Groww] URL changed via JS:', data.url);
+              } else if (data.type === 'form_detected') {
+                console.log('📝 [Groww] Form detected - action:', data.action);
               }
             } catch (e) {
               console.log('📨 [Groww WebView Message - unparsed]:', event.nativeEvent.data);
@@ -145,29 +186,10 @@ const GrowwConnectUI = ({ isVisible, onClose, authUrl, handleWebViewNavigationSt
             setIsLoading(false);
             setLoadError(nativeEvent.description || 'Failed to load page');
           }}
-          onHttpError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            console.error('❌ [Groww WebView] HTTP Error:', nativeEvent.statusCode);
-            if (nativeEvent.statusCode >= 400) {
-              setLoadError(`HTTP ${nativeEvent.statusCode}: Failed to load`);
-            }
-          }}
           renderLoading={() => (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#2563eb" />
               <Text style={styles.loadingText}>Connecting to Groww...</Text>
-            </View>
-          )}
-          renderError={(errorDomain, errorCode, errorDesc) => (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>Failed to connect</Text>
-              <Text style={styles.errorDesc}>{errorDesc}</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={() => webViewRef.current?.reload()}
-              >
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
             </View>
           )}
           onShouldStartLoadWithRequest={(request) => {
