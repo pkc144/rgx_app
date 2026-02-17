@@ -102,6 +102,32 @@ const DhanConnectModal = ({
     axios
       .request(config)
       .then(response => {
+        console.log('[Dhan] Broker connected successfully, updating model portfolio...');
+
+        // Update model portfolio with broker information
+        let newBrokerData = {
+          user_email: userEmail,
+          user_broker: 'Dhan',
+        };
+        let A1_broker = {
+          method: 'post',
+          url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+          data: JSON.stringify(newBrokerData),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        };
+
+        // Execute the model portfolio broker update
+        return axios.request(A1_broker);
+      })
+      .then(response => {
+        console.log('[Dhan] Model portfolio updated successfully');
         setLoading(false);
         console.log('connected');
         showAlert('success', 'Connected Successfully', 'Your Dhan broker has been connected successfully!');

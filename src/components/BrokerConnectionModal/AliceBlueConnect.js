@@ -137,6 +137,7 @@ const AliceBlueConnect = ({
         console.log('[AliceBlue] Broker connected successfully, updating model portfolio...');
 
         // Update model portfolio with broker information
+        // This creates NEW records for the new broker (preserving old broker data)
         let newBrokerData = {
           user_email: userEmail,
           user_broker: 'AliceBlue',
@@ -160,6 +161,7 @@ const AliceBlueConnect = ({
       })
       .then(response => {
         console.log('[AliceBlue] Model portfolio updated successfully');
+        console.log('[AliceBlue] Update response:', response.data);
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'AliceBlue broker connection' });
         showAlert('success', 'Connected Successfully', 'Your AliceBlue broker has been connected successfully!');
@@ -175,6 +177,7 @@ const AliceBlueConnect = ({
 
         // Provide more specific error message
         const errorMessage = error.response?.data?.message
+          || error.response?.data?.msg
           || error.response?.data?.error
           || error.message
           || 'Failed to connect to AliceBlue. Please verify your Client ID and API Key.';

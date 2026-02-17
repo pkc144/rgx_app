@@ -91,7 +91,28 @@ const GrowwConnectModal = ({
         data: JSON.stringify(brokerData),
       });
 
-      console.log('[Groww] Broker connection saved successfully');
+      console.log('[Groww] Broker connection saved successfully, updating model portfolio...');
+
+      // Update model portfolio with broker information
+      let newBrokerData = {
+        user_email: userEmail,
+        user_broker: 'Groww',
+      };
+      let A1_broker = {
+        method: 'post',
+        url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+        data: JSON.stringify(newBrokerData),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+        },
+      };
+
+      // Execute the model portfolio broker update
+      await axios.request(A1_broker);
+
+      console.log('[Groww] Model portfolio updated successfully');
       fetchBrokerStatusModal();
       eventEmitter.emit('refreshEvent', { source: 'Groww broker connection' });
       showAlert('success', 'Connected Successfully', 'Your Groww broker has been connected successfully!');

@@ -133,6 +133,32 @@ const KotakModal = ({
     axios
       .request(config)
       .then(response => {
+        console.log('[Kotak Neo] Broker connected successfully, updating model portfolio...');
+
+        // Update model portfolio with broker information
+        let newBrokerData = {
+          user_email: userEmail,
+          user_broker: 'Kotak Neo',
+        };
+        let A1_broker = {
+          method: 'post',
+          url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+          data: JSON.stringify(newBrokerData),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        };
+
+        // Execute the model portfolio broker update
+        return axios.request(A1_broker);
+      })
+      .then(response => {
+        console.log('[Kotak Neo] Model portfolio updated successfully');
         setIsLoading(false);
         showAlert('success', 'Connected Successfully', 'Your Kotak broker has been connected successfully!');
 
@@ -185,6 +211,32 @@ const KotakModal = ({
     axios
       .request(config)
       .then(response => {
+        console.log('[Kotak Neo] Broker connected successfully, updating model portfolio...');
+
+        // Update model portfolio with broker information
+        let newBrokerData = {
+          user_email: userEmail,
+          user_broker: 'Kotak Neo',
+        };
+        let A1_broker = {
+          method: 'post',
+          url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+          data: JSON.stringify(newBrokerData),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        };
+
+        // Execute the model portfolio broker update
+        return axios.request(A1_broker);
+      })
+      .then(response => {
+        console.log('[Kotak Neo] Model portfolio updated successfully');
         setIsLoading(false);
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'Kotak broker connection' });

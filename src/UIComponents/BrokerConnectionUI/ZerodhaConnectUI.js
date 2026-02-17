@@ -167,6 +167,25 @@ const ZerodhaConnectUI = ({
       // Save broker connection to DB (same as production PUT /api/user/connect-broker)
       await saveBrokerConnection(userDetails._id, accessToken, zerodhaApiKey);
 
+      // Update model portfolio with broker information
+      console.log('[Zerodha] Broker connected successfully, updating model portfolio...');
+      try {
+        const newBrokerData = {
+          user_email: userEmail,
+          user_broker: 'Zerodha',
+        };
+        await axios.request({
+          method: 'post',
+          url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+          data: JSON.stringify(newBrokerData),
+          headers: getHeaders(),
+        });
+        console.log('[Zerodha] Model portfolio updated successfully');
+      } catch (modelPortfolioError) {
+        console.warn('[Zerodha] Model portfolio update failed (non-critical):', modelPortfolioError);
+        // Don't fail the entire connection if model portfolio update fails
+      }
+
       // Success!
       setShowWebView(false);
       showAlert('success', 'Connected Successfully', 'Your Zerodha broker has been connected successfully!');
