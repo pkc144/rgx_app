@@ -24,6 +24,7 @@ import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import Toast from 'react-native-toast-message';
 import DisconnectBrokerModal from './DisconnectBrokerModal';
+import ManageConnectionsModal from './ManageConnectionsModal';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../../components/EventEmitter';
 
@@ -65,6 +66,7 @@ const SubscriptionScreen = () => {
 
   const [showDisconnectBroker, setShowDisconnectBroker] = useState(false);
   const [withoutBrokerLoader, setWithoutBrokerLoader] = useState(false);
+  const [showManageConnections, setShowManageConnections] = useState(false);
 
   const handleContinueWithoutBrokerSave = async () => {
     try {
@@ -421,12 +423,20 @@ const SubscriptionScreen = () => {
         brokerStatus === null ||
         brokerStatus === 'Disconnected'
       ) && (
-          <TouchableOpacity
-            style={[styles.button, styles.disconnectButton]}
-            onPress={() => setShowDisconnectBroker(true)}
-            activeOpacity={0.8}>
-            <Text style={styles.disconnectText}>Disconnect</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[styles.button, styles.manageButton]}
+              onPress={() => setShowManageConnections(true)}
+              activeOpacity={0.8}>
+              <Text style={styles.manageButtonText}>Manage Connections</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.disconnectButton]}
+              onPress={() => setShowDisconnectBroker(true)}
+              activeOpacity={0.8}>
+              <Text style={styles.disconnectText}>Disconnect</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
       {/* Bottom doodle & info section */}
@@ -462,6 +472,17 @@ const SubscriptionScreen = () => {
           withoutBrokerLoader={withoutBrokerLoader}
         />
       )}
+
+      {/* Manage Connections Modal */}
+      <ManageConnectionsModal
+        visible={showManageConnections}
+        onClose={() => setShowManageConnections(false)}
+        onConnectionRemoved={(broker) => {
+          console.log('[ManageConnections] Removed:', broker);
+          // Optionally refresh broker status
+          fetchBrokerStatusModal();
+        }}
+      />
     </View>
   );
 };
@@ -508,7 +529,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 0,
   },
+  buttonRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 12,
+    marginBottom: 20,
+  },
+  manageButton: {
+    flex: 1,
+    backgroundColor: '#0056B7',
+  },
+  manageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
   disconnectButton: {
+    flex: 1,
     backgroundColor: '#dc2626',
   },
   disconnectText: {
