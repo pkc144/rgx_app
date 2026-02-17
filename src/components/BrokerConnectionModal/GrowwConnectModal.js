@@ -171,7 +171,7 @@ const GrowwConnectModal = ({
             showTitle: true,
             enableUrlBarHiding: true,
             enableDefaultShare: false,
-            forceCloseOnRedirection: false,
+            forceCloseOnRedirection: true, // Close immediately on redirect to prevent web page from loading
           });
 
           console.log('[Groww] InAppBrowser result:', result);

@@ -70,6 +70,32 @@ const SubscriptionScreen = () => {
     try {
       setWithoutBrokerLoader(true);
 
+      // Revoke OAuth token for Groww before disconnecting (frees up connection slot)
+      const currentBroker = broker || brokername;
+      if (currentBroker === 'Groww') {
+        console.log('[Disconnect] Revoking Groww OAuth token...');
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}groww/revoke`,
+            { user_email: userEmail },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            }
+          );
+          console.log('[Disconnect] Groww token revoked successfully');
+        } catch (revokeError) {
+          // Continue with disconnect even if revoke fails (token may already be invalid)
+          console.warn('[Disconnect] Groww revoke failed (continuing anyway):', revokeError.message);
+        }
+      }
+
       // First API call
       await axios.put(
         `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
