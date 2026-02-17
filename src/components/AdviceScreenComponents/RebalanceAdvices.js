@@ -401,6 +401,150 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     setRebalanceExecutionStatus(userExecution?.status);
     setLoading(true);
 
+    // If we're coming from step 2 (MPStatusModal), skip broker validations and proceed to step 3
+    // The user has already gone through broker checks in step 1
+    if (currentStep === 2) {
+      // Proceed directly to calculation for step 3
+      let payload = {
+        userEmail: userEmail,
+        userBroker: broker ? broker : "DummyBroker",
+        modelName: storeModalName?.trim(),
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+        model_id: modelPortfolioModelId,
+        userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
+        flag: selectedOption === "option1" ? 1 : 0,
+      };
+
+      if (broker === "IIFL Securities") {
+        payload = {
+          ...payload,
+          clientCode: clientCode,
+        };
+      } else if (broker === "ICICI Direct") {
+        payload = {
+          ...payload,
+          apiKey: checkValidApiAnSecret(apiKey),
+          secretKey: checkValidApiAnSecret(secretKey),
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Upstox") {
+        payload = {
+          ...payload,
+          apiKey: checkValidApiAnSecret(apiKey),
+          apiSecret: checkValidApiAnSecret(secretKey),
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Angel One") {
+        payload = {
+          ...payload,
+          apiKey: angelOneApiKey,
+          jwtToken: jwtToken,
+        };
+      } else if (broker === "Zerodha") {
+        payload = {
+          ...payload,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Dhan") {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Groww") {
+        payload = {
+          ...payload,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Hdfc Securities") {
+        payload = {
+          ...payload,
+          apiKey: checkValidApiAnSecret(apiKey),
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Kotak") {
+        payload = {
+          ...payload,
+          consumerKey: checkValidApiAnSecret(apiKey),
+          consumerSecret: checkValidApiAnSecret(secretKey),
+          accessToken: jwtToken,
+          viewToken: viewToken,
+          sid: sid,
+          serverId: serverId,
+        };
+      } else if (broker === "AliceBlue") {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+          apiKey: apiKey,
+        };
+      } else if (broker === "Fyers") {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Motilal Oswal") {
+        payload = {
+          ...payload,
+          clientCode: clientCode,
+          accessToken: jwtToken,
+          apiKey: checkValidApiAnSecret(apiKey),
+        };
+      }
+
+      let config = {
+        method: "post",
+        url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
+        data: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "aq-encrypted-key": generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET
+          ),
+        },
+      };
+      console.log("Rebalance Calculate Payload (from step 2):", JSON.stringify(payload));
+
+      try {
+        const response = await axios.request(config);
+        console.log("Rebalance Calculate API Response (from step 2):", JSON.stringify(response.data));
+        const { buy, sell } = response.data;
+
+        const updatedStockTypeAndSymbol = [
+          ...buy.map((item) => ({
+            Symbol: item.symbol,
+            Type: "BUY",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+          ...sell.map((item) => ({
+            Symbol: item.symbol,
+            Type: "SELL",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+        ];
+
+        setStockTypeAndSymbol(updatedStockTypeAndSymbol);
+        setLoading(false);
+        setCalculatedPortfolioData(response.data);
+        console.log("Opening RebalanceModal (step 3) from step 2");
+        setOpenRebalanceModal(true);
+        setStoreModalName(storeModalName);
+        setModelObjectId(modelPortfolioModelId);
+        return;
+      } catch (error) {
+        console.log("Error in step 2 to step 3 transition:", error);
+        console.log("Error response:", error.response);
+        setLoading(false);
+        throw error;
+      }
+    }
+
     // If user already chose to continue without broker, skip broker validation
     // This prevents infinite loop when MPStatusModal calls handleAcceptRebalance on close
     if (selectNonBroker) {
@@ -599,7 +743,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         console.log("Here response data",response.data);
         setOpenRebalanceModal(true);
         setStoreModalName(storeModalName);
-        setModelObjectId(modelId);
+        setModelObjectId(modelPortfolioModelId);
       } catch (error) {
         console.log(error);
         console.log("Here error",error.response);
