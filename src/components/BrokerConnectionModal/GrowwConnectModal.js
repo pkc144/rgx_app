@@ -75,31 +75,70 @@ const GrowwConnectModal = ({
   };
 
   const handleWebViewNavigationStateChange = newNavState => {
-    const { url } = newNavState;
-    console.log('url here---', url);
+    const { url, loading, title } = newNavState;
+    console.log('🔍 [Groww] Navigation State Change:', { url, loading, title });
 
     // 🚫 Block intent:// before it crashes WebView
     if (url && url.startsWith('intent://')) {
-      console.log('here i am 1------', url);
+      console.log('⚠️ [Groww] Blocking intent:// URL:', url);
       if (webViewRef.current) {
-        console.log('here i am ------', url);
         webViewRef.current.stopLoading(); // hard stop navigation
       }
       return; // exit early
     }
 
-    // ✅ Continue with your Groww success flow
-    const queryParams = parseQueryString(url.split('?')[1] || '');
+    // ✅ Check if this is a callback URL (redirected back to our app)
+    // The backend OAuth callback endpoint processes the Groww response and redirects
+    // to the app with query parameters
+    const isCallbackUrl = url && (
+      url.includes('equitypro.co.in') ||
+      url.includes('alphaquark.in') ||
+      url.includes('oauth/callback') ||
+      url.includes('access_token') ||
+      url.includes('user_broker')
+    );
 
-    const growwBroker = queryParams.user_broker;
-    const growwStatus = queryParams.status;
-    const growwToken = queryParams.access_token;
+    if (isCallbackUrl) {
+      console.log('✅ [Groww] Detected callback URL:', url);
 
-    if (growwBroker === 'Groww' && growwStatus === '0' && growwToken) {
-      setAuthToken(growwToken);
-      console.log('Growww Url Fix---', growwToken);
-      showAlert('success', 'Connected Successfully', 'Your Groww broker has been connected successfully!');
-      sheet.current?.dismiss(); // Close sheet
+      // Parse query parameters from URL (handle both ? and # fragments)
+      const urlParts = url.split(/[?#]/);
+      const queryString = urlParts.length > 1 ? urlParts.slice(1).join('&') : '';
+      const queryParams = parseQueryString(queryString);
+      console.log('📋 [Groww] Query params:', queryParams);
+
+      const growwBroker = queryParams.user_broker;
+      const growwStatus = queryParams.status;
+      const growwToken = queryParams.access_token;
+
+      // Check for successful authentication
+      if (growwBroker === 'Groww' && growwStatus === '0' && growwToken) {
+        console.log('🎉 [Groww] Authentication successful, token received');
+        setAuthToken(growwToken);
+        showAlert('success', 'Connected Successfully', 'Your Groww broker has been connected successfully!');
+        onClose(); // Close modal
+      } else if (queryParams.error) {
+        console.log('❌ [Groww] Authentication error:', queryParams.error);
+        showAlert('error', 'Connection Failed', queryParams.error_description || 'Failed to connect to Groww');
+        onClose();
+      } else if (queryParams.user_broker === 'Groww' || queryParams.status) {
+        // Partial match - log for debugging
+        console.log('⚠️ [Groww] Partial match - missing some params:', {
+          has_broker: !!growwBroker,
+          has_status: !!growwStatus,
+          has_token: !!growwToken,
+          all_params: queryParams
+        });
+      }
+    }
+
+    // Detect blank/failed page loads
+    if (!loading && url && !url.startsWith('intent://')) {
+      console.log('📄 [Groww] Page finished loading:', url);
+      // Check if we're stuck on a blank page
+      if (title === '' || title === 'about:blank') {
+        console.log('⚠️ [Groww] Detected blank page - possible issue');
+      }
     }
   };
 
@@ -208,6 +247,7 @@ const GrowwConnectModal = ({
       handleClose={handleClose}
       authUrl={authUrl}
       handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
+      webViewRef={webViewRef}
     />
   );
 };
