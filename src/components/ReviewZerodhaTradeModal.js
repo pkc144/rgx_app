@@ -522,22 +522,21 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
         
         if (zerodhaStatus === "success" && zerodhaRequestType === "basket") {
           try {
-            let data = JSON.stringify({
-              // Don't send apiKey - let backend use env variable or fetch from DB
-              // This fixes "Invalid api_key" error for OAuth flow
-              advisor: Config.REACT_APP_ADVISOR_SPECIFIC_TAG,
-              jwtToken: jwtToken,
-              userEmail: userEmail,
-              returnDateTime: istDatetime,
-              trades: zerodhaStockDetails,
-            });
-            
-            console.log('data to belll sent:', data);
-            
-            const config = {
+            // Use Publisher flow - call publisher/record-orders endpoint
+            // This fetches order book from Zerodha and matches with our trades
+            console.log('[ZerodhaPublisher] Recording publisher orders...');
+
+            const recordConfig = {
               method: "post",
-              url: `${server.server.baseUrl}api/zerodha/order-place`,
-              data: data,
+              url: `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
+              data: JSON.stringify({
+                stockDetails: zerodhaStockDetails,
+                publisherResults: [{ status: 'success', batchIndex: 0 }],
+                userEmail: userEmail,
+                broker: 'Zerodha',
+                // Include model portfolio info if available
+                advisor: Config.REACT_APP_ADVISOR_SPECIFIC_TAG,
+              }),
               headers: {
                 "Content-Type": "application/json",
                 "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
@@ -547,13 +546,15 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
                 ),
               },
             };
-            
-            // Make the first API call
-            const response = await axios.request(config);
-            console.log('Status Call here:2,', response.data.response);
-            
+
+            // Make the publisher/record-orders API call
+            const response = await axios.request(recordConfig);
+            console.log('[ZerodhaPublisher] Record orders response:', response.data.response);
+
+            const orderResults = response.data.response || response.data.results || [];
+
             // Update UI based on response
-            setOrderPlacementResponse(response.data.response);
+            setOrderPlacementResponse(orderResults);
             setOpenSucessModal(true);
             setBasketData([]);
             setOpenZerodhaModel(false);

@@ -996,19 +996,13 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     const istDatetime = moment(currentISTDateTime).format();
 
     if (zerodhaStatus !== null && zerodhaRequestType === 'basket') {
-      const data = JSON.stringify({
-        // Don't send apiKey - let backend use env variable or fetch from DB
-        // This fixes "Invalid api_key" error for OAuth flow
-        jwtToken: jwtToken,
-        userEmail: userEmail,
-        returnDateTime: istDatetime,
-        trades: zerodhaStockDetails,
-      });
+      // Use Publisher flow - call publisher/record-orders endpoint
+      // This fetches order book from Zerodha and matches with our trades
+      console.log('[ZerodhaPublisher] Recording publisher orders...');
 
-      const config = {
+      const recordConfig = {
         method: 'post',
-        url: `${server.server.baseUrl}api/zerodha/order-place`,
-
+        url: `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
@@ -1017,14 +1011,22 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
-        data: data,
+        data: JSON.stringify({
+          stockDetails: zerodhaStockDetails,
+          publisherResults: [{ status: 'success', batchIndex: 0 }],
+          userEmail: userEmail,
+          broker: 'Zerodha',
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+        }),
       };
 
       try {
-        const response = await axios.request(config);
-        // console.log('Status Call here:1,',response.data.response);
-        setOrderPlacementResponse(response.data.response);
+        const response = await axios.request(recordConfig);
+        console.log('[ZerodhaPublisher] Record orders response:', response.data.response);
+
+        const orderResults = response.data.response || response.data.results || [];
+
+        setOrderPlacementResponse(orderResults);
         setOpenSucessModal(true);
         setOpenReviewTrade(false);
         getAllTrades();
