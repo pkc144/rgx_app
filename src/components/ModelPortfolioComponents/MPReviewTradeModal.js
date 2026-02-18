@@ -605,7 +605,11 @@ const MPReviewTradeModal = ({
   };
   // Use configData first, fallback to Config env variable
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
-  console.log('[ZerodhaPublisher] Using API Key:', zerodhaApiKey ? `${zerodhaApiKey.substring(0, 4)}...` : 'UNDEFINED!');
+  console.log('[ZerodhaPublisher] configData:', configData ? 'exists' : 'null');
+  console.log('[ZerodhaPublisher] configData.config:', configData?.config ? 'exists' : 'null');
+  console.log('[ZerodhaPublisher] configData.config.REACT_APP_ZERODHA_API_KEY:', configData?.config?.REACT_APP_ZERODHA_API_KEY ? 'exists' : 'null/undefined');
+  console.log('[ZerodhaPublisher] Config.REACT_APP_ZERODHA_API_KEY:', Config?.REACT_APP_ZERODHA_API_KEY ? 'exists' : 'null/undefined');
+  console.log('[ZerodhaPublisher] Using API Key:', zerodhaApiKey ? `${zerodhaApiKey.substring(0, 4)}...` : 'UNDEFINED/EMPTY!');
 
   // Helper function to get last known price
   const getLastKnownPrice = (symbol) => {
@@ -740,13 +744,14 @@ const MPReviewTradeModal = ({
         JSON.stringify(filteredStockDetails),
       );
 
-      console.log('[ZerodhaPublisher] Using Kite Publisher SDK Modal...');
+      console.log('[ZerodhaPublisher] Using form submission flow...');
       console.log('[ZerodhaPublisher] Basket data:', JSON.stringify(basket, null, 2));
       console.log('[ZerodhaPublisher] API Key being used:', apiKey);
 
-      // Step 2: Use Kite Publisher Modal (SDK-based approach like prod-alphaquark-github)
-      setPublisherBasketItems(basket);
-      setShowKitePublisher(true);
+      // Use form submission approach (more reliable in WebView than SDK)
+      const htmlContent = generateHtmlForm(basket, apiKey);
+      setHtmlContent(htmlContent);
+      setWebView(true);
       setLoading(false);
     } catch (error) {
       console.error('[ZerodhaPublisher] Failed to update trade recommendation:', error);
@@ -758,25 +763,31 @@ const MPReviewTradeModal = ({
   // Redirect URL for Kite to return after order placement
   const appURL = 'success';
   const generateHtmlForm = (basket, apiKey) => {
+    const basketJson = JSON.stringify(basket);
+    console.log('[ZerodhaPublisher] Form submission basket:', basketJson);
     return `<html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
         <body>
           <div id="debug-info" style="padding: 20px; font-family: monospace;">
-            <p>API Key: ${apiKey}</p>
-            <p>Basket: ${JSON.stringify(basket)}</p>
+            <p>API Key: ${apiKey?.substring(0, 4)}...</p>
+            <p>Basket Items: ${basket.length}</p>
+            <p>Basket: ${basketJson}</p>
           </div>
           <form id="zerodhaForm" method="POST" action="https://kite.zerodha.com/connect/basket">
             <input type="hidden" name="api_key" value="${apiKey}" />
-            <input type="hidden" name="data" value='${JSON.stringify(
-              basket,
-            )}' />
+            <input type="hidden" name="data" value='${basketJson}' />
             <input type="hidden" name="redirect_params" value="${appURL}=true" />
           </form>
           <script>
             console.log('Submitting form with api_key: ${apiKey}');
+            console.log('Basket data:', '${basketJson.replace(/'/g, "\\'")}');
             try {
               document.getElementById('zerodhaForm').submit();
             } catch(e) {
               console.log('Form submit error:', e);
+              document.body.innerHTML = '<p style="color:red">Error submitting form. Please try again.</p>';
             }
           </script>
         </body>
@@ -1286,7 +1297,7 @@ const MPReviewTradeModal = ({
                   borderTopRightRadius: 10,
                   borderTopLeftRadius: 10,
                 }}
-                source={{uri: htmlContentfinal}} // Corrected 'url' to 'uri'
+                source={{html: htmlContentfinal}}
                 onLoadStart={() => setIsLoading(true)}
                 onLoadEnd={() => setIsLoading(false)}
                 onNavigationStateChange={handleWebViewNavigationStateChange}
