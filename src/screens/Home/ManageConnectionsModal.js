@@ -36,10 +36,11 @@ const ManageConnectionsModal = ({
 
     setLoading(true);
     try {
-      const response = await axios.post(
-        `${server.ccxtServer.baseUrl}rebalance/list-broker-connections`,
-        { user_email: userEmail, current_broker: currentBroker },
+      // Use main backend (aq_backend_github) which stores broker connections
+      const response = await axios.get(
+        `${server.server.baseUrl}api/user/brokers`,
         {
+          params: { email: userEmail },
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
@@ -51,8 +52,17 @@ const ManageConnectionsModal = ({
         }
       );
 
-      if (response.data?.connected_brokers) {
-        setConnections(response.data.connected_brokers);
+      if (response.data?.data?.connected_brokers) {
+        // Transform to our format
+        const brokers = response.data.data.connected_brokers.map(b => ({
+          broker: b.broker,
+          connected_at: b.connected_at,
+          is_active: b.broker === currentBroker,
+          has_credentials: true,
+        }));
+        setConnections(brokers);
+      } else {
+        setConnections([]);
       }
     } catch (error) {
       console.error('[ManageConnections] Failed to fetch:', error);
@@ -80,10 +90,11 @@ const ManageConnectionsModal = ({
           onPress: async () => {
             setRemoving(broker);
             try {
-              await axios.post(
-                `${server.ccxtServer.baseUrl}rebalance/disconnect-broker`,
-                { user_email: userEmail, user_broker: broker },
+              // Use main backend (aq_backend_github) to remove broker
+              await axios.delete(
+                `${server.server.baseUrl}api/user/brokers/${encodeURIComponent(broker)}`,
                 {
+                  params: { email: userEmail },
                   headers: {
                     'Content-Type': 'application/json',
                     'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
