@@ -18,6 +18,7 @@ import Icon1 from 'react-native-vector-icons/Feather';
 import server from '../../utils/serverConfig';
 import axios from 'axios';
 import {WebView} from 'react-native-webview';
+import KitePublisherModal from './KitePublisherModal';
 import CryptoJS from 'react-native-crypto-js';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
 import {io} from 'socket.io-client';
@@ -571,6 +572,11 @@ const MPReviewTradeModal = ({
   const [zerodhaStatus, setZerodhaStatus] = useState(null);
   const [zerodhaRequestToken, setZerodhaRequestToken] = useState(null);
   const [zerodhaRequestType, setZerodhaRequestType] = useState(null);
+
+  // Kite Publisher Modal state
+  const [showKitePublisher, setShowKitePublisher] = useState(false);
+  const [publisherBasketItems, setPublisherBasketItems] = useState([]);
+
   const handleWebViewNavigationStateChange = newNavState => {
     // Handle navigation state changes, e.g., success/failure redirects
     const {url} = newNavState;
@@ -597,7 +603,9 @@ const MPReviewTradeModal = ({
 
     return true; // Allow navigation
   };
-  const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
+  // Use configData first, fallback to Config env variable
+  const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
+  console.log('[ZerodhaPublisher] Using API Key:', zerodhaApiKey ? `${zerodhaApiKey.substring(0, 4)}...` : 'UNDEFINED!');
 
   // Helper function to get last known price
   const getLastKnownPrice = (symbol) => {
@@ -608,6 +616,16 @@ const MPReviewTradeModal = ({
   const handleZerodhaRedirect = async () => {
     setLoading(true);
     const storageKey = 'stockDetailsZerodhaOrder';
+
+    // Debug: Verify API key is available
+    console.log('[ZerodhaPublisher] handleZerodhaRedirect called, API Key:', zerodhaApiKey);
+    if (!zerodhaApiKey) {
+      console.error('[ZerodhaPublisher] FATAL: No API key available!');
+      alert('Error: Zerodha API key not configured. Please contact support.');
+      setLoading(false);
+      return;
+    }
+
     try {
       // Clear the existing value
       await AsyncStorage.removeItem(storageKey);
@@ -707,13 +725,14 @@ const MPReviewTradeModal = ({
         JSON.stringify(filteredStockDetails),
       );
 
-      console.log('[ZerodhaPublisher] Opening Kite basket WebView...');
+      console.log('[ZerodhaPublisher] Using Kite Publisher SDK Modal...');
+      console.log('[ZerodhaPublisher] Basket data:', JSON.stringify(basket, null, 2));
+      console.log('[ZerodhaPublisher] API Key being used:', apiKey);
 
-      // Step 2: Generate HTML form content and open WebView
-      const htmlContent = generateHtmlForm(basket, apiKey);
-      setHtmlContent(htmlContent);
-      setWebView(true);
-      setLoading(false); // Stop loading, WebView will show
+      // Step 2: Use Kite Publisher Modal (SDK-based approach like prod-alphaquark-github)
+      setPublisherBasketItems(basket);
+      setShowKitePublisher(true);
+      setLoading(false);
     } catch (error) {
       console.error('[ZerodhaPublisher] Failed to update trade recommendation:', error);
       setLoading(false);
@@ -726,6 +745,10 @@ const MPReviewTradeModal = ({
   const generateHtmlForm = (basket, apiKey) => {
     return `<html>
         <body>
+          <div id="debug-info" style="padding: 20px; font-family: monospace;">
+            <p>API Key: ${apiKey}</p>
+            <p>Basket: ${JSON.stringify(basket)}</p>
+          </div>
           <form id="zerodhaForm" method="POST" action="https://kite.zerodha.com/connect/basket">
             <input type="hidden" name="api_key" value="${apiKey}" />
             <input type="hidden" name="data" value='${JSON.stringify(
@@ -734,7 +757,12 @@ const MPReviewTradeModal = ({
             <input type="hidden" name="redirect_params" value="${appURL}=true" />
           </form>
           <script>
-            document.getElementById('zerodhaForm').submit();
+            console.log('Submitting form with api_key: ${apiKey}');
+            try {
+              document.getElementById('zerodhaForm').submit();
+            } catch(e) {
+              console.log('Form submit error:', e);
+            }
           </script>
         </body>
       </html>
@@ -1254,6 +1282,40 @@ const MPReviewTradeModal = ({
             </View>
           ) : (
             <>
+              {/* Loading Overlay */}
+              {(calculatedLoading || loading || isLoading) && (
+                <View style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  zIndex: 999,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderTopLeftRadius: 20,
+                  borderTopRightRadius: 20,
+                }}>
+                  <ActivityIndicator size="large" color="#000" />
+                  <Text style={{
+                    marginTop: 15,
+                    fontSize: 16,
+                    fontFamily: 'Satoshi-Medium',
+                    color: '#333',
+                  }}>
+                    {loading ? 'Placing Order...' : 'Calculating Rebalance...'}
+                  </Text>
+                  <Text style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    fontFamily: 'Satoshi-Regular',
+                    color: '#666',
+                  }}>
+                    Please wait while we process your request
+                  </Text>
+                </View>
+              )}
               <View style={styles.horizontal} />
               <View
                 style={{
@@ -1456,6 +1518,30 @@ const MPReviewTradeModal = ({
           )}
         </View>
       </View>
+
+      {/* Kite Publisher Modal (Publisher SDK flow) */}
+      <KitePublisherModal
+        visible={showKitePublisher}
+        apiKey={zerodhaApiKey}
+        basketItems={publisherBasketItems}
+        onClose={() => {
+          setShowKitePublisher(false);
+          setLoading(false);
+        }}
+        onSuccess={(requestToken) => {
+          console.log('[ZerodhaPublisher] Publisher success, requestToken:', requestToken);
+          setShowKitePublisher(false);
+          setZerodhaStatus('success');
+          setZerodhaRequestType('basket');
+          // checkZerodhaStatus will be called via useEffect
+        }}
+        onError={(error) => {
+          console.error('[ZerodhaPublisher] Publisher error:', error);
+          setShowKitePublisher(false);
+          setLoading(false);
+          alert('Failed to place order: ' + error);
+        }}
+      />
     </Modal>
   );
 };
