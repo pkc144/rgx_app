@@ -707,6 +707,27 @@ const IgnoreTradesScreen = () => {
   const [loadingStatus, setLoadingStatus] = useState(null); // Track success status
   const [mbasket, setmbasket] = useState(null);
 
+  // Helper function to map product type to Kite product type
+  const mapKiteProductType = (productType) => {
+    if (!productType) return "CNC";
+    const upper = productType.toUpperCase();
+    if (upper === "DELIVERY" || upper === "CNC") return "CNC";
+    if (upper === "INTRADAY" || upper === "MIS") return "MIS";
+    if (upper === "BO") return "BO";
+    if (upper === "CO") return "CO";
+    return "CNC";
+  };
+
+  // Helper function to map order type to Kite order type
+  const mapKiteOrderType = (orderType) => {
+    if (!orderType) return "MARKET";
+    const upper = orderType.toUpperCase();
+    if (upper === "MARKET") return "MARKET";
+    if (upper === "LIMIT") return "LIMIT";
+    if (upper === "SL" || upper === "SL_M" || upper === "STOP") return "SL";
+    return "MARKET";
+  };
+
   const handlefinal = async () => {
     try {
       // Store stockDetails in AsyncStorage (similar to localStorage)
@@ -716,38 +737,33 @@ const IgnoreTradesScreen = () => {
       );
 
       const basket = stockDetails.map(stock => {
+        // Get LTP for price calculation (default to 0 if not available)
+        const ltp = 0;
+        let orderPrice = 0;
+
+        if (stock.orderType === 'LIMIT') {
+          orderPrice = stock.limitPrice || parseFloat(stock.price) || 0;
+        } else if (stock.orderType === 'MARKET' || stock.orderType === 'SL') {
+          orderPrice = ltp !== '-' ? parseFloat(ltp) : 0;
+        }
+
         let baseOrder = {
           variety: 'regular',
           tradingsymbol: stock.tradingSymbol,
-          exchange: stock.exchange,
-          transaction_type: stock.transactionType,
-          order_type: stock.orderType,
-          quantity: stock.quantity,
+          exchange: stock.exchange || 'NSE',
+          transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
+          order_type: mapKiteOrderType(stock.orderType),
+          quantity: parseInt(stock.quantity, 10) || 1,
+          product: mapKiteProductType(stock.productType),
           readonly: false,
+          price: orderPrice,
         };
-
-        // Get LTP for the current stock (this should be handled with an API call or static data)
-        const ltp = 0; //getLTPForSymbol(stock.tradingSymbol);
-
-        // If LTP is available and not '-', use it as the price
-        if (ltp !== '-') {
-          baseOrder.price = parseFloat(ltp);
-        }
-
-        // Handle LIMIT orders
-        if (stock.orderType === 'LIMIT') {
-          if (ltp !== '-') {
-            baseOrder.price = parseFloat(ltp);
-            baseOrder.variety = 'regular';
-          } else {
-            baseOrder.variety = 'regular';
-            baseOrder.price = stock.limitPrice || 0; // Use limitPrice if available, or set to 0
-          }
-        }
 
         if (stock.quantity > 100) {
           baseOrder.readonly = true;
         }
+
+        console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(baseOrder));
 
         return baseOrder;
       });

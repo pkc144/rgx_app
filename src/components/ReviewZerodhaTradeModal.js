@@ -359,7 +359,28 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
     return fetchedData;
   };
 
-  
+  // Helper function to map product type to Kite product type
+  const mapKiteProductType = (productType) => {
+    if (!productType) return "CNC";
+    const upper = productType.toUpperCase();
+    if (upper === "DELIVERY" || upper === "CNC") return "CNC";
+    if (upper === "INTRADAY" || upper === "MIS") return "MIS";
+    if (upper === "BO") return "BO";
+    if (upper === "CO") return "CO";
+    return "CNC";
+  };
+
+  // Helper function to map order type to Kite order type
+  const mapKiteOrderType = (orderType) => {
+    if (!orderType) return "MARKET";
+    const upper = orderType.toUpperCase();
+    if (upper === "MARKET") return "MARKET";
+    if (upper === "LIMIT") return "LIMIT";
+    if (upper === "SL" || upper === "SL_M" || upper === "STOP") return "SL";
+    return "MARKET";
+  };
+
+
  // console.log('stock details i get zerodha--0',stockDetails);
 
   const handleZerodhaRedirect = async () => {
@@ -382,48 +403,43 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
   const basket = stockDetails.map((stock) => {
 
     console.log('stock detailskkkkkk  i get here-',stock);
-    let baseOrder = {
-      variety: "regular",
-      tradingsymbol: stock.tradingSymbol,
-      exchange: stock.exchange,
-      transaction_type: stock.transactionType,
-      order_type: stock.orderType,
-      quantity: stock.quantity,
-      readonly: false,
-      price: stock.price,
-      tag: stock.zerodhaTradeId,
-    };
 
-    // If the stock is in 'NFO' or 'BFO', update the baseOrder with fetched data
+    // Use LTP for price calculation
+    const ltp = getLastKnownPrice(stock.tradingSymbol);
+    let orderPrice = 0;
+
+    if (stock.orderType === "LIMIT") {
+      orderPrice = parseFloat(stock.price || 0);
+    } else if (stock.orderType === "MARKET" || stock.orderType === "SL") {
+      orderPrice = ltp !== "-" ? parseFloat(ltp) : 0;
+    }
+
+    // If the stock is in 'NFO' or 'BFO', update with fetched data
+    let finalQuantity = stock.quantity;
+    let finalSymbol = stock.tradingSymbol;
     if (fetchedData[stock.tradingSymbol]) {
       const { lotsize, new_symbol } = fetchedData[stock.tradingSymbol];
-      baseOrder.tradingsymbol = new_symbol;
-      baseOrder.quantity = parseInt(lotsize, 10);
+      finalSymbol = new_symbol;
+      finalQuantity = parseInt(lotsize, 10);
     }
 
-    // Get the LTP for the current stock
-    const ltp = getLastKnownPrice(stock.tradingSymbol);
-
-    // If LTP is available and not '-', use it as the price
-    if (ltp !== "-") {
-      baseOrder.price = parseFloat(ltp);
-    }
-
-    // If it's a LIMIT order, use the price in stock details
-    if (stock.orderType === "LIMIT") {
-      baseOrder.price = parseFloat(stock.price || 0);
-    } else if (stock.orderType === "MARKET") {
-      if (ltp !== "-") {
-        baseOrder.price = parseFloat(ltp);
-      } else {
-        baseOrder.price = 0;
-      }
-    }
+    let baseOrder = {
+      variety: "regular",
+      tradingsymbol: finalSymbol,
+      exchange: stock.exchange || "NSE",
+      transaction_type: (stock.transactionType || "BUY").toUpperCase(),
+      order_type: mapKiteOrderType(stock.orderType),
+      quantity: finalQuantity,
+      product: mapKiteProductType(stock.productType),
+      readonly: false,
+      price: orderPrice,
+      tag: stock.zerodhaTradeId,
+    };
 
     if (stock.quantity > 100) {
       baseOrder.readonly = true;
     }
-    console.log('final BaseOrder:',baseOrder);
+    console.log('[ZerodhaPublisher] final BaseOrder:', JSON.stringify(baseOrder));
     return baseOrder;
   });
 

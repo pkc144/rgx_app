@@ -931,44 +931,60 @@ const AddToCartModal = ({
   };
 
   const [htmlContentfinal, setHtmlContent] = useState('');
+
+  // Helper function to map product type to Kite product type
+  const mapKiteProductType = (productType) => {
+    if (!productType) return "CNC";
+    const upper = productType.toUpperCase();
+    if (upper === "DELIVERY" || upper === "CNC") return "CNC";
+    if (upper === "INTRADAY" || upper === "MIS") return "MIS";
+    if (upper === "BO") return "BO";
+    if (upper === "CO") return "CO";
+    return "CNC";
+  };
+
+  // Helper function to map order type to Kite order type
+  const mapKiteOrderType = (orderType) => {
+    if (!orderType) return "MARKET";
+    const upper = orderType.toUpperCase();
+    if (upper === "MARKET") return "MARKET";
+    if (upper === "LIMIT") return "LIMIT";
+    if (upper === "SL" || upper === "SL_M" || upper === "STOP") return "SL";
+    return "MARKET";
+  };
+
   const handleZerodhaRedirect = async () => {
     const apiKey = zerodhaApiKey;
 
     const basket = stockDetails.map(stock => {
+      // Use LTP for price calculation
+      const ltp = getLastKnownPrice(stock.tradingSymbol);
+      let orderPrice = 0;
+
+      if (stock.orderType === 'LIMIT') {
+        orderPrice = parseFloat(stock.price || 0);
+      } else if (stock.orderType === 'MARKET' || stock.orderType === 'SL') {
+        orderPrice = ltp !== '-' ? parseFloat(ltp) : 0;
+      }
+
       let baseOrder = {
         variety: 'regular',
         tradingsymbol: stock.tradingSymbol,
-        exchange: stock.exchange,
-        transaction_type: stock.transactionType,
-        order_type: stock.orderType,
-        quantity: stock.quantity,
+        exchange: stock.exchange || 'NSE',
+        transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
+        order_type: mapKiteOrderType(stock.orderType),
+        quantity: parseInt(stock.quantity, 10) || 1,
+        product: mapKiteProductType(stock.productType),
         readonly: false,
-        price: stock.price,
+        price: orderPrice,
       };
 
-      // Get the LTP for the current stock
-      const ltp = getLastKnownPrice(stock.tradingSymbol);
-
-      // If LTP is available and not '-', use it as the price
-      if (ltp !== '-') {
-        baseOrder.price = parseFloat(ltp);
-      }
-
-      // If it's a LIMIT order, use the LTP as the price
-      if (stock.orderType === 'LIMIT') {
-        baseOrder.price = parseFloat(stock.price || 0);
-      } else if (stock.orderType === 'MARKET') {
-        const ltp = getLastKnownPrice(stock.tradingSymbol);
-        if (ltp !== '-') {
-          baseOrder.price = parseFloat(ltp);
-        } else {
-          baseOrder.price = 0;
-        }
-      }
-
+      // Set readonly for large quantities (over 100 shares)
       if (stock.quantity > 100) {
         baseOrder.readonly = true;
       }
+
+      console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(baseOrder));
 
       return baseOrder;
     });
