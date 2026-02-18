@@ -179,7 +179,7 @@ const ICICIUPModal = ({
         .then(response => {
           console.log('[ICICI Direct] Broker connected successfully, updating model portfolio...');
 
-          // Update model portfolio with broker information
+          // Update model portfolio with broker information (non-critical)
           let newBrokerData = {
             user_email: userEmail,
             user_broker: 'ICICI Direct',
@@ -198,11 +198,16 @@ const ICICIUPModal = ({
             },
           };
 
-          // Execute the model portfolio broker update
-          return axios.request(A1_broker);
+          // Execute the model portfolio broker update - catch separately so connection success isn't affected
+          return axios.request(A1_broker).catch(err => {
+            console.warn('[ICICI Direct] Model portfolio update failed (non-critical):', err);
+            return null;
+          });
         })
         .then(response => {
-          console.log('[ICICI Direct] Model portfolio updated successfully');
+          if (response) {
+            console.log('[ICICI Direct] Model portfolio updated successfully');
+          }
           isToastShown.current = true;
           fetchBrokerStatusModal();
           eventEmitter.emit('refreshEvent', { source: 'ICICI Direct broker connection' });

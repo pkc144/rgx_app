@@ -184,7 +184,7 @@ const FyersConnect = ({
           .then(response => {
             console.log('[Fyers] Broker connected successfully, updating model portfolio...');
 
-            // Update model portfolio with broker information
+            // Update model portfolio with broker information (non-critical)
             let newBrokerData = {
               user_email: userEmail,
               user_broker: 'Fyers',
@@ -203,11 +203,16 @@ const FyersConnect = ({
               },
             };
 
-            // Execute the model portfolio broker update
-            return axios.request(A1_broker);
+            // Execute the model portfolio broker update - catch separately so connection success isn't affected
+            return axios.request(A1_broker).catch(err => {
+              console.warn('[Fyers] Model portfolio update failed (non-critical):', err);
+              return null;
+            });
           })
           .then(response => {
-            console.log('[Fyers] Model portfolio updated successfully');
+            if (response) {
+              console.log('[Fyers] Model portfolio updated successfully');
+            }
             fetchBrokerStatusModal();
             eventEmitter.emit('refreshEvent', { source: 'Fyers broker connection' });
             showAlert('success', 'Connected Successfully', 'Your Fyers broker has been connected successfully!');

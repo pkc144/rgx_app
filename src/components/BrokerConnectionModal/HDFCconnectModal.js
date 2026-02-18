@@ -270,7 +270,7 @@ const HDFCconnectModal = ({
           .then(response => {
             console.log('[Hdfc Securities] Broker connected successfully, updating model portfolio...');
 
-            // Update model portfolio with broker information
+            // Update model portfolio with broker information (non-critical)
             let newBrokerData = {
               user_email: userEmail,
               user_broker: 'Hdfc Securities',
@@ -289,11 +289,16 @@ const HDFCconnectModal = ({
               },
             };
 
-            // Execute the model portfolio broker update
-            return axios.request(A1_broker);
+            // Execute the model portfolio broker update - catch separately so connection success isn't affected
+            return axios.request(A1_broker).catch(err => {
+              console.warn('[Hdfc Securities] Model portfolio update failed (non-critical):', err);
+              return null;
+            });
           })
           .then(response => {
-            console.log('[Hdfc Securities] Model portfolio updated successfully');
+            if (response) {
+              console.log('[Hdfc Securities] Model portfolio updated successfully');
+            }
             fetchBrokerStatusModal();
             eventEmitter.emit('refreshEvent', { source: 'HDFC Securities broker connection' });
             showAlert('success', 'Connected Successfully', 'Your HDFC broker has been connected successfully!');

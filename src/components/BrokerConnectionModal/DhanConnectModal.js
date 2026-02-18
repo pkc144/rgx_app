@@ -104,7 +104,7 @@ const DhanConnectModal = ({
       .then(response => {
         console.log('[Dhan] Broker connected successfully, updating model portfolio...');
 
-        // Update model portfolio with broker information
+        // Update model portfolio with broker information (non-critical)
         let newBrokerData = {
           user_email: userEmail,
           user_broker: 'Dhan',
@@ -123,11 +123,16 @@ const DhanConnectModal = ({
           },
         };
 
-        // Execute the model portfolio broker update
-        return axios.request(A1_broker);
+        // Execute the model portfolio broker update - catch separately so connection success isn't affected
+        return axios.request(A1_broker).catch(err => {
+          console.warn('[Dhan] Model portfolio update failed (non-critical):', err);
+          return null;
+        });
       })
       .then(response => {
-        console.log('[Dhan] Model portfolio updated successfully');
+        if (response) {
+          console.log('[Dhan] Model portfolio updated successfully');
+        }
         setLoading(false);
         console.log('connected');
         showAlert('success', 'Connected Successfully', 'Your Dhan broker has been connected successfully!');
@@ -140,7 +145,7 @@ const DhanConnectModal = ({
         setIsLoading(false);
       })
       .catch(error => {
-        console.log(error.response, error.response.message, error.message);
+        console.log(error.response, error.response?.message, error.message);
         setLoading(false);
         getUserDeatils();
         showAlert('error', 'Incorrect Credentials', 'Please check your Client ID and Access Token and try again.');

@@ -70,6 +70,7 @@ const RebalanceModal = ({
   const { brokerStatus, configData } = useTrade();
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
+  const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
 
   // Zerodha WebView state
   const webViewRef = useRef(null);
@@ -609,6 +610,216 @@ const RebalanceModal = ({
 
   // --- End Zerodha Publisher Flow Functions ---
 
+  // --- Fyers Publisher Flow Functions ---
+
+  const handleFyersRedirect = async () => {
+    const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
+    if (!sessionValid) return;
+
+    setLoading(true);
+    try {
+      const currentISTDateTime = new Date();
+      const istDatetime = moment(currentISTDateTime).format();
+
+      const requestHeaders = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
+      };
+
+      // Store stock details for post-processing
+      await AsyncStorage.removeItem('stockDetailsFyersOrder');
+      await AsyncStorage.setItem(
+        'stockDetailsFyersOrder',
+        JSON.stringify(stockDetails),
+      );
+
+      // Record trade intent
+      await axios.post(
+        `${server.server.baseUrl}api/zerodha/model-portfolio/update-reco-with-zerodha-model-pf`,
+        {
+          stockDetails: stockDetails,
+          leaving_datetime: currentISTDateTime,
+          email: userEmail,
+          trade_given_by: advisorTag,
+        },
+        { headers: requestHeaders },
+      );
+
+      // Place orders via Fyers API through process-trade
+      const payload = {
+        clientId: clientCode,
+        accessToken: jwtToken,
+        user_email: userEmail,
+        user_broker: 'Fyers',
+        modelName: additionalPayload.modelName,
+        advisor: additionalPayload.advisor,
+        model_id: additionalPayload.model_id || modelPortfolioModelId,
+        unique_id: additionalPayload.unique_id,
+        returnDateTime: istDatetime,
+        trades: stockDetails,
+      };
+
+      const response = await axios.post(
+        `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+        payload,
+        { headers: requestHeaders, timeout: 120000 },
+      );
+
+      const checkData = response?.data?.results;
+      setOrderPlacementResponse(checkData);
+
+      // Handle TPIN rejection for Fyers sell orders
+      if (checkData && checkData.length > 0) {
+        const allSell = checkData.every(s => s.transactionType === 'SELL');
+        const isMixed =
+          checkData.some(s => s.transactionType === 'BUY') &&
+          checkData.some(s => s.transactionType === 'SELL');
+        const rejectedSellCount = checkData.reduce((count, order) => {
+          return isOrderRejected(order?.orderStatus) &&
+            order.transactionType === 'SELL'
+            ? count + 1
+            : count;
+        }, 0);
+        const successCount = checkData.reduce((count, order) => {
+          return isOrderSuccess(order?.orderStatus) &&
+            (order.transactionType === 'SELL' || isMixed)
+            ? count + 1
+            : count;
+        }, 0);
+
+        if (
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0
+        ) {
+          setShowFyersTpinModal(true);
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          return;
+        }
+      }
+
+      setOpenSucessModal(true);
+      setOpenRebalanceModal(false);
+      eventEmitter.emit('OrderPlacedReferesh');
+
+      // Update model portfolio DB
+      const updateData = {
+        modelId: modelPortfolioModelId,
+        orderResults: checkData,
+        userEmail: userEmail,
+        modelName: filteredData[0]['model_name'],
+      };
+      await axios.post(
+        `${server.server.baseUrl}api/model-portfolio-db-update`,
+        updateData,
+        { headers: requestHeaders },
+      );
+
+      // Update subscriber execution status
+      if (checkData && checkData.length > 0) {
+        const successStatuses = ['complete', 'executed', 'traded'];
+        const pubSuccessCount = checkData.filter(r =>
+          successStatuses.includes((r.orderStatus || '').toLowerCase()),
+        ).length;
+        let executionStatus;
+        if (pubSuccessCount === checkData.length) {
+          executionStatus = 'executed';
+        } else if (pubSuccessCount > 0) {
+          executionStatus = 'partial';
+        } else {
+          executionStatus = 'pending';
+        }
+
+        try {
+          await axios.put(
+            `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+            {
+              userEmail: userEmail,
+              modelName: filteredData[0]['model_name'],
+              executionStatus: executionStatus,
+              user_broker: 'Fyers',
+            },
+            { headers: requestHeaders },
+          );
+        } catch (err) {
+          console.warn('[FyersPublisher] subscriber-execution update failed:', err);
+        }
+
+        // Record publisher results
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/record-publisher-results`,
+            {
+              modelName: filteredData[0]['model_name'],
+              model_id: modelPortfolioModelId,
+              unique_id: additionalPayload.unique_id,
+              advisor: advisorTag,
+              order_results: checkData,
+              user_email: userEmail,
+              user_broker: 'Fyers',
+            },
+            { headers: requestHeaders },
+          );
+          console.log('[FyersPublisher] Successfully recorded publisher results');
+        } catch (err) {
+          console.warn('[FyersPublisher] record-publisher-results failed:', err);
+        }
+      }
+
+      // Enroll in status-check-queue
+      await axios.post(
+        `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+        {
+          userEmail: userEmail,
+          modelName: filteredData[0]['model_name'],
+          advisor: advisorTag,
+          broker: 'Fyers',
+        },
+        { headers: requestHeaders },
+      );
+
+      await AsyncStorage.removeItem('stockDetailsFyersOrder');
+      getRebalanceRepair();
+      getModelPortfolioStrategyDetails();
+      setLoading(false);
+    } catch (error) {
+      setLoading(false);
+      console.error('[FyersPublisher] Error:', error);
+
+      let errorMessage;
+      if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
+        errorMessage =
+          'Unable to connect to Fyers trading server. Please reconnect your broker and try again.';
+      } else if (
+        error?.response?.status === 401 ||
+        error?.response?.status === 403
+      ) {
+        errorMessage =
+          'Fyers session has expired. Please reconnect your broker and try again.';
+      } else {
+        errorMessage =
+          error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error?.message ||
+          'Order placement failed';
+      }
+
+      Toast.show({
+        type: 'error',
+        text1: 'Order Failed',
+        text2: errorMessage,
+      });
+      getModelPortfolioStrategyDetails();
+    }
+  };
+
+  // --- End Fyers Publisher Flow Functions ---
+
   const placeOrder = async () => {
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
     if (!sessionValid) return;
@@ -660,9 +871,31 @@ const RebalanceModal = ({
     });
 
     const getBrokerSpecificPayload = () => {
-      return {
-        accessToken: jwtToken,
-      };
+      if (broker === 'AliceBlue') {
+        return { clientId: clientCode, accessToken: jwtToken, apiKey: apiKey };
+      } else if (broker === 'Upstox') {
+        return { apiKey: checkValidApiAnSecret(apiKey), apiSecret: checkValidApiAnSecret(secretKey), accessToken: jwtToken };
+      } else if (broker === 'Dhan') {
+        return { clientId: clientCode, accessToken: jwtToken };
+      } else if (broker === 'Angel One') {
+        return { apiKey: angelOneApiKey, jwtToken: jwtToken };
+      } else if (broker === 'IIFL Securities') {
+        return { clientCode: clientCode };
+      } else if (broker === 'ICICI Direct') {
+        return { apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), accessToken: jwtToken };
+      } else if (broker === 'Hdfc Securities') {
+        return { apiKey: checkValidApiAnSecret(apiKey), accessToken: jwtToken };
+      } else if (broker === 'Kotak') {
+        return { consumerKey: checkValidApiAnSecret(apiKey), consumerSecret: checkValidApiAnSecret(secretKey), accessToken: jwtToken, viewToken, sid, serverId };
+      } else if (broker === 'Fyers') {
+        return { clientId: clientCode, accessToken: jwtToken };
+      } else if (broker === 'Motilal Oswal') {
+        return { clientCode: clientCode, accessToken: jwtToken, apiKey: checkValidApiAnSecret(apiKey) };
+      } else if (broker === 'Groww') {
+        return { accessToken: jwtToken };
+      } else {
+        return { accessToken: jwtToken };
+      }
     };
 
     const getAdditionalPayload = () => {
@@ -982,6 +1215,8 @@ const RebalanceModal = ({
   const onSlideComplete = () => {
     if (broker === 'Zerodha') {
       handleZerodhaRedirect();
+    } else if (broker === 'Fyers') {
+      handleFyersRedirect();
     } else {
       placeOrder();
     }

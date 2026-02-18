@@ -443,6 +443,8 @@ const RebalanceCard = ({
     }
   };
 
+  const isRebalanceExecuted = userExecution?.status === 'executed';
+  const isPartiallyExecuted = userExecution?.status === 'partial';
   const isPendingVerification = userExecution?.status === 'pending';
 
   const handleAcceptClick = () => {
@@ -546,13 +548,15 @@ const RebalanceCard = ({
       <View>
         <LinearGradient
           colors={
-            repair && userExecution?.status !== 'toExecute'
-              ? [gradient1, '#dc4108ff']
-              : [gradient1, gradient2]
+            isRebalanceExecuted
+              ? ['#9CA3AF', '#6B7280']
+              : repair && userExecution?.status !== 'toExecute'
+                ? [gradient1, '#dc4108ff']
+                : [gradient1, gradient2]
           }
           start={{x: 0, y: 1}}
           end={{x: 1, y: 1}}
-          style={[styles.cardContainer, {borderRadius: isExpanded ? 0 : 6}]}>
+          style={[styles.cardContainer, {borderRadius: isExpanded ? 0 : 6, opacity: isRebalanceExecuted ? 0.75 : 1}]}>
           <View style={styles.cardContent}>
             <View style={styles.textContent}>
               <Text style={styles.titleText}>{modelName}</Text>
@@ -642,7 +646,25 @@ const RebalanceCard = ({
               </Text>
             </View>
           </View>
-          {/* Pending verification message */}
+          {/* Status badges */}
+          {isRebalanceExecuted && (
+            <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
+              <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
+                <Text style={{color: 'rgba(255,255,255,0.9)', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
+                  No actions required
+                </Text>
+              </View>
+            </View>
+          )}
+          {isPartiallyExecuted && (
+            <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
+              <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
+                <Text style={{color: 'rgba(255,255,255,0.9)', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
+                  Partially Executed
+                </Text>
+              </View>
+            </View>
+          )}
           {isPendingVerification && (
             <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
               <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
@@ -672,10 +694,11 @@ const RebalanceCard = ({
             </TouchableOpacity>
             <TouchableOpacity
               onPress={isPendingVerification ? handlePendingRefresh : handleChangeCheck}
-              disabled={pendingRefreshLoading}
+              disabled={pendingRefreshLoading || isRebalanceExecuted}
               style={[
                 styles.button,
                 isPendingVerification && {borderWidth: 1, borderColor: '#EAB308'},
+                isRebalanceExecuted && {backgroundColor: '#D1D5DB'},
               ]}>
               {loading || pendingRefreshLoading ? (
                 <ActivityIndicator size={14} color={gradient2} />
@@ -688,12 +711,14 @@ const RebalanceCard = ({
                     alignItems: 'center',
                     alignSelf: 'center',
                   }}>
-                  <Text style={[styles.buttonText, {color: gradient2}]}>
-                    {isPendingVerification
-                      ? 'Check Order Status'
-                      : repair && userExecution?.status !== 'toExecute'
-                        ? 'View/action on updates'
-                        : 'View and act'}
+                  <Text style={[styles.buttonText, {color: isRebalanceExecuted ? '#6B7280' : gradient2}]}>
+                    {isRebalanceExecuted
+                      ? 'Rebalance Accepted'
+                      : isPendingVerification
+                        ? 'Check Order Status'
+                        : repair && userExecution?.status !== 'toExecute'
+                          ? 'View/action on updates'
+                          : 'View and act'}
                   </Text>
                 </View>
               )}

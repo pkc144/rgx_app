@@ -955,6 +955,213 @@ const MPReviewTradeModal = ({
     }
   }, [zerodhaStatus, zerodhaRequestType, userEmail, jwtToken]);
 
+  // --- Fyers Publisher Flow ---
+
+  const handleFyersRedirect = async () => {
+    const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
+    if (!sessionValid) return;
+
+    setLoading(true);
+    try {
+      const currentISTDateTime = new Date();
+      const istDatetime = moment(currentISTDateTime).format();
+
+      const requestHeaders = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
+      };
+
+      // Record trade intent
+      try {
+        await axios.post(
+          `${server.server.baseUrl}api/zerodha/model-portfolio/update-reco-with-zerodha-model-pf`,
+          {
+            stockDetails: stockDetails,
+            leaving_datetime: currentISTDateTime,
+            email: userEmail,
+            trade_given_by: strategyDetails?.advisor || configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+          },
+          { headers: requestHeaders },
+        );
+      } catch (recoErr) {
+        console.warn('[FyersPublisher] update-reco failed (non-critical):', recoErr);
+      }
+
+      // Place orders via Fyers API through process-trade
+      const payload = {
+        clientId: clientCode,
+        accessToken: jwtToken,
+        user_email: userEmail,
+        user_broker: 'Fyers',
+        modelName: strategyDetails?.model_name,
+        advisor: strategyDetails?.advisor,
+        model_id: latestRebalance?.model_Id,
+        unique_id: calculatedPortfolioData?.uniqueId,
+        returnDateTime: istDatetime,
+        trades: stockDetails,
+      };
+
+      const response = await axios.post(
+        `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+        payload,
+        { headers: requestHeaders, timeout: 120000 },
+      );
+
+      const checkData = response?.data?.results;
+      setOrderPlacementResponse(checkData);
+
+      // Handle TPIN rejection for Fyers sell orders
+      if (checkData && checkData.length > 0) {
+        const allSell = checkData.every(s => s.transactionType === 'SELL');
+        const isMixed =
+          checkData.some(s => s.transactionType === 'BUY') &&
+          checkData.some(s => s.transactionType === 'SELL');
+        const rejectedSellCount = checkData.reduce((count, order) => {
+          return isOrderRejected(order?.orderStatus) &&
+            order.transactionType === 'SELL'
+            ? count + 1
+            : count;
+        }, 0);
+        const successCount = checkData.reduce((count, order) => {
+          return isOrderSuccess(order?.orderStatus) &&
+            (order.transactionType === 'SELL' || isMixed)
+            ? count + 1
+            : count;
+        }, 0);
+
+        if (
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0 &&
+          setShowFyersTpinModal
+        ) {
+          setShowFyersTpinModal(true);
+          onCloseReviewTrade();
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Update model portfolio DB
+      const updateData = {
+        modelId: latestRebalance?.model_Id,
+        orderResults: checkData,
+        modelName: strategyDetails?.model_name,
+        userEmail: userEmail,
+        user_broker: 'Fyers',
+      };
+      await axios.post(
+        `${server.server.baseUrl}api/model-portfolio-db-update`,
+        updateData,
+        { headers: requestHeaders },
+      );
+
+      // Update subscriber execution status
+      if (checkData && checkData.length > 0) {
+        const successStatuses = ['complete', 'executed', 'traded'];
+        const pubSuccessCount = checkData.filter(r =>
+          successStatuses.includes((r.orderStatus || '').toLowerCase()),
+        ).length;
+        let executionStatus;
+        if (pubSuccessCount === checkData.length) {
+          executionStatus = 'executed';
+        } else if (pubSuccessCount > 0) {
+          executionStatus = 'partial';
+        } else {
+          executionStatus = 'pending';
+        }
+
+        try {
+          await axios.put(
+            `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+            {
+              userEmail: userEmail,
+              modelName: strategyDetails?.model_name,
+              executionStatus: executionStatus,
+              user_broker: 'Fyers',
+            },
+            { headers: requestHeaders },
+          );
+        } catch (err) {
+          console.warn('[FyersPublisher] subscriber-execution update failed:', err);
+        }
+
+        // Record publisher results
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/record-publisher-results`,
+            {
+              modelName: strategyDetails?.model_name,
+              model_id: latestRebalance?.model_Id,
+              unique_id: calculatedPortfolioData?.uniqueId,
+              advisor: strategyDetails?.advisor,
+              order_results: checkData,
+              user_email: userEmail,
+              user_broker: 'Fyers',
+            },
+            { headers: requestHeaders },
+          );
+          console.log('[FyersPublisher] Successfully recorded publisher results');
+        } catch (err) {
+          console.warn('[FyersPublisher] record-publisher-results failed:', err);
+        }
+      }
+
+      // Enroll in status-check-queue
+      try {
+        await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          {
+            userEmail: userEmail,
+            modelName: strategyDetails?.model_name,
+            advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+            broker: 'Fyers',
+          },
+          { headers: requestHeaders },
+        );
+      } catch (queueErr) {
+        console.warn('[FyersPublisher] status-check-queue failed:', queueErr);
+      }
+
+      // Show success
+      setLoading(false);
+      openSucess();
+    } catch (error) {
+      setLoading(false);
+      console.error('[FyersPublisher] Error:', error);
+
+      let errorMessage;
+      if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
+        errorMessage =
+          'Unable to connect to Fyers trading server. Please reconnect your broker and try again.';
+      } else if (
+        error?.response?.status === 401 ||
+        error?.response?.status === 403
+      ) {
+        errorMessage =
+          'Fyers session has expired. Please reconnect your broker and try again.';
+      } else {
+        errorMessage =
+          error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error?.message ||
+          'Order placement failed';
+      }
+
+      Toast.show({
+        type: 'error',
+        text1: 'Order Failed',
+        text2: errorMessage,
+      });
+    }
+  };
+
+  // --- End Fyers Publisher Flow ---
+
   const [isLoading, setIsLoading] = useState(false);
   const hasZeroQuantity = stockDetails.some(stock => stock.quantity === 0);
   const [InputFixSizeValue, setInputFixSizeValue] = useState(0);
@@ -1184,11 +1391,14 @@ const MPReviewTradeModal = ({
                       }
                     }
 
-                    // Use Kite Publisher for Zerodha (compliant method)
+                    // Use Publisher flow for Zerodha and Fyers
                     // Use server-side API for other brokers
                     if (broker === 'Zerodha') {
                       console.log('[PlaceOrder] Using Kite Publisher for Zerodha');
                       handleZerodhaRedirect();
+                    } else if (broker === 'Fyers') {
+                      console.log('[PlaceOrder] Using Publisher flow for Fyers');
+                      handleFyersRedirect();
                     } else {
                       console.log('[PlaceOrder] Using server-side API for', broker);
                       placeOrder();
@@ -1211,7 +1421,7 @@ const MPReviewTradeModal = ({
                     </View>
                   ) : (
                     <Text style={styles.orderButtonText}>
-                      {broker === 'Zerodha' ? 'Open Kite Basket' : 'Place Order'} (₹{' '}
+                      {broker === 'Zerodha' ? 'Open Kite Basket' : broker === 'Fyers' ? 'Place Order via Fyers' : 'Place Order'} (₹{' '}
                       {parseFloat(totalInvestmentValue).toFixed(2)})
                     </Text>
                   )}

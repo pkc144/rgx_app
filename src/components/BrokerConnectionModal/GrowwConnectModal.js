@@ -93,7 +93,7 @@ const GrowwConnectModal = ({
 
       console.log('[Groww] Broker connection saved successfully, updating model portfolio...');
 
-      // Update model portfolio with broker information
+      // Update model portfolio with broker information (non-critical)
       let newBrokerData = {
         user_email: userEmail,
         user_broker: 'Groww',
@@ -109,10 +109,13 @@ const GrowwConnectModal = ({
         },
       };
 
-      // Execute the model portfolio broker update
-      await axios.request(A1_broker);
-
-      console.log('[Groww] Model portfolio updated successfully');
+      // Execute the model portfolio broker update - catch separately so connection success isn't affected
+      try {
+        await axios.request(A1_broker);
+        console.log('[Groww] Model portfolio updated successfully');
+      } catch (mpErr) {
+        console.warn('[Groww] Model portfolio update failed (non-critical):', mpErr);
+      }
       fetchBrokerStatusModal();
       eventEmitter.emit('refreshEvent', { source: 'Groww broker connection' });
       showAlert('success', 'Connected Successfully', 'Your Groww broker has been connected successfully!');

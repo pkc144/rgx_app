@@ -136,8 +136,7 @@ const AliceBlueConnect = ({
       .then(response => {
         console.log('[AliceBlue] Broker connected successfully, updating model portfolio...');
 
-        // Update model portfolio with broker information
-        // This creates NEW records for the new broker (preserving old broker data)
+        // Update model portfolio with broker information (non-critical)
         let newBrokerData = {
           user_email: userEmail,
           user_broker: 'AliceBlue',
@@ -156,12 +155,17 @@ const AliceBlueConnect = ({
           },
         };
 
-        // Execute the model portfolio broker update
-        return axios.request(A1_broker);
+        // Execute the model portfolio broker update - catch separately so connection success isn't affected
+        return axios.request(A1_broker).catch(err => {
+          console.warn('[AliceBlue] Model portfolio update failed (non-critical):', err);
+          return null;
+        });
       })
       .then(response => {
-        console.log('[AliceBlue] Model portfolio updated successfully');
-        console.log('[AliceBlue] Update response:', response.data);
+        if (response) {
+          console.log('[AliceBlue] Model portfolio updated successfully');
+          console.log('[AliceBlue] Update response:', response.data);
+        }
         fetchBrokerStatusModal();
         eventEmitter.emit('refreshEvent', { source: 'AliceBlue broker connection' });
         showAlert('success', 'Connected Successfully', 'Your AliceBlue broker has been connected successfully!');

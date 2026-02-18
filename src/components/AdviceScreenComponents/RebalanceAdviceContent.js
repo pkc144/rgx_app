@@ -257,10 +257,6 @@ const RebalanceAdviceContent = React.memo(
         const userExecution = latest?.subscriberExecutions?.find(
           execution => execution?.user_email === userEmail,
         );
-        if (userExecution && userExecution.status === 'executed') {
-          return null;
-        }
-
         const matchingFailedTrades = modelPortfolioRepairTrades?.find(
           trade =>
             trade.modelId === latest?.model_Id &&
