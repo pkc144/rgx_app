@@ -477,10 +477,15 @@ const SubscriptionScreen = () => {
       <ManageConnectionsModal
         visible={showManageConnections}
         onClose={() => setShowManageConnections(false)}
-        onConnectionRemoved={(broker) => {
-          console.log('[ManageConnections] Removed:', broker);
-          // Optionally refresh broker status
+        onConnectionRemoved={(removedBroker) => {
+          console.log('[ManageConnections] Removed:', removedBroker);
           fetchBrokerStatusModal();
+        }}
+        onBrokerSwitched={(switchedBroker) => {
+          console.log('[ManageConnections] Switched to:', switchedBroker);
+          setBroker(switchedBroker);
+          fetchBrokerStatusModal();
+          getAllFunds();
         }}
       />
     </View>

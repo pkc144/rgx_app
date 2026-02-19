@@ -21,10 +21,12 @@ const ManageConnectionsModal = ({
   visible,
   onClose,
   onConnectionRemoved,
+  onBrokerSwitched,
 }) => {
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState([]);
   const [removing, setRemoving] = useState(null);
+  const [switching, setSwitching] = useState(null);
   const { configData, broker: currentBroker } = useTrade();
 
   const auth = getAuth();
@@ -122,6 +124,45 @@ const ManageConnectionsModal = ({
     );
   };
 
+  const handleSwitch = async (brokerName) => {
+    setSwitching(brokerName);
+    try {
+      // Set as primary broker in backend
+      await axios.put(
+        `${server.server.baseUrl}api/user/brokers/${encodeURIComponent(brokerName)}/primary`,
+        { email: userEmail },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        }
+      );
+
+      // Update local list to reflect new active broker
+      setConnections(prev =>
+        prev.map(c => ({
+          ...c,
+          is_active: c.broker === brokerName,
+        }))
+      );
+      onBrokerSwitched?.(brokerName);
+      Alert.alert(
+        'Switched',
+        `${brokerName} is now your active broker. If the connection has expired, you will be prompted to reconnect when you transact.`,
+      );
+    } catch (error) {
+      console.error('[ManageConnections] Switch failed:', error);
+      Alert.alert('Error', 'Failed to switch broker. Please try again.');
+    } finally {
+      setSwitching(null);
+    }
+  };
+
   const renderConnection = ({ item }) => (
     <View style={styles.connectionItem}>
       <View style={styles.connectionInfo}>
@@ -137,17 +178,32 @@ const ManageConnectionsModal = ({
           </View>
         )}
       </View>
-      <TouchableOpacity
-        style={[styles.disconnectBtn, removing === item.broker && styles.disconnectBtnDisabled]}
-        onPress={() => handleDisconnect(item.broker)}
-        disabled={removing === item.broker}
-      >
-        {removing === item.broker ? (
-          <ActivityIndicator size="small" color="#dc2626" />
-        ) : (
-          <Text style={styles.disconnectBtnText}>Remove</Text>
+      <View style={styles.actionButtons}>
+        {!item.is_active && (
+          <TouchableOpacity
+            style={[styles.switchBtn, switching === item.broker && styles.switchBtnDisabled]}
+            onPress={() => handleSwitch(item.broker)}
+            disabled={switching === item.broker || removing === item.broker}
+          >
+            {switching === item.broker ? (
+              <ActivityIndicator size="small" color="#0056B7" />
+            ) : (
+              <Text style={styles.switchBtnText}>Switch</Text>
+            )}
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.disconnectBtn, removing === item.broker && styles.disconnectBtnDisabled]}
+          onPress={() => handleDisconnect(item.broker)}
+          disabled={removing === item.broker || switching === item.broker}
+        >
+          {removing === item.broker ? (
+            <ActivityIndicator size="small" color="#dc2626" />
+          ) : (
+            <Text style={styles.disconnectBtnText}>Remove</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -293,6 +349,26 @@ const styles = StyleSheet.create({
   credentialsBadgeText: {
     fontSize: 12,
     color: '#92400e',
+    fontWeight: '500',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  switchBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#0056B7',
+  },
+  switchBtnDisabled: {
+    opacity: 0.5,
+  },
+  switchBtnText: {
+    fontSize: 14,
+    color: '#0056B7',
     fontWeight: '500',
   },
   disconnectBtn: {
