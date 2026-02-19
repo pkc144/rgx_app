@@ -325,6 +325,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
               Config.REACT_APP_AQ_SECRET,
             ),
           },
+          timeout: 15000,
         },
       );
       const orderResults =
@@ -332,8 +333,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
       setApiResponseData(response.data);
       setStockDataForModal(orderResults);
     } catch (error) {
-      setShowstatusModal(true);
-      console.error('Error fetching stock data:', error);
+      console.warn('Error fetching stock data:', error?.message);
     }
     setShowstatusModal(true);
   };

@@ -471,14 +471,13 @@ const MPStatusModal = ({
       if (setCurrentStep) {
         setCurrentStep(3);
       }
-      console.log('here i am');
 
       if (handleAcceptRebalance) {
         await handleAcceptRebalance();
       }
 
-      // Wait longer to ensure smooth transition
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Brief delay to let RebalanceModal render before closing this modal
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       onClose();
 
