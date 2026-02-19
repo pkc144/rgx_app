@@ -12,7 +12,7 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { useWindowDimensions } from 'react-native';
-import { XIcon, CandlestickChartIcon, AlertOctagon } from 'lucide-react-native';
+import { XIcon, CandlestickChartIcon, AlertOctagon, CheckIcon } from 'lucide-react-native';
 import server from '../../utils/serverConfig';
 import IsMarketHours from '../../utils/isMarketHours';
 import axios from 'axios';
@@ -830,6 +830,13 @@ const RebalanceModal = ({
   // --- End Fyers Publisher Flow Functions ---
 
   const placeOrder = async () => {
+    console.log('[RebalanceModal] placeOrder called');
+    console.log('[RebalanceModal] dataArray:', JSON.stringify(dataArray));
+    console.log('[RebalanceModal] stockDetails:', JSON.stringify(stockDetails));
+    console.log('[RebalanceModal] calculatedPortfolioData keys:', calculatedPortfolioData ? Object.keys(calculatedPortfolioData) : 'null');
+    console.log('[RebalanceModal] calculatedPortfolioData buy:', JSON.stringify(calculatedPortfolioData?.buy));
+    console.log('[RebalanceModal] calculatedPortfolioData sell:', JSON.stringify(calculatedPortfolioData?.sell));
+
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
     if (!sessionValid) return;
 
@@ -929,6 +936,29 @@ const RebalanceModal = ({
       ...getAdditionalPayload(),
     };
 
+    console.log('[RebalanceModal] Final payload trades count:', payload.trades?.length);
+    console.log('[RebalanceModal] Final payload:', JSON.stringify({
+      user_broker: payload.user_broker,
+      user_email: payload.user_email,
+      model_id: payload.model_id,
+      modelName: payload.modelName,
+      unique_id: payload.unique_id,
+      tradesCount: payload.trades?.length,
+      trades: payload.trades,
+    }));
+
+    // Guard: Don't send empty trades to broker
+    if (!payload.trades || payload.trades.length === 0) {
+      console.warn('[RebalanceModal] ERROR: trades array is empty! Aborting order placement.');
+      Toast.show({
+        type: 'error',
+        text1: 'No Trades to Execute',
+        text2: 'The trade list is empty. Please go back and try again.',
+      });
+      setLoading(false);
+      return;
+    }
+
     const specialBrokers = [
       'IIFL Securities',
       'ICICI Direct',
@@ -961,52 +991,57 @@ const RebalanceModal = ({
       .request(config)
       .then(async response => {
         const checkData = response?.data?.results;
+        console.log('[RebalanceModal] process-trade response:', JSON.stringify({
+          resultsCount: checkData?.length,
+          status: response?.data?.status,
+          message: response?.data?.message,
+          error: response?.data?.error,
+        }));
         setOrderPlacementResponse(response?.data?.results);
 
-        // If backend returned per-order error details and ALL orders failed, show error toast
-        const backendOrderErrors = response?.data?.orderErrors || [];
-        const allOrdersFailed = checkData?.every((order) => {
-          const s = (order?.orderStatus || "").toUpperCase();
-          return s === "REJECTED" || s === "CANCELLED" || s === "FAILURE" || s === "FAILED";
-        });
+        // Guard: If backend returned empty results, check for cautionary listing or show error
+        if (!checkData || checkData.length === 0) {
+          const errorMsg = response?.data?.message || response?.data?.error || '';
+          const isCautionaryError = errorMsg.toLowerCase().includes('cautionary') && errorMsg.toLowerCase().includes('listing');
+          console.warn('[RebalanceModal] Empty results from process-trade:', errorMsg, 'isCautionary:', isCautionaryError);
 
-        if (allOrdersFailed && backendOrderErrors.length > 0) {
-          const errorMsg = response?.data?.message || "All orders were rejected by the broker.";
+          if (isCautionaryError) {
+            // Build synthetic rejected order responses from payload trades so the
+            // success modal can display the cautionary listing alert properly
+            const syntheticResults = (payload.trades || []).map(trade => ({
+              symbol: trade.tradingSymbol || trade.symbol || trade.Trading_Symbol || '',
+              searchSymbol: trade.tradingSymbol || trade.symbol || '',
+              transactionType: trade.transactionType || trade.transaction_type || 'BUY',
+              quantity: trade.quantity || trade.qty || 0,
+              orderType: trade.orderType || trade.order_type || 'MARKET',
+              exchange: trade.exchange || 'NSE',
+              orderStatus: 'REJECTED',
+              orderStatusMessage: errorMsg,
+              message_aq: errorMsg,
+            }));
+            setOrderPlacementResponse(syntheticResults);
+            setOpenRebalanceModal(false);
+            setLoading(false);
+            setOpenSucessModal(true);
+            getModelPortfolioStrategyDetails();
+            return;
+          }
+
+          // Non-cautionary empty results: show error toast
           Toast.show({
             type: 'error',
-            text1: 'Orders Rejected',
-            text2: errorMsg,
+            text1: 'Order Processing Failed',
+            text2: errorMsg || 'No orders were processed by the broker. Please try again.',
+            visibilityTime: 5000,
           });
           setOpenRebalanceModal(false);
           setLoading(false);
-
-          // Still enroll in status-check-queue
-          try {
-            await axios.post(
-              `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-              {
-                userEmail: userEmail,
-                modelName: filteredData[0]['model_name'],
-                advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
-                broker: broker,
-              },
-              {
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
-                  'aq-encrypted-key': generateToken(
-                    Config.REACT_APP_AQ_KEYS,
-                    Config.REACT_APP_AQ_SECRET,
-                  ),
-                },
-              },
-            );
-          } catch (queueErr) {
-            console.error("Error adding to status-check-queue after all-failed:", queueErr);
-          }
           getModelPortfolioStrategyDetails();
           return;
         }
+
+        // Note: Even if all orders failed (e.g. cautionary listing rejections),
+        // we let the success modal open so users can see per-order details and explanations.
 
         // Empty results CDSL check - detect EDIS/TPIN errors from response message
         if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
@@ -1057,6 +1092,46 @@ const RebalanceModal = ({
           const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
           return msg.includes("cdsl") || msg.includes("edis") || msg.includes("tpin") || msg.includes("validate qty");
         });
+
+        // Check for cautionary listing rejections - these should bypass TPIN/EDIS modals
+        const hasCautionaryRejection = (checkData || []).some((order) => {
+          const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
+          return msg.includes("cautionary") && msg.includes("listing");
+        });
+
+        // If cautionary listing rejection, go directly to success modal to show the alert
+        if (hasCautionaryRejection) {
+          setOpenSucessModal(true);
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          // Still do db update and status check
+          try {
+            await axios.post(
+              `${server.server.baseUrl}api/model-portfolio-db-update`,
+              {
+                modelId: modelPortfolioModelId,
+                orderResults: checkData,
+                userEmail: userEmail,
+                modelName: filteredData[0]['model_name'],
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
+              },
+            );
+          } catch (dbErr) {
+            console.warn('Error updating db after cautionary rejection:', dbErr);
+          }
+          getRebalanceRepair();
+          getModelPortfolioStrategyDetails();
+          return;
+        }
 
         // Dhan: Check CDSL error messages first
         if (
@@ -1480,52 +1555,85 @@ const RebalanceModal = ({
                   )}
                 </>
               }
-              // Empty state
+              // Empty state — Portfolio Already Aligned
               ListEmptyComponent={
                 <View
                   style={{
                     alignItems: 'center',
                     justifyContent: 'center',
-                    marginTop: 20,
-                    paddingHorizontal: 20,
+                    marginTop: 40,
+                    paddingHorizontal: 24,
                   }}>
+                  {/* Green checkmark circle */}
+                  <View
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: 36,
+                      backgroundColor: '#DEF7EC',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 20,
+                    }}>
+                    <CheckIcon size={36} color="#15803D" />
+                  </View>
                   <Text
                     style={{
                       fontFamily: 'Poppins-SemiBold',
-                      color: 'black',
-                      fontSize: 18,
+                      color: '#15803D',
+                      fontSize: 20,
                       textAlign: 'center',
-                      marginVertical: 10,
+                      marginBottom: 12,
                     }}>
-                    No Action Required at This Time
+                    Your Portfolio is Already Aligned!
                   </Text>
                   <Text
                     style={{
                       fontFamily: 'Poppins-Regular',
-                      color: 'grey',
+                      color: 'rgba(0,0,0,0.6)',
                       textAlign: 'center',
                       marginBottom: 10,
                       fontSize: 14,
-                      lineHeight: 20,
+                      lineHeight: 22,
+                      paddingHorizontal: 10,
                     }}>
-                    Based on the latest rebalance shared by your advisor and your
-                    current model portfolio position, no trades need to be
-                    executed at this moment considering your existing investment
-                    amount.
+                    Great news! Based on your current holdings and the latest model
+                    portfolio recommendations, no trades are needed right now. Your
+                    investments are already in sync with your advisor's strategy.
                   </Text>
                   <Text
                     style={{
                       fontFamily: 'Poppins-Regular',
-                      color: 'grey',
+                      color: 'rgba(0,0,0,0.4)',
                       textAlign: 'center',
-                      marginBottom: 20,
-                      fontSize: 14,
+                      marginBottom: 24,
+                      fontSize: 13,
                       lineHeight: 20,
                     }}>
+                    Want to increase your investment or make changes? Go back and
+                    modify your investment amount.
                   </Text>
+                  <TouchableOpacity
+                    onPress={handleClose}
+                    style={{
+                      backgroundColor: '#000',
+                      paddingHorizontal: 24,
+                      paddingVertical: 12,
+                      borderRadius: 8,
+                    }}>
+                    <Text
+                      style={{
+                        color: '#fff',
+                        fontFamily: 'Poppins-Medium',
+                        fontSize: 14,
+                      }}>
+                      Go Back
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               }
             />
+            {dataArray.length > 0 && (
             <View
               style={[
                 styles.notecontainer,
@@ -1551,6 +1659,7 @@ const RebalanceModal = ({
                 we will record these transactions as EXECUTED.
               </Text>
             </View>
+            )}
 
             {/* Action buttons */}
             {dataArray.length > 0 && (

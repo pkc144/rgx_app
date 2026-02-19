@@ -8,7 +8,18 @@
       "Bash(adb:*)",
       "Bash(git add:*)",
       "Bash(git reset:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(pgrep:*)",
+      "Bash(pkill:*)",
+      "Bash(sudo rm:*)",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(npx react-native run-android)",
+      "Bash(grep:*)",
+      "Bash(/tmp/search_summary.txt:*)",
+      "Bash(node scripts/fix-redirect-url.js:*)",
+      "Bash(node -e:*)"
     ]
   }
 }

@@ -11,6 +11,7 @@ import { generateToken } from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import UpstoxConnectUI from '../../UIComponents/BrokerConnectionUI/UpstoxConnectUI';
 import { useTrade } from '../../screens/TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
@@ -25,6 +26,7 @@ const UpstoxModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const freshConfig = useConfig();
   const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -38,14 +40,20 @@ const UpstoxModal = ({
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);
 
+  // Prefer fresh config from ConfigContext (fetches from API on app start),
+  // fallback to TradeContext (cached in AsyncStorage from login), then .env
   const brokerConnectRedirectURL =
-    configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+    freshConfig?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+    configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+    Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
 
   // Debug: Log redirect URL configuration
   useEffect(() => {
     console.log('[Upstox] Broker Connect Redirect URL:', brokerConnectRedirectURL);
-    console.log('[Upstox] Config Data:', configData?.config);
-  }, [brokerConnectRedirectURL, configData]);
+    console.log('[Upstox] From ConfigContext:', freshConfig?.REACT_APP_BROKER_CONNECT_REDIRECT_URL);
+    console.log('[Upstox] From TradeContext:', configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL);
+    console.log('[Upstox] From .env:', Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL);
+  }, [brokerConnectRedirectURL, configData, freshConfig]);
 
   const [loading, setLoading] = useState(false);
 
@@ -137,18 +145,47 @@ const UpstoxModal = ({
 
       data: data,
     };
-    console.log(userId, apiKey, secretKey, brokerConnectRedirectURL);
+    console.log('[Upstox] updateSecretKey params:', userId, apiKey, secretKey, brokerConnectRedirectURL);
+    console.log('[Upstox] API URL:', `${server.server.baseUrl}api/upstox/update-key`);
     axios
       .request(config)
       .then(response => {
         if (response) {
-          console.log('here upstox:', response.data);
-          setAuthUrl(response.data.response);
+          console.log('[Upstox] Backend response:', JSON.stringify(response.data));
+          console.log('[Upstox] Auth URL to load:', response.data.response);
+          const authUrlResponse = response.data.response || '';
+
+          // Check if Upstox returned an error in the redirect URL
+          if (authUrlResponse.includes('error_code') || authUrlResponse.includes('error_message')) {
+            setIsLoading(false);
+            // Extract error message from URL
+            try {
+              const urlObj = new URL(authUrlResponse);
+              const errorMsg = decodeURIComponent(urlObj.searchParams.get('error_message') || '');
+              const errorCode = urlObj.searchParams.get('error_code') || '';
+              console.log('[Upstox] OAuth error:', errorCode, errorMsg);
+              showAlert(
+                'error',
+                'Upstox Connection Failed',
+                errorMsg || 'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings and try again.',
+              );
+            } catch (e) {
+              showAlert(
+                'error',
+                'Upstox Connection Failed',
+                'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings and try again.',
+              );
+            }
+            return;
+          }
+
+          setAuthUrl(authUrlResponse);
           setShowWebView(true);
         }
       })
       .catch(error => {
-        console.log(error);
+        console.log('[Upstox] Error:', error?.response?.data || error?.message || error);
+        setIsLoading(false);
         showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
       });
   };
@@ -197,7 +234,29 @@ const UpstoxModal = ({
         .then(response => {
           if (response) {
             console.log('here upstox:', response.data);
-            setAuthUrl(response.data.response);
+            const authUrlResponse = response.data.response || '';
+
+            // Check if Upstox returned an error in the redirect URL
+            if (authUrlResponse.includes('error_code') || authUrlResponse.includes('error_message')) {
+              try {
+                const urlObj = new URL(authUrlResponse);
+                const errorMsg = decodeURIComponent(urlObj.searchParams.get('error_message') || '');
+                showAlert(
+                  'error',
+                  'Upstox Connection Failed',
+                  errorMsg || 'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings.',
+                );
+              } catch (e) {
+                showAlert(
+                  'error',
+                  'Upstox Connection Failed',
+                  'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings.',
+                );
+              }
+              return;
+            }
+
+            setAuthUrl(authUrlResponse);
             setShowWebView(true);
           }
         })
