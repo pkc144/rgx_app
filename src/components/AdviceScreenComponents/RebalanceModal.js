@@ -69,8 +69,34 @@ const RebalanceModal = ({
 }) => {
   const { brokerStatus, configData } = useTrade();
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
-  const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
+  // Add fallback for API key
+  let zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
+  if (!zerodhaApiKey) {
+    console.log('[RebalanceModal] WARNING: API key not found!');
+  } else {
+    console.log('[RebalanceModal] Using API key:', zerodhaApiKey.substring(0, 4) + '...');
+  }
   const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
+
+  // Helper functions for Kite basket
+  const mapKiteProductType = (productType) => {
+    if (!productType) return "CNC";
+    const upper = productType.toUpperCase();
+    if (upper === "DELIVERY" || upper === "CNC") return "CNC";
+    if (upper === "INTRADAY" || upper === "MIS") return "MIS";
+    if (upper === "BO") return "BO";
+    if (upper === "CO") return "CO";
+    return "CNC";
+  };
+
+  const mapKiteOrderType = (orderType) => {
+    if (!orderType) return "MARKET";
+    const upper = orderType.toUpperCase();
+    if (upper === "MARKET") return "MARKET";
+    if (upper === "LIMIT") return "LIMIT";
+    if (upper === "SL" || upper === "SL_M" || upper === "STOP") return "SL";
+    return "MARKET";
+  };
 
   // Zerodha WebView state
   const webViewRef = useRef(null);
@@ -377,35 +403,33 @@ const RebalanceModal = ({
       );
 
       const basket = stockDetails.map(stock => {
+        // Calculate price
+        const ltp = getLTPForSymbol(stock.tradingSymbol);
+        let orderPrice = 0;
+
+        if (stock.orderType === 'LIMIT') {
+          orderPrice = parseFloat(stock.price || 0);
+        } else if (stock.orderType === 'MARKET' || stock.orderType === 'SL') {
+          orderPrice = ltp && ltp !== '-' ? parseFloat(ltp) : 0;
+        }
+
         let baseOrder = {
           variety: 'regular',
           tradingsymbol: stock.tradingSymbol,
-          exchange: stock.exchange,
-          transaction_type: stock.transactionType,
-          order_type: stock.orderType,
-          quantity: stock.quantity,
+          exchange: stock.exchange || 'NSE',
+          transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
+          order_type: mapKiteOrderType(stock.orderType),
+          quantity: parseInt(stock.quantity, 10) || 1,
+          product: mapKiteProductType(stock.productType),
           readonly: false,
+          price: orderPrice,
         };
-
-        const ltp = getLTPForSymbol(stock.tradingSymbol);
-        if (ltp && ltp !== '-') {
-          baseOrder.price = parseFloat(ltp);
-        }
-
-        if (stock.orderType === 'LIMIT') {
-          baseOrder.price = parseFloat(stock.price || 0);
-        } else if (stock.orderType === 'MARKET') {
-          const ltpVal = getLTPForSymbol(stock.tradingSymbol);
-          if (ltpVal && ltpVal !== '-') {
-            baseOrder.price = parseFloat(ltpVal);
-          } else {
-            baseOrder.price = 0;
-          }
-        }
 
         if (stock.quantity > 100) {
           baseOrder.readonly = true;
         }
+
+        console.log('[RebalanceModal] Basket item:', JSON.stringify(baseOrder));
         return baseOrder;
       });
 
@@ -493,8 +517,6 @@ const RebalanceModal = ({
   const checkZerodhaStatus = async () => {
     const { zerodhaStockDetails, zerodhaAdditionalPayload } =
       await fetchZerodhaData();
-    const currentISTDateTime = new Date();
-    const istDatetime = moment(currentISTDateTime).format();
 
     if (
       zerodhaStatus !== null &&
@@ -503,53 +525,49 @@ const RebalanceModal = ({
       zerodhaRequestType === 'rebalance'
     ) {
       try {
-        let data = JSON.stringify({
-          apiKey: zerodhaApiKey,
-          accessToken: jwtToken,
-          user_email: userEmail,
-          user_broker: zerodhaAdditionalPayload.broker,
-          modelName: zerodhaAdditionalPayload.modelName,
-          advisor: zerodhaAdditionalPayload.advisor,
-          model_id: zerodhaAdditionalPayload.model_id,
-          unique_id: zerodhaAdditionalPayload.unique_id,
-          returnDateTime: istDatetime,
-          trades: zerodhaStockDetails,
-        });
-
-        const config = {
-          method: 'post',
-          url: `${server.ccxtServer.baseUrl}rebalance/process-trade`,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-          data: data,
+        // Use publisher/record-orders endpoint - this fetches order book from Zerodha
+        // and matches orders with our trade list
+        const requestHeaders = {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'aq-encrypted-key': generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
         };
 
-        const response = await axios.request(config);
-        setOrderPlacementResponse(response.data.results);
+        console.log('[RebalanceModal] Recording publisher orders...');
+
+        const recordResponse = await axios.post(
+          `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
+          {
+            stockDetails: zerodhaStockDetails,
+            publisherResults: [{ status: 'success', batchIndex: 0 }],
+            userEmail: userEmail,
+            broker: 'Zerodha',
+            model_id: zerodhaAdditionalPayload.model_id,
+            modelName: zerodhaAdditionalPayload.modelName,
+            advisor: zerodhaAdditionalPayload.advisor,
+            unique_id: zerodhaAdditionalPayload.unique_id,
+          },
+          { headers: requestHeaders }
+        );
+
+        console.log('[RebalanceModal] Record orders response:', recordResponse.data);
+
+        const orderResults = recordResponse.data.response || recordResponse.data.results || [];
+
+        setOrderPlacementResponse(orderResults);
         setOpenSucessModal(true);
         setOpenRebalanceModal(false);
         eventEmitter.emit('OrderPlacedReferesh');
 
         try {
-          await axios.request({
-            method: 'post',
-            url: `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
-            data: JSON.stringify({ user_email: userEmail }),
-          });
+          await axios.post(
+            `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
+            { user_email: userEmail },
+            { headers: requestHeaders }
+          );
 
           const statusCheckData = {
             userEmail: userEmail,
@@ -560,17 +578,7 @@ const RebalanceModal = ({
           await axios.post(
             `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
             statusCheckData,
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Advisor-Subdomain':
-                  configData?.config?.REACT_APP_HEADER_NAME,
-                'aq-encrypted-key': generateToken(
-                  Config.REACT_APP_AQ_KEYS,
-                  Config.REACT_APP_AQ_SECRET,
-                ),
-              },
-            },
+            { headers: requestHeaders }
           );
         } catch (error) {
           console.error('Error updating Zerodha portfolio:', error);
@@ -582,6 +590,7 @@ const RebalanceModal = ({
         getModelPortfolioStrategyDetails();
       } catch (error) {
         console.log('Error in checkZerodhaStatus:', error);
+        console.log('Error response:', error.response?.data);
       }
     }
   };

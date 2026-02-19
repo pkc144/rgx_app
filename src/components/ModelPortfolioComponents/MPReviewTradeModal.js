@@ -604,12 +604,26 @@ const MPReviewTradeModal = ({
     return true; // Allow navigation
   };
   // Use configData first, fallback to Config env variable
-  const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
+  // Debug: Log all possible sources for API key
+  console.log('[ZerodhaPublisher] ===== API KEY DEBUG =====');
   console.log('[ZerodhaPublisher] configData:', configData ? 'exists' : 'null');
   console.log('[ZerodhaPublisher] configData.config:', configData?.config ? 'exists' : 'null');
-  console.log('[ZerodhaPublisher] configData.config.REACT_APP_ZERODHA_API_KEY:', configData?.config?.REACT_APP_ZERODHA_API_KEY ? 'exists' : 'null/undefined');
-  console.log('[ZerodhaPublisher] Config.REACT_APP_ZERODHA_API_KEY:', Config?.REACT_APP_ZERODHA_API_KEY ? 'exists' : 'null/undefined');
-  console.log('[ZerodhaPublisher] Using API Key:', zerodhaApiKey ? `${zerodhaApiKey.substring(0, 4)}...` : 'UNDEFINED/EMPTY!');
+  console.log('[ZerodhaPublisher] configData.config.REACT_APP_ZERODHA_API_KEY:', configData?.config?.REACT_APP_ZERODHA_API_KEY || 'EMPTY');
+  console.log('[ZerodhaPublisher] Config:', Config ? 'exists' : 'null');
+  console.log('[ZerodhaPublisher] Config.REACT_APP_ZERODHA_API_KEY:', Config.REACT_APP_ZERODHA_API_KEY || 'EMPTY');
+
+  // Try multiple sources for API key
+  let zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config.REACT_APP_ZERODHA_API_KEY;
+
+  // If still empty, log warning
+  if (!zerodhaApiKey) {
+    console.log('[ZerodhaPublisher] WARNING: API Key not found!');
+  } else {
+    console.log('[ZerodhaPublisher] Using API key:', zerodhaApiKey.substring(0, 4) + '...');
+  }
+
+  console.log('[ZerodhaPublisher] Using API Key:', zerodhaApiKey ? `${zerodhaApiKey.substring(0, 4)}...` : 'UNDEFINED!');
+  console.log('[ZerodhaPublisher] ===== END DEBUG =====');
 
   // Helper function to get last known price
   const getLastKnownPrice = (symbol) => {
