@@ -234,7 +234,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'IIFL Securities' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowIIFLModal(true)}
+                onPress={() => setShowIIFLModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to IIFL</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -244,7 +244,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Kotak' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowKotakModal(true)}
+                onPress={() => setShowKotakModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to Kotak</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -255,7 +255,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'ICICI Direct' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowICICIUPModal(true)}
+                onPress={() => setShowICICIUPModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>
                   Login to ICICI Direct
@@ -267,7 +267,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Upstox' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowupstoxModal(true)}
+                onPress={() => setShowupstoxModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to Upstox</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -287,7 +287,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Angel One' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowangleoneModal(true)}
+                onPress={() => setShowangleoneModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to AngelOne</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -296,7 +296,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Hdfc Securities' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowhdfcModal(true)}
+                onPress={() => setShowhdfcModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to HDFC</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -305,7 +305,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Dhan' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowDhanModal(true)}
+                onPress={() => setShowDhanModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to Dhan</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -314,7 +314,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Fyers' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowFyersModal(true)}
+                onPress={() => setShowFyersModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to Fyers</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -323,7 +323,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Aliceblue' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowAliceblueModal(true)}
+                onPress={() => setShowAliceblueModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>Login to Aliceblue</Text>
                 <ArrowRight size={18} color={'grey'} />
@@ -332,7 +332,7 @@ const IIFLReviewTradeModal = ({
             {broker === 'Motilal Oswal' && (
               <TouchableOpacity
                 style={styles.proceedButton}
-                onPress={() => setShowMotilalModal(true)}
+                onPress={() => setShowMotilalModal?.(true)}
                 disabled={loginLoading}>
                 <Text style={styles.proceedButtonText}>
                   Login to Motilal Oswal

@@ -443,9 +443,12 @@ const RebalanceCard = ({
     }
   };
 
-  const isRebalanceExecuted = userExecution?.status === 'executed';
-  const isPartiallyExecuted = userExecution?.status === 'partial';
-  const isPendingVerification = userExecution?.status === 'pending';
+  // If the user executed with a different broker than the currently connected one,
+  // treat it as not executed so they can re-execute with the new broker
+  const brokerMatchesExecution = !userExecution?.user_broker || userExecution?.user_broker === broker;
+  const isRebalanceExecuted = userExecution?.status === 'executed' && brokerMatchesExecution;
+  const isPartiallyExecuted = userExecution?.status === 'partial' && brokerMatchesExecution;
+  const isPendingVerification = userExecution?.status === 'pending' && brokerMatchesExecution;
 
   const handleAcceptClick = () => {
     try {

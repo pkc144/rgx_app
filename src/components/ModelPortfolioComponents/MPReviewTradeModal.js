@@ -340,7 +340,11 @@ const MPReviewTradeModal = ({
     axios
       .request(config)
       .then(response => {
-        setOrderPlacementResponse(response.data.results);
+        console.log('[OrderPlacement] API Response full:', JSON.stringify(response.data));
+        console.log('[OrderPlacement] Results:', response.data.results);
+        const results = response.data.results || [];
+        console.log('[OrderPlacement] Setting results:', results.length);
+        setOrderPlacementResponse(results);
 
         // Post-order EDIS rejection handling
         const checkData = response?.data?.results;
@@ -517,6 +521,7 @@ const MPReviewTradeModal = ({
         console.log('open::');
       })
       .catch(error => {
+        console.log('[OrderPlacement] Error:', error?.response?.data || error.message);
         setLoading(false);
 
         // Determine a user-friendly error message
