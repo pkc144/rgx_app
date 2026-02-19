@@ -169,7 +169,7 @@ export const fetchBrokerAllHoldings = async (
       headers: {
         'Content-Type': 'application/json',
         'X-Advisor-Subdomain':
-          configData?.config?.REACT_APP_HEADER_NAME || 'common',
+          configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,

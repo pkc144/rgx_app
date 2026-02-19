@@ -418,7 +418,7 @@ const getAllTrades = async () => {
       headers: {
         'Content-Type': 'application/json',
         'X-Advisor-Subdomain':
-          configData?.config?.REACT_APP_HEADER_NAME || 'common',
+          configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -620,7 +620,7 @@ const getAllTrades = async () => {
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || 'common',
+            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -645,7 +645,7 @@ const getAllTrades = async () => {
       //     headers: {
       //       'Content-Type': 'application/json',
       //       'X-Advisor-Subdomain':
-      //         configData?.config?.REACT_APP_HEADER_NAME || 'common',
+      //         configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
       //       'aq-encrypted-key': generateToken(
       //         Config.REACT_APP_AQ_KEYS,
       //         Config.REACT_APP_AQ_SECRET,
@@ -686,14 +686,14 @@ const getAllTrades = async () => {
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || 'common',
+            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
           ),
         },
       });
-      console.log("RESPONSE HERE FOR VALIDITY---cccccccccccccccccccc------", configData?.config?.REACT_APP_HEADER_NAME || 'common',response?.data)
+      console.log("RESPONSE HERE FOR VALIDITY---cccccccccccccccccccc------", configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,response?.data)
       setPlanList(response?.data?.isValid);
       return response?.data?.isValid;
     } catch (planError) {
@@ -955,7 +955,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -983,7 +983,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1010,7 +1010,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1040,7 +1040,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1082,7 +1082,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,

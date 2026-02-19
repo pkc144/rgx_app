@@ -90,7 +90,7 @@ const MPReviewTradeModal = ({
         data: symbols,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -316,7 +316,7 @@ const MPReviewTradeModal = ({
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -478,7 +478,7 @@ const MPReviewTradeModal = ({
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -501,7 +501,7 @@ const MPReviewTradeModal = ({
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -726,7 +726,7 @@ const MPReviewTradeModal = ({
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -845,7 +845,7 @@ const MPReviewTradeModal = ({
 
       const requestHeaders = {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1036,7 +1036,7 @@ const MPReviewTradeModal = ({
 
       const requestHeaders = {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,

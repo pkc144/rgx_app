@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx react-native bundle:*)"
+      "Bash(npx react-native bundle:*)",
+      "Bash(./gradlew:*)",
+      "Bash(emulator:*)",
+      "Bash(adb devices:*)",
+      "Bash(adb:*)",
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

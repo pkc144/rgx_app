@@ -236,7 +236,7 @@ const RebalanceModal = ({
         url: `${server.ccxtServer.baseUrl}angelone/market-data`,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -447,7 +447,7 @@ const RebalanceModal = ({
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -529,7 +529,7 @@ const RebalanceModal = ({
         // and matches orders with our trade list
         const requestHeaders = {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -632,7 +632,7 @@ const RebalanceModal = ({
 
       const requestHeaders = {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -947,7 +947,7 @@ const RebalanceModal = ({
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -993,7 +993,7 @@ const RebalanceModal = ({
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -1140,7 +1140,7 @@ const RebalanceModal = ({
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -1163,7 +1163,7 @@ const RebalanceModal = ({
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
