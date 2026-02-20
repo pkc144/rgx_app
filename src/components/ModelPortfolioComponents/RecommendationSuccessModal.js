@@ -91,8 +91,6 @@ const RecommendationSuccessModal = ({
   const failurePercentage = (failureCount / totalCount) * 100;
   const partialFailurePercentage = 100 - successPercentage;
 
-  const [visibleTooltipIndex, setVisibleTooltipIndex] = useState(null);
-
   // Detect cautionary listing failures
   const cautionaryListingStocks = orderResponse?.filter((item) => {
     const message = (
@@ -127,23 +125,21 @@ const RecommendationSuccessModal = ({
             justifyContent: 'space-between',
             alignItems: 'flex-start',
           }}>
-          <View style={{ flexDirection: 'row', alignContent: 'center', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', alignContent: 'center', alignItems: 'center', flex: 1 }}>
             <Text style={styles.orderTitle}>{item.symbol}</Text>
-            {!isSuccessStatus && failureReason ? (
-              <TouchableOpacity
-                onPress={() => {
-                  setVisibleTooltipIndex(index);
-                  setTimeout(() => setVisibleTooltipIndex(null), 3000);
-                }}
-
-                style={{
-                  marginLeft: 8,
-                  borderRadius: 12,
-                  backgroundColor: '#e0e0e0',
-                }}>
-                <Info size={16} />
-              </TouchableOpacity>
-            ) : null}
+            {!isSuccessStatus && (
+              <View style={{
+                marginLeft: 8,
+                backgroundColor: '#FEE2E2',
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: 4,
+              }}>
+                <Text style={{ color: '#DC2626', fontSize: 10, fontFamily: 'Poppins-Medium' }}>
+                  {(item?.orderStatus || 'Rejected').toUpperCase()}
+                </Text>
+              </View>
+            )}
           </View>
 
           <TouchableOpacity
@@ -185,28 +181,32 @@ const RecommendationSuccessModal = ({
 
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={styles.dateText}>{getFormattedDate()}</Text>
-
-            {/* Info button for failed orders */}
-
           </View>
         </View>
 
-        {/* Tooltip */}
-        {visibleTooltipIndex === index && failureReason ? (
-          <View
-            style={{
-              position: 'absolute',
-              right: 10,
-              bottom: -10,
-              backgroundColor: 'rgba(0,0,0,0.85)',
-              padding: 10,
-              borderRadius: 8,
-              maxWidth: 250,
-              zIndex: 100,
-            }}>
-            <Text style={{ color: 'white', fontSize: 12, textAlign: 'left' }}>
-              {failureReason}
-            </Text>
+        {/* Rejection reason displayed inline */}
+        {!isSuccessStatus && failureReason ? (
+          <View style={{
+            marginTop: 6,
+            marginBottom: 4,
+            padding: 8,
+            backgroundColor: '#FEF2F2',
+            borderWidth: 1,
+            borderColor: '#FECACA',
+            borderRadius: 6,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+              <AlertCircle size={14} color="#DC2626" style={{ marginTop: 1, marginRight: 6 }} />
+              <Text style={{
+                flex: 1,
+                color: '#991B1B',
+                fontSize: 11,
+                fontFamily: 'Poppins-Regular',
+                lineHeight: 16,
+              }}>
+                {failureReason}
+              </Text>
+            </View>
           </View>
         ) : null}
       </View>

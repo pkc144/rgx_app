@@ -23,6 +23,7 @@ import CryptoJS from 'react-native-crypto-js';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
 import {io} from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Toast from 'react-native-toast-message';
 import Config from 'react-native-config';
 const {height: screenHeight} = Dimensions.get('window');
 import {generateToken} from '../../utils/SecurityTokenManager';
@@ -336,237 +337,298 @@ const MPReviewTradeModal = ({
       'Groww',
     ];
 
-    axios
-      .request(config)
-      .then(response => {
-        console.log('[OrderPlacement] API Response full:', JSON.stringify(response.data));
-        console.log('[OrderPlacement] Results:', response.data.results);
-        const results = response.data.results || [];
-        console.log('[OrderPlacement] Setting results:', results.length);
-        setOrderPlacementResponse(results);
+    const statusCheckHeaders = {
+      'Content-Type': 'application/json',
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+      'aq-encrypted-key': generateToken(
+        Config.REACT_APP_AQ_KEYS,
+        Config.REACT_APP_AQ_SECRET,
+      ),
+    };
 
-        // Post-order EDIS rejection handling
-        const checkData = response?.data?.results;
-        if (checkData && checkData.length > 0) {
-          const isMixed =
-            checkData.some(s => s.transactionType === 'BUY') &&
-            checkData.some(s => s.transactionType === 'SELL');
-          const allBuy = checkData.every(s => s.transactionType === 'BUY');
-          const allSell = checkData.every(s => s.transactionType === 'SELL');
-
-          const rejectedSellCount = checkData.reduce((count, order) => {
-            return isOrderRejected(order?.orderStatus) &&
-              order.transactionType === 'SELL'
-              ? count + 1
-              : count;
-          }, 0);
-
-          const successCount = checkData.reduce((count, order) => {
-            return isOrderSuccess(order?.orderStatus) &&
-              (order.transactionType === 'SELL' || isMixed)
-              ? count + 1
-              : count;
-          }, 0);
-
-          const hasCdslError = checkData.some((order) => {
-            const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
-            return msg.includes("cdsl") || msg.includes("edis") || msg.includes("tpin") || msg.includes("validate qty");
-          });
-
-          // Dhan CDSL error check
-          if (
-            broker === 'Dhan' &&
-            (allSell || isMixed) &&
-            rejectedSellCount >= 1 &&
-            hasCdslError &&
-            setShowDhanTpinModel
-          ) {
-            setShowDhanTpinModel(true);
-            onCloseReviewTrade();
-            setLoading(false);
-            return;
-          }
-
-          // Special brokers
-          if (
-            !isReturningFromOtherBrokerModal &&
-            specialBrokers.includes(broker)
-          ) {
-            if ((allSell || isMixed) && rejectedSellCount >= 1 && successCount === 0 && setShowOtherBrokerModel) {
-              setShowOtherBrokerModel(true);
-              onCloseReviewTrade();
-              setLoading(false);
-              setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-              return;
-            }
-          }
-
-          // Angel One
-          if (
-            broker === 'Angel One' &&
-            edisStatus &&
-            edisStatus.edis === false &&
-            (allSell || isMixed) &&
-            rejectedSellCount >= 1 &&
-            successCount === 0 &&
-            setShowAngleOneTpinModel
-          ) {
-            setShowAngleOneTpinModel(true);
-            onCloseReviewTrade();
-            setLoading(false);
-            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-            return;
-          }
-
-          // Dhan live status fallback
-          if (
-            broker === 'Dhan' &&
-            (allSell || isMixed) &&
-            dhanEdisStatus?.data?.some((h) => h.edis === false) &&
-            rejectedSellCount >= 1 &&
-            successCount === 0 &&
-            setShowDhanTpinModel
-          ) {
-            setShowDhanTpinModel(true);
-            onCloseReviewTrade();
-            setLoading(false);
-            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-            return;
-          }
-
-          // Fyers
-          if (
-            broker === 'Fyers' &&
-            (allSell || isMixed) &&
-            rejectedSellCount >= 1 &&
-            successCount === 0 &&
-            setShowFyersTpinModal
-          ) {
-            setShowFyersTpinModal(true);
-            onCloseReviewTrade();
-            setLoading(false);
-            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-            return;
-          }
-
-          // Zerodha DDPI
-          // Don't gate on is_authorized_for_sell DB flag — it persists across
-          // sessions but EDIS authorization expires per-session
-          if (
-            broker === 'Zerodha' &&
-            (allSell || isMixed) &&
-            !userDetails?.is_authorized_for_sell &&
-            !['physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
-            rejectedSellCount >= 1 &&
-            successCount === 0 &&
-            setShowDdpiModal
-          ) {
-            setShowDdpiModal(true);
-            onCloseReviewTrade();
-            setLoading(false);
-            return;
-          }
-        }
-
-        const updateData = {
-          modelId: latestRebalance.model_Id,
-          orderResults: response.data.results,
-          modelName: strategyDetails?.model_name,
-          userEmail: userEmail,
-          user_broker: broker,
-        };
-        return axios.post(
-          `${server.server.baseUrl}api/model-portfolio-db-update`,
-          updateData,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
-          },
-        );
-      })
-      .then(() => {
-        // Add user to status check queue for async order status polling (matching web frontend)
-        const statusCheckData = {
-          userEmail: userEmail,
-          modelName: strategyDetails?.model_name,
-          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
-          broker: broker,
-        };
-        return axios.post(
+    const enrollStatusCheckQueue = async () => {
+      try {
+        await axios.post(
           `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-          statusCheckData,
           {
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
+            userEmail: userEmail,
+            modelName: strategyDetails?.model_name,
+            advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+            broker: broker,
           },
+          { headers: statusCheckHeaders },
         );
-      })
-      .then(() => {
-        setLoading(false);
-        console.log('won');
-        openSucess();
-        console.log('open::');
-      })
-      .catch(error => {
-        console.log('[OrderPlacement] Error:', error?.response?.data || error.message);
-        setLoading(false);
+      } catch (queueErr) {
+        console.log('[OrderPlacement] status-check-queue error (non-fatal):', queueErr?.message);
+      }
+    };
 
-        // Determine a user-friendly error message
-        let errorMessage;
-        if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
-          errorMessage = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
-        } else if (error?.response?.status === 401 || error?.response?.status === 403) {
-          errorMessage = `${broker} session has expired. Please reconnect your broker and try again.`;
-        } else {
-          errorMessage = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Order placement failed';
-        }
+    try {
+      const response = await axios.request(config);
+      console.log('[OrderPlacement] API Response full:', JSON.stringify(response.data));
+      console.log('[OrderPlacement] Results:', response.data.results);
+      const checkData = response?.data?.results;
 
-        // Check for CDSL/EDIS errors in catch handler for Dhan
-        const errMsg = (
-          error?.response?.data?.details?.[0]?.message_aq ||
-          error?.response?.data?.details?.[0]?.message ||
-          error?.message ||
-          ""
-        ).toLowerCase();
+      // 1. Validate for empty or invalid results before processing (matching web)
+      if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
+        console.error('[OrderPlacement] API returned empty or invalid response:', response?.data);
+
+        // Check for Dhan CDSL/EDIS/TPIN errors in the response message
+        const responseMsg = (response?.data?.message || '').toLowerCase();
         if (
           broker === 'Dhan' &&
-          (errMsg.includes("cdsl") || errMsg.includes("edis") || errMsg.includes("tpin")) &&
+          (responseMsg.includes('cdsl') || responseMsg.includes('edis') ||
+           responseMsg.includes('tpin') || responseMsg.includes('validate qty')) &&
           setShowDhanTpinModel
         ) {
           setShowDhanTpinModel(true);
           onCloseReviewTrade();
+          setLoading(false);
           return;
         }
 
-        // Build synthetic rejected response from stockDetails for the modal
-        const syntheticResponse = stockDetails.map(stock => ({
-          symbol: stock.tradingSymbol,
-          tradingSymbol: stock.tradingSymbol,
-          transactionType: stock.transactionType || 'BUY',
-          quantity: stock.quantity,
-          orderType: stock.orderType || 'MARKET',
-          exchange: stock.exchange || 'NSE',
-          orderStatus: 'rejected',
+        // Show toast error for empty response
+        Toast.show({
+          type: 'error',
+          text1: 'Order Processing Issue',
+          text2: response?.data?.message || 'No orders were processed. Please check your broker app and try again.',
+        });
+        onCloseReviewTrade();
+
+        // Still enroll in status-check-queue for async reconciliation
+        await enrollStatusCheckQueue();
+        setLoading(false);
+        return;
+      }
+
+      const results = checkData;
+      setOrderPlacementResponse(results);
+
+      // 2. Always call model-portfolio-db-update first (before EDIS checks)
+      const updateData = {
+        modelId: latestRebalance.model_Id,
+        orderResults: results,
+        modelName: strategyDetails?.model_name,
+        userEmail: userEmail,
+        user_broker: broker,
+      };
+      try {
+        await axios.post(
+          `${server.server.baseUrl}api/model-portfolio-db-update`,
+          updateData,
+          { headers: statusCheckHeaders },
+        );
+      } catch (dbErr) {
+        console.log('[OrderPlacement] model-portfolio-db-update error (non-fatal):', dbErr?.message);
+      }
+
+      // 3. Check if ALL orders failed — show results modal directly (matching web)
+      const allOrdersFailed = checkData.every((order) => {
+        const s = (order?.orderStatus || '').toUpperCase();
+        return s === 'REJECTED' || s === 'CANCELLED' || s === 'FAILURE' || s === 'FAILED';
+      });
+
+      if (allOrdersFailed) {
+        // All orders rejected — show results modal with rejection details, skip EDIS checks
+        await enrollStatusCheckQueue();
+        setLoading(false);
+        openSucess();
+        return;
+      }
+
+      // 4. Post-order EDIS rejection handling — set flag instead of returning
+      let edisTriggered = false;
+      if (checkData.length > 0) {
+        const isMixed =
+          checkData.some(s => s.transactionType === 'BUY') &&
+          checkData.some(s => s.transactionType === 'SELL');
+        const allSell = checkData.every(s => s.transactionType === 'SELL');
+
+        const rejectedSellCount = checkData.reduce((count, order) => {
+          return isOrderRejected(order?.orderStatus) &&
+            order.transactionType === 'SELL'
+            ? count + 1
+            : count;
+        }, 0);
+
+        const successCount = checkData.reduce((count, order) => {
+          return isOrderSuccess(order?.orderStatus) &&
+            (order.transactionType === 'SELL' || isMixed)
+            ? count + 1
+            : count;
+        }, 0);
+
+        const hasCdslError = checkData.some((order) => {
+          const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || '').toLowerCase();
+          return msg.includes('cdsl') || msg.includes('edis') || msg.includes('tpin') || msg.includes('validate qty');
+        });
+
+        // Dhan CDSL error check
+        if (
+          broker === 'Dhan' &&
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          hasCdslError &&
+          setShowDhanTpinModel
+        ) {
+          setShowDhanTpinModel(true);
+          onCloseReviewTrade();
+          edisTriggered = true;
+        }
+
+        // Special brokers
+        if (
+          !edisTriggered &&
+          !isReturningFromOtherBrokerModal &&
+          specialBrokers.includes(broker)
+        ) {
+          if ((allSell || isMixed) && rejectedSellCount >= 1 && successCount === 0 && setShowOtherBrokerModel) {
+            setShowOtherBrokerModel(true);
+            onCloseReviewTrade();
+            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+            edisTriggered = true;
+          }
+        }
+
+        // Angel One
+        if (
+          !edisTriggered &&
+          broker === 'Angel One' &&
+          edisStatus &&
+          edisStatus.edis === false &&
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0 &&
+          setShowAngleOneTpinModel
+        ) {
+          setShowAngleOneTpinModel(true);
+          onCloseReviewTrade();
+          setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+          edisTriggered = true;
+        }
+
+        // Dhan live status fallback
+        if (
+          !edisTriggered &&
+          broker === 'Dhan' &&
+          (allSell || isMixed) &&
+          dhanEdisStatus?.data?.some((h) => h.edis === false) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0 &&
+          setShowDhanTpinModel
+        ) {
+          setShowDhanTpinModel(true);
+          onCloseReviewTrade();
+          setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+          edisTriggered = true;
+        }
+
+        // Fyers
+        if (
+          !edisTriggered &&
+          broker === 'Fyers' &&
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0 &&
+          setShowFyersTpinModal
+        ) {
+          setShowFyersTpinModal(true);
+          onCloseReviewTrade();
+          setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
+          edisTriggered = true;
+        }
+
+        // Zerodha DDPI
+        if (
+          !edisTriggered &&
+          broker === 'Zerodha' &&
+          (allSell || isMixed) &&
+          !userDetails?.is_authorized_for_sell &&
+          !['physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0 &&
+          setShowDdpiModal
+        ) {
+          setShowDdpiModal(true);
+          onCloseReviewTrade();
+          edisTriggered = true;
+        }
+      }
+
+      // 5. Always call status-check-queue
+      await enrollStatusCheckQueue();
+
+      // 6. Only show success modal if no EDIS modal was triggered
+      if (!edisTriggered) {
+        openSucess();
+      }
+      setLoading(false);
+    } catch (error) {
+      console.log('[OrderPlacement] Error:', error?.response?.data || error.message);
+      setLoading(false);
+
+      const responseData = error?.response?.data;
+      const orderErrors = responseData?.orderErrors || [];
+
+      // Determine a user-friendly error message
+      let errorMessage;
+      if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
+        errorMessage = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
+      } else if (error?.response?.status === 401 || error?.response?.status === 403) {
+        errorMessage = `${broker} session has expired. Please reconnect your broker and try again.`;
+      } else {
+        errorMessage = responseData?.error || responseData?.message || error?.message || 'Order placement failed';
+      }
+
+      // Check for CDSL/EDIS errors in catch handler for Dhan
+      const errMsg = (errorMessage || '').toLowerCase();
+      if (
+        broker === 'Dhan' &&
+        (errMsg.includes('cdsl') || errMsg.includes('edis') || errMsg.includes('tpin')) &&
+        setShowDhanTpinModel
+      ) {
+        setShowDhanTpinModel(true);
+        onCloseReviewTrade();
+        return;
+      }
+
+      // If backend returned per-order error details, build response from those
+      if (orderErrors.length > 0) {
+        const errorResponse = orderErrors.map(err => ({
+          symbol: err.symbol || err.tradingSymbol,
+          tradingSymbol: err.tradingSymbol || err.symbol,
+          transactionType: err.transactionType || 'BUY',
+          quantity: err.quantity,
+          orderType: err.orderType || 'MARKET',
+          exchange: err.exchange || 'NSE',
+          orderStatus: err.orderStatus || 'rejected',
           orderPlacement: 'failed',
-          orderStatusMessage: errorMessage,
-          message_aq: errorMessage,
+          orderStatusMessage: err.reason || err.message || errorMessage,
+          message_aq: err.reason || err.message || errorMessage,
         }));
-        setOrderPlacementResponse(syntheticResponse);
+        setOrderPlacementResponse(errorResponse);
         setOpenSucessModal(true);
         onCloseReviewTrade();
-      });
+        return;
+      }
+
+      // Fallback: Build synthetic rejected response from stockDetails for the modal
+      const syntheticResponse = stockDetails.map(stock => ({
+        symbol: stock.tradingSymbol,
+        tradingSymbol: stock.tradingSymbol,
+        transactionType: stock.transactionType || 'BUY',
+        quantity: stock.quantity,
+        orderType: stock.orderType || 'MARKET',
+        exchange: stock.exchange || 'NSE',
+        orderStatus: 'rejected',
+        orderPlacement: 'failed',
+        orderStatusMessage: errorMessage,
+        message_aq: errorMessage,
+      }));
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+      onCloseReviewTrade();
+    }
     //  console.log('yahan6');
   };
 
@@ -675,7 +737,21 @@ const MPReviewTradeModal = ({
     console.log('[ZerodhaPublisher] handleZerodhaRedirect called, API Key:', zerodhaApiKey);
     if (!zerodhaApiKey) {
       console.error('[ZerodhaPublisher] FATAL: No API key available!');
-      alert('Error: Zerodha API key not configured. Please contact support.');
+      const syntheticResponse = stockDetails.map(stock => ({
+        symbol: stock.tradingSymbol,
+        tradingSymbol: stock.tradingSymbol,
+        transactionType: stock.transactionType || 'BUY',
+        quantity: stock.quantity,
+        orderType: stock.orderType || 'MARKET',
+        exchange: stock.exchange || 'NSE',
+        orderStatus: 'rejected',
+        orderPlacement: 'failed',
+        orderStatusMessage: 'Zerodha API key not configured. Please reconnect your Zerodha account and try again.',
+        message_aq: 'Zerodha API key not configured. Please reconnect your Zerodha account and try again.',
+      }));
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+      onCloseReviewTrade();
       setLoading(false);
       return;
     }
@@ -785,7 +861,22 @@ const MPReviewTradeModal = ({
     } catch (error) {
       console.error('[ZerodhaPublisher] Failed to update trade recommendation:', error);
       setLoading(false);
-      alert('Failed to prepare basket order. Please try again.');
+      const errorMsg = error?.response?.data?.message || error?.message || 'Failed to prepare basket order. Please try again.';
+      const syntheticResponse = stockDetails.map(stock => ({
+        symbol: stock.tradingSymbol,
+        tradingSymbol: stock.tradingSymbol,
+        transactionType: stock.transactionType || 'BUY',
+        quantity: stock.quantity,
+        orderType: stock.orderType || 'MARKET',
+        exchange: stock.exchange || 'NSE',
+        orderStatus: 'rejected',
+        orderPlacement: 'failed',
+        orderStatusMessage: errorMsg,
+        message_aq: errorMsg,
+      }));
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+      onCloseReviewTrade();
     }
   };
 
@@ -867,9 +958,10 @@ const MPReviewTradeModal = ({
         ),
       };
 
+      let orderResponse;
+
       try {
         // Step 1: Record orders and fetch actual statuses from Zerodha
-        // This endpoint matches Zerodha order book with our trade list and returns actual order statuses
         console.log('[ZerodhaPublisher] Step 1: Recording publisher orders...');
         const recordResponse = await axios.post(
           `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
@@ -883,41 +975,47 @@ const MPReviewTradeModal = ({
         );
 
         console.log('[ZerodhaPublisher] Record orders response:', recordResponse.data);
-
-        const orderResults = recordResponse.data.response || recordResponse.data.results || [];
+        orderResponse = recordResponse.data.response || recordResponse.data.results || [];
 
         // Step 2: Update model portfolio database with order results
         console.log('[ZerodhaPublisher] Step 2: Updating model portfolio DB...');
-        await axios.post(
-          `${server.server.baseUrl}api/model-portfolio-db-update`,
-          {
-            modelId: latestRebalance?.model_Id,
-            orderResults: orderResults,
-            modelName: strategyDetails?.model_name,
-            userEmail: userEmail,
-          },
-          { headers: requestHeaders }
-        );
+        try {
+          await axios.post(
+            `${server.server.baseUrl}api/model-portfolio-db-update`,
+            {
+              modelId: latestRebalance?.model_Id,
+              orderResults: orderResponse,
+              modelName: strategyDetails?.model_name,
+              userEmail: userEmail,
+              user_broker: 'Zerodha',
+            },
+            { headers: requestHeaders }
+          );
+        } catch (dbErr) {
+          console.warn('[ZerodhaPublisher] model-portfolio-db-update error (non-fatal):', dbErr?.message);
+        }
 
         // Step 3: Update portfolio holdings from Zerodha
         console.log('[ZerodhaPublisher] Step 3: Updating portfolio holdings...');
-        await axios.post(
-          `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
-          { user_email: userEmail },
-          { headers: requestHeaders }
-        );
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
+            { user_email: userEmail },
+            { headers: requestHeaders }
+          );
+        } catch (holdingsErr) {
+          console.warn('[ZerodhaPublisher] portfolio holdings update error (non-fatal):', holdingsErr?.message);
+        }
 
         // Step 4: Update subscriber execution status
-        // Only count fully completed orders as success — not 'placed', 'open', 'transit'
-        // which are intermediate states that may still get rejected
-        if (orderResults && orderResults.length > 0) {
+        if (orderResponse && orderResponse.length > 0) {
           const successStatuses = ['complete', 'executed', 'traded'];
-          const pubSuccessCount = orderResults.filter(r =>
+          const pubSuccessCount = orderResponse.filter(r =>
             successStatuses.includes((r.orderStatus || '').toLowerCase())
           ).length;
 
           let executionStatus;
-          if (pubSuccessCount === orderResults.length) {
+          if (pubSuccessCount === orderResponse.length) {
             executionStatus = 'executed';
           } else if (pubSuccessCount > 0) {
             executionStatus = 'partial';
@@ -938,7 +1036,7 @@ const MPReviewTradeModal = ({
             console.error('[ZerodhaPublisher] Error updating subscriber execution status:', statusErr);
           }
 
-          // Step 5: Record order results in model_portfolio_user (advice_executed + user_net_pf_model)
+          // Step 5: Record order results in model_portfolio_user
           try {
             await axios.post(
               `${server.ccxtServer.baseUrl}rebalance/record-publisher-results`,
@@ -947,7 +1045,7 @@ const MPReviewTradeModal = ({
                 model_id: latestRebalance?.model_Id,
                 unique_id: calculatedPortfolioData?.uniqueId,
                 advisor: strategyDetails?.advisor,
-                order_results: orderResults,
+                order_results: orderResponse,
                 user_email: userEmail,
                 user_broker: 'Zerodha',
               },
@@ -959,25 +1057,23 @@ const MPReviewTradeModal = ({
           }
         }
 
-        // Success - show results to user
-        console.log('[ZerodhaPublisher] All post-order steps completed successfully');
-        setOrderPlacementResponse(orderResults);
-        setOpenSucessModal(true);
-        onCloseReviewTrade(); // Close review modal
-        setLoading(false);
-
-        // Clean up AsyncStorage
-        await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
-        await AsyncStorage.removeItem('additionalPayload');
-
-        // Reset state
-        setZerodhaStatus(null);
-        setZerodhaRequestType(null);
-
       } catch (error) {
-        console.error('[ZerodhaPublisher] ❌ Error in post-order processing:', error);
+        console.error('[ZerodhaPublisher] Error recording publisher orders:', error);
         console.error('[ZerodhaPublisher] Error details:', error.response?.data);
-        setLoading(false);
+
+        // On error: show as "Unknown" — orders may have been placed in Kite,
+        // we just can't confirm status (matching web frontend)
+        orderResponse = (zerodhaStockDetails || stockDetails || []).map(stock => ({
+          tradingSymbol: stock.tradingSymbol,
+          symbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || 'NSE',
+          orderStatus: 'Unknown',
+          orderStatusMessage: 'Order sent via Kite. Please check your Kite app for actual status.',
+          message_aq: 'Order sent via Kite. Please check your Kite app for actual status.',
+        }));
 
         // Mark as pending so the async poller knows to check broker order book
         try {
@@ -987,42 +1083,16 @@ const MPReviewTradeModal = ({
               userEmail: userEmail,
               modelName: strategyDetails?.model_name,
               executionStatus: 'pending',
+              user_broker: 'Zerodha',
             },
             { headers: requestHeaders }
           );
         } catch (statusErr) {
           console.error('[ZerodhaPublisher] Error updating subscriber execution status:', statusErr);
         }
-
-        // Build synthetic rejected response and show the modal
-        const errorMsg =
-          error.response?.data?.message ||
-          error.message ||
-          'Orders may have been placed in Kite, but failed to record status. Please check your Kite app.';
-        const syntheticResponse = (zerodhaStockDetails || stockDetails || []).map(stock => ({
-          symbol: stock.tradingSymbol,
-          tradingSymbol: stock.tradingSymbol,
-          transactionType: stock.transactionType || 'BUY',
-          quantity: stock.quantity,
-          orderType: stock.orderType || 'MARKET',
-          exchange: stock.exchange || 'NSE',
-          orderStatus: 'rejected',
-          orderPlacement: 'failed',
-          orderStatusMessage: errorMsg,
-          message_aq: errorMsg,
-        }));
-        setOrderPlacementResponse(syntheticResponse);
-        setOpenSucessModal(true);
-
-        // Close the review modal
-        onCloseReviewTrade();
-        setZerodhaStatus(null);
-        setZerodhaRequestType(null);
       }
 
-      // Always enroll in status-check-queue regardless of record-orders success/failure.
-      // This ensures the async poller can reconcile orders from the broker's order book
-      // even if the initial record-orders call failed.
+      // Always enroll in status-check-queue regardless of record-orders success/failure
       try {
         console.log('[ZerodhaPublisher] Adding to status check queue...');
         await axios.post(
@@ -1038,6 +1108,20 @@ const MPReviewTradeModal = ({
       } catch (queueErr) {
         console.error('[ZerodhaPublisher] Error adding to status-check-queue:', queueErr);
       }
+
+      // Always show results modal (matching web frontend pattern)
+      setOrderPlacementResponse(orderResponse);
+      setOpenSucessModal(true);
+      onCloseReviewTrade();
+      setLoading(false);
+
+      // Clean up AsyncStorage
+      await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+      await AsyncStorage.removeItem('additionalPayload');
+
+      // Reset state
+      setZerodhaStatus(null);
+      setZerodhaRequestType(null);
     }
   };
 
@@ -1108,56 +1192,63 @@ const MPReviewTradeModal = ({
       );
 
       const checkData = response?.data?.results;
-      setOrderPlacementResponse(checkData);
 
-      // Handle TPIN rejection for Fyers sell orders
-      if (checkData && checkData.length > 0) {
-        const allSell = checkData.every(s => s.transactionType === 'SELL');
-        const isMixed =
-          checkData.some(s => s.transactionType === 'BUY') &&
-          checkData.some(s => s.transactionType === 'SELL');
-        const rejectedSellCount = checkData.reduce((count, order) => {
-          return isOrderRejected(order?.orderStatus) &&
-            order.transactionType === 'SELL'
-            ? count + 1
-            : count;
-        }, 0);
-        const successCount = checkData.reduce((count, order) => {
-          return isOrderSuccess(order?.orderStatus) &&
-            (order.transactionType === 'SELL' || isMixed)
-            ? count + 1
-            : count;
-        }, 0);
+      // 1. Validate for empty or invalid results
+      if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
+        console.error('[FyersPublisher] API returned empty or invalid response:', response?.data);
+        Toast.show({
+          type: 'error',
+          text1: 'Order Processing Issue',
+          text2: response?.data?.message || 'No orders were processed. Please check your Fyers app and try again.',
+        });
+        onCloseReviewTrade();
 
-        if (
-          (allSell || isMixed) &&
-          rejectedSellCount >= 1 &&
-          successCount === 0 &&
-          setShowFyersTpinModal
-        ) {
-          setShowFyersTpinModal(true);
-          onCloseReviewTrade();
-          setLoading(false);
-          return;
+        // Still enroll in status-check-queue for async reconciliation
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+            {
+              userEmail: userEmail,
+              modelName: strategyDetails?.model_name,
+              advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+              broker: 'Fyers',
+            },
+            { headers: requestHeaders },
+          );
+        } catch (queueErr) {
+          console.warn('[FyersPublisher] status-check-queue failed:', queueErr);
         }
+        setLoading(false);
+        return;
       }
 
-      // Update model portfolio DB
-      const updateData = {
-        modelId: latestRebalance?.model_Id,
-        orderResults: checkData,
-        modelName: strategyDetails?.model_name,
-        userEmail: userEmail,
-        user_broker: 'Fyers',
-      };
-      await axios.post(
-        `${server.server.baseUrl}api/model-portfolio-db-update`,
-        updateData,
-        { headers: requestHeaders },
-      );
+      setOrderPlacementResponse(checkData);
 
-      // Update subscriber execution status
-      if (checkData && checkData.length > 0) {
+      // 2. Always update model portfolio DB first (before EDIS checks)
+      try {
+        await axios.post(
+          `${server.server.baseUrl}api/model-portfolio-db-update`,
+          {
+            modelId: latestRebalance?.model_Id,
+            orderResults: checkData,
+            modelName: strategyDetails?.model_name,
+            userEmail: userEmail,
+            user_broker: 'Fyers',
+          },
+          { headers: requestHeaders },
+        );
+      } catch (dbErr) {
+        console.warn('[FyersPublisher] model-portfolio-db-update error (non-fatal):', dbErr?.message);
+      }
+
+      // 3. Check if ALL orders failed — show results modal directly, skip EDIS
+      const allOrdersFailed = checkData.every((order) => {
+        const s = (order?.orderStatus || '').toUpperCase();
+        return s === 'REJECTED' || s === 'CANCELLED' || s === 'FAILURE' || s === 'FAILED';
+      });
+
+      // 4. Update subscriber execution status
+      if (checkData.length > 0) {
         const successStatuses = ['complete', 'executed', 'traded'];
         const pubSuccessCount = checkData.filter(r =>
           successStatuses.includes((r.orderStatus || '').toLowerCase()),
@@ -1207,7 +1298,39 @@ const MPReviewTradeModal = ({
         }
       }
 
-      // Enroll in status-check-queue
+      // 5. EDIS/TPIN check — only if NOT allOrdersFailed (set flag instead of returning)
+      let edisTriggered = false;
+      if (!allOrdersFailed && checkData.length > 0) {
+        const allSell = checkData.every(s => s.transactionType === 'SELL');
+        const isMixed =
+          checkData.some(s => s.transactionType === 'BUY') &&
+          checkData.some(s => s.transactionType === 'SELL');
+        const rejectedSellCount = checkData.reduce((count, order) => {
+          return isOrderRejected(order?.orderStatus) &&
+            order.transactionType === 'SELL'
+            ? count + 1
+            : count;
+        }, 0);
+        const successCount = checkData.reduce((count, order) => {
+          return isOrderSuccess(order?.orderStatus) &&
+            (order.transactionType === 'SELL' || isMixed)
+            ? count + 1
+            : count;
+        }, 0);
+
+        if (
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0 &&
+          setShowFyersTpinModal
+        ) {
+          setShowFyersTpinModal(true);
+          onCloseReviewTrade();
+          edisTriggered = true;
+        }
+      }
+
+      // 6. Always enroll in status-check-queue
       try {
         await axios.post(
           `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
@@ -1223,12 +1346,17 @@ const MPReviewTradeModal = ({
         console.warn('[FyersPublisher] status-check-queue failed:', queueErr);
       }
 
-      // Show success
+      // 7. Only show success modal if no EDIS modal was triggered
+      if (!edisTriggered) {
+        openSucess();
+      }
       setLoading(false);
-      openSucess();
     } catch (error) {
       setLoading(false);
       console.error('[FyersPublisher] Error:', error);
+
+      const responseData = error?.response?.data;
+      const orderErrors = responseData?.orderErrors || [];
 
       let errorMessage;
       if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
@@ -1242,13 +1370,31 @@ const MPReviewTradeModal = ({
           'Fyers session has expired. Please reconnect your broker and try again.';
       } else {
         errorMessage =
-          error?.response?.data?.error ||
-          error?.response?.data?.message ||
-          error?.message ||
-          'Order placement failed';
+          responseData?.error || responseData?.message ||
+          error?.message || 'Order placement failed';
       }
 
-      // Build synthetic rejected response from stockDetails for the modal
+      // If backend returned per-order error details, build response from those
+      if (orderErrors.length > 0) {
+        const errorResponse = orderErrors.map(err => ({
+          symbol: err.symbol || err.tradingSymbol,
+          tradingSymbol: err.tradingSymbol || err.symbol,
+          transactionType: err.transactionType || 'BUY',
+          quantity: err.quantity,
+          orderType: err.orderType || 'MARKET',
+          exchange: err.exchange || 'NSE',
+          orderStatus: err.orderStatus || 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: err.reason || err.message || errorMessage,
+          message_aq: err.reason || err.message || errorMessage,
+        }));
+        setOrderPlacementResponse(errorResponse);
+        setOpenSucessModal(true);
+        onCloseReviewTrade();
+        return;
+      }
+
+      // Fallback: Build synthetic rejected response from stockDetails for the modal
       const syntheticResponse = stockDetails.map(stock => ({
         symbol: stock.tradingSymbol,
         tradingSymbol: stock.tradingSymbol,
@@ -1618,7 +1764,22 @@ const MPReviewTradeModal = ({
           console.error('[ZerodhaPublisher] Publisher error:', error);
           setShowKitePublisher(false);
           setLoading(false);
-          alert('Failed to place order: ' + error);
+          const errorMsg = typeof error === 'string' ? error : (error?.message || 'Order placement failed via Zerodha. Please check your Kite app.');
+          const syntheticResponse = stockDetails.map(stock => ({
+            symbol: stock.tradingSymbol,
+            tradingSymbol: stock.tradingSymbol,
+            transactionType: stock.transactionType || 'BUY',
+            quantity: stock.quantity,
+            orderType: stock.orderType || 'MARKET',
+            exchange: stock.exchange || 'NSE',
+            orderStatus: 'rejected',
+            orderPlacement: 'failed',
+            orderStatusMessage: errorMsg,
+            message_aq: errorMsg,
+          }));
+          setOrderPlacementResponse(syntheticResponse);
+          setOpenSucessModal(true);
+          onCloseReviewTrade();
         }}
       />
     </Modal>

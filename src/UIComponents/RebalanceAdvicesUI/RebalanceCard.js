@@ -558,13 +558,17 @@ const RebalanceCard = ({
           colors={
             isRebalanceExecuted
               ? ['#9CA3AF', '#6B7280']
-              : repair && userExecution?.status !== 'toExecute'
-                ? [gradient1, '#dc4108ff']
-                : [gradient1, gradient2]
+              : isPartiallyExecuted
+                ? ['#E8976B', '#DE8846']
+                : isPendingVerification
+                  ? ['#DDB65D', '#D4A843']
+                  : repair && userExecution?.status !== 'toExecute'
+                    ? [gradient1, '#dc4108ff']
+                    : [gradient1, gradient2]
           }
           start={{x: 0, y: 1}}
           end={{x: 1, y: 1}}
-          style={[styles.cardContainer, {borderRadius: isExpanded ? 0 : 6, opacity: isRebalanceExecuted ? 0.75 : 1}]}>
+          style={[styles.cardContainer, {borderRadius: isExpanded ? 0 : 6, opacity: (isRebalanceExecuted || isPartiallyExecuted || isPendingVerification) ? 0.85 : 1}]}>
           <View style={styles.cardContent}>
             <View style={styles.textContent}>
               <Text style={styles.titleText}>{modelName}</Text>
@@ -722,11 +726,13 @@ const RebalanceCard = ({
                   <Text style={[styles.buttonText, {color: isRebalanceExecuted ? '#6B7280' : gradient2}]}>
                     {isRebalanceExecuted
                       ? 'Rebalance Accepted'
-                      : isPendingVerification
-                        ? 'Check Order Status'
-                        : repair && userExecution?.status !== 'toExecute'
-                          ? 'View/action on updates'
-                          : 'View and act'}
+                      : isPartiallyExecuted
+                        ? 'Retry Rebalance'
+                        : isPendingVerification
+                          ? 'Check Order Status'
+                          : repair && userExecution?.status !== 'toExecute'
+                            ? 'View/action on updates'
+                            : 'View and act'}
                   </Text>
                 </View>
               )}
