@@ -618,11 +618,30 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
             console.error("Order placement error:", orderError.response?.data || orderError.message);
             console.error("Status code:", orderError.response?.status || "No status");
             console.error("Full error:", orderError.response);
-            
-            // Show user-friendly error message
-            
+
+            // Build synthetic rejected response and show the modal
+            const errorMessage =
+              orderError.response?.data?.message ||
+              orderError.message ||
+              'Orders cannot be placed. Please try again later.';
+            const { zerodhaStockDetails: savedStockDetails } = await fetchData();
+            const syntheticResponse = (savedStockDetails || stockDetails || []).map(stock => ({
+              symbol: stock.tradingSymbol,
+              tradingSymbol: stock.tradingSymbol,
+              transactionType: stock.transactionType || 'BUY',
+              quantity: stock.quantity,
+              orderType: stock.orderType || 'MARKET',
+              exchange: stock.exchange || 'NSE',
+              orderStatus: 'rejected',
+              orderPlacement: 'failed',
+              orderStatusMessage: errorMessage,
+              message_aq: errorMessage,
+            }));
+            setOrderPlacementResponse(syntheticResponse);
+            setOpenSucessModal(true);
+            setOpenZerodhaModel(false);
+
             setflag(false);
-            throw orderError;
           }
         } else {
           console.log("Zerodha status conditions not met");
@@ -630,9 +649,29 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
         }
       } catch (error) {
         console.error("Error in checkZerodhaStatus:", error);
-  
+
+        // If the modal wasn't already opened by inner catch, show it now
+        const errorMessage =
+          error.response?.data?.message ||
+          error.message ||
+          'Orders cannot be placed. Please try again later.';
+        const syntheticResponse = (stockDetails || []).map(stock => ({
+          symbol: stock.tradingSymbol,
+          tradingSymbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || 'NSE',
+          orderStatus: 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: errorMessage,
+          message_aq: errorMessage,
+        }));
+        setOrderPlacementResponse(syntheticResponse);
+        setOpenSucessModal(true);
+        setOpenZerodhaModel(false);
+
         setflag(false);
-        throw error;
       }
     };
 

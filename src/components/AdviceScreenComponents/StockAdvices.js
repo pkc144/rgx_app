@@ -863,25 +863,22 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         return;
       }
 
-      Toast.show({
-        type: 'error',
-        text1: 'Failed',
-        text2: edisMessage, // show exact broker error like "Edis is not validated"
-        visibilityTime: 5000,
-        position: 'top',
-        bottomOffset: 40,
-        style: {
-          backgroundColor: 'white',
-          borderLeftColor: 'green',
-          borderLeftWidth: 5,
-          padding: 10,
-        },
-        textStyle: {
-          color: 'green',
-          fontWeight: 'bold',
-          fontSize: 16,
-        },
-      });
+      // Build synthetic rejected response from stockDetails for the modal
+      const syntheticResponse = stockDetails.map(stock => ({
+        symbol: stock.tradingSymbol,
+        tradingSymbol: stock.tradingSymbol,
+        transactionType: stock.transactionType || 'BUY',
+        quantity: stock.quantity,
+        orderType: stock.orderType || 'MARKET',
+        exchange: stock.exchange || 'NSE',
+        orderStatus: 'rejected',
+        orderPlacement: 'failed',
+        orderStatusMessage: edisMessage,
+        message_aq: edisMessage,
+      }));
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+      setOpenReviewTrade(false);
     }
     setIsReturningFromOtherBrokerModal(false);
   };
@@ -1054,7 +1051,26 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
       } catch (error) {
         console.error('Order placement failed:', error);
-        showToast('Orders cannot be placed.', 'error', '');
+        // Build synthetic rejected response from stockDetails for the modal
+        const errorMessage =
+          error.response?.data?.message ||
+          error.message ||
+          'Orders cannot be placed. Please try again later.';
+        const syntheticResponse = (zerodhaStockDetails || []).map(stock => ({
+          symbol: stock.tradingSymbol,
+          tradingSymbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || 'NSE',
+          orderStatus: 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: errorMessage,
+          message_aq: errorMessage,
+        }));
+        setOrderPlacementResponse(syntheticResponse);
+        setOpenSucessModal(true);
+        setOpenReviewTrade(false);
       }
     }
   };

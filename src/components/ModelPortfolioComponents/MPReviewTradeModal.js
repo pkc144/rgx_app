@@ -27,7 +27,6 @@ import Config from 'react-native-config';
 const {height: screenHeight} = Dimensions.get('window');
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../../screens/TradeContext';
-import Toast from 'react-native-toast-message';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
 import { convertResponse } from '../../utils/tradeUtils';
@@ -551,11 +550,22 @@ const MPReviewTradeModal = ({
           return;
         }
 
-        Toast.show({
-          type: 'error',
-          text1: 'Order Failed',
-          text2: errorMessage,
-        });
+        // Build synthetic rejected response from stockDetails for the modal
+        const syntheticResponse = stockDetails.map(stock => ({
+          symbol: stock.tradingSymbol,
+          tradingSymbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || 'NSE',
+          orderStatus: 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: errorMessage,
+          message_aq: errorMessage,
+        }));
+        setOrderPlacementResponse(syntheticResponse);
+        setOpenSucessModal(true);
+        onCloseReviewTrade();
       });
     //  console.log('yahan6');
   };
@@ -984,14 +994,27 @@ const MPReviewTradeModal = ({
           console.error('[ZerodhaPublisher] Error updating subscriber execution status:', statusErr);
         }
 
-        // Show error to user
-        Toast.show({
-          type: 'error',
-          text1: 'Order Status Unknown',
-          text2: 'Orders may have been placed in Kite, but failed to record status. Please check your Kite app.',
-        });
+        // Build synthetic rejected response and show the modal
+        const errorMsg =
+          error.response?.data?.message ||
+          error.message ||
+          'Orders may have been placed in Kite, but failed to record status. Please check your Kite app.';
+        const syntheticResponse = (zerodhaStockDetails || stockDetails || []).map(stock => ({
+          symbol: stock.tradingSymbol,
+          tradingSymbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || 'NSE',
+          orderStatus: 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: errorMsg,
+          message_aq: errorMsg,
+        }));
+        setOrderPlacementResponse(syntheticResponse);
+        setOpenSucessModal(true);
 
-        // Still close the modal
+        // Close the review modal
         onCloseReviewTrade();
         setZerodhaStatus(null);
         setZerodhaRequestType(null);
@@ -1225,11 +1248,22 @@ const MPReviewTradeModal = ({
           'Order placement failed';
       }
 
-      Toast.show({
-        type: 'error',
-        text1: 'Order Failed',
-        text2: errorMessage,
-      });
+      // Build synthetic rejected response from stockDetails for the modal
+      const syntheticResponse = stockDetails.map(stock => ({
+        symbol: stock.tradingSymbol,
+        tradingSymbol: stock.tradingSymbol,
+        transactionType: stock.transactionType || 'BUY',
+        quantity: stock.quantity,
+        orderType: stock.orderType || 'MARKET',
+        exchange: stock.exchange || 'NSE',
+        orderStatus: 'rejected',
+        orderPlacement: 'failed',
+        orderStatusMessage: errorMessage,
+        message_aq: errorMessage,
+      }));
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+      onCloseReviewTrade();
     }
   };
 
