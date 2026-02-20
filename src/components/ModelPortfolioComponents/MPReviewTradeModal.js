@@ -288,6 +288,37 @@ const MPReviewTradeModal = ({
     if (!sessionValid) return;
 
     setLoading(true);
+
+    // Pre-order: validate exchange information
+    const hasExchangeEmpty = stockDetails.some((item) => item.exchange === ' ');
+    if (hasExchangeEmpty) {
+      Toast.show({
+        type: 'error',
+        text1: 'Exchange Error',
+        text2: 'Error in exchange information, please try again',
+      });
+      setLoading(false);
+      return;
+    }
+
+    // Pre-order: Dhan EDIS/DDPI check for sell orders
+    // Use LIVE edis status from Dhan API, not the DB flag (is_authorized_for_sell persists
+    // across sessions but Dhan EDIS authorization expires per-session)
+    const allSellPreCheck = stockDetails.every(s => s.transactionType === 'SELL');
+    const isMixedPreCheck =
+      stockDetails.some(s => s.transactionType === 'BUY') &&
+      stockDetails.some(s => s.transactionType === 'SELL');
+    if (
+      broker === 'Dhan' &&
+      (allSellPreCheck || isMixedPreCheck) &&
+      dhanEdisStatus?.data?.some((h) => h.edis === false)
+    ) {
+      setShowDhanTpinModel(true);
+      onCloseReviewTrade();
+      setLoading(false);
+      return;
+    }
+
     const getBasePayload = () => ({
       modelName: strategyDetails?.model_name,
       advisor: strategyDetails?.advisor,
@@ -563,6 +594,11 @@ const MPReviewTradeModal = ({
         openSucess();
       }
       setLoading(false);
+
+      // 7. Refresh rebalance data to reflect current DB state
+      if (typeof calculateRebalance === 'function') {
+        calculateRebalance();
+      }
     } catch (error) {
       console.log('[OrderPlacement] Error:', error?.response?.data || error.message);
       setLoading(false);
@@ -732,6 +768,24 @@ const MPReviewTradeModal = ({
   const handleZerodhaRedirect = async () => {
     setLoading(true);
     const storageKey = 'stockDetailsZerodhaOrder';
+
+    // Pre-check: Zerodha DDPI/EDIS authorization for sell orders
+    const allBuyZerodha = stockDetails.every(s => s.transactionType === 'BUY');
+    const allSellZerodha = stockDetails.every(s => s.transactionType === 'SELL');
+    const isMixedZerodha =
+      stockDetails.some(s => s.transactionType === 'BUY') &&
+      stockDetails.some(s => s.transactionType === 'SELL');
+
+    if ((allSellZerodha || isMixedZerodha) && !allBuyZerodha) {
+      const canSell = userDetails?.is_authorized_for_sell ||
+        ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+      if (!canSell && setShowDdpiModal) {
+        setShowDdpiModal(true);
+        onCloseReviewTrade();
+        setLoading(false);
+        return;
+      }
+    }
 
     // Debug: Verify API key is available
     console.log('[ZerodhaPublisher] handleZerodhaRedirect called, API Key:', zerodhaApiKey);
@@ -1115,6 +1169,11 @@ const MPReviewTradeModal = ({
       onCloseReviewTrade();
       setLoading(false);
 
+      // Refresh rebalance data to reflect current DB state
+      if (typeof calculateRebalance === 'function') {
+        calculateRebalance();
+      }
+
       // Clean up AsyncStorage
       await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
       await AsyncStorage.removeItem('additionalPayload');
@@ -1351,6 +1410,11 @@ const MPReviewTradeModal = ({
         openSucess();
       }
       setLoading(false);
+
+      // 8. Refresh rebalance data to reflect current DB state
+      if (typeof calculateRebalance === 'function') {
+        calculateRebalance();
+      }
     } catch (error) {
       setLoading(false);
       console.error('[FyersPublisher] Error:', error);
