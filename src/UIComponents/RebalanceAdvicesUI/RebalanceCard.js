@@ -101,6 +101,7 @@ const RebalanceCard = ({
               Config.REACT_APP_AQ_SECRET,
             ),
           },
+          timeout: 10000,
         },
       );
       const freshUserDetails = response.data.User;
@@ -203,6 +204,7 @@ const RebalanceCard = ({
               Config.REACT_APP_AQ_SECRET,
             ),
           },
+          timeout: 15000,
         },
       );
       const orderResults =
@@ -214,7 +216,7 @@ const RebalanceCard = ({
         setStockDataForModal(orderResults);
       }
     } catch (error) {
-      console.error('Error fetching stock data:', error);
+      console.warn('Error fetching stock data:', error?.message);
     }
     if (setShowstatusModal) {
       setShowstatusModal(true);
@@ -450,7 +452,7 @@ const RebalanceCard = ({
   const isPartiallyExecuted = userExecution?.status === 'partial' && brokerMatchesExecution;
   const isPendingVerification = userExecution?.status === 'pending' && brokerMatchesExecution;
 
-  const handleAcceptClick = () => {
+  const handleAcceptClick = async () => {
     try {
       setisChangeModal(false);
       if (data?.model_Id) {
@@ -460,13 +462,16 @@ const RebalanceCard = ({
       if (repair && userExecution?.status !== 'toExecute') {
         setStoreModalName(modelName);
         setCurrentStep(2);
-        handleCheckStatus();
+        setLoading(true);
+        await handleCheckStatus();
+        setLoading(false);
       } else {
         setShowCheckboxModal(true);
         setStoreModalName(modelName);
       }
     } catch (error) {
       console.error('Error in handleAcceptClick:', error);
+      setLoading(false);
     }
   };
 
@@ -536,7 +541,7 @@ const RebalanceCard = ({
         } else {
           setShowCheckboxModal(false);
           setCurrentStep(2);
-          handleCheckStatus();
+          await handleCheckStatus();
           setLoading(false);
         }
       }

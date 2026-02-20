@@ -2753,6 +2753,7 @@ useEffect(() => {
           openSuccessModal={openSuccessModal}
           setOpenSucessModal={setOpenSucessModal}
           orderPlacementResponse={orderPlacementResponse}
+          currentBroker={broker}
         />
       )}
 

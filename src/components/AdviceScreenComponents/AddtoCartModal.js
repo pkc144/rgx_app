@@ -1329,6 +1329,7 @@ const AddToCartModal = ({
           openSuccessModal={openSuccessModal}
           setOpenSucessModal={setOpenSucessModal}
           orderPlacementResponse={orderPlacementResponse}
+          currentBroker={broker}
         />
       )}
 

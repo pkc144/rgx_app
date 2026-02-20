@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   Alert,
   Platform,
+  ScrollView,
 } from 'react-native';
 import {
   XIcon,
@@ -22,6 +23,7 @@ import {
   Info,
   InfoIcon,
   AlertCircle,
+  AlertTriangle,
 } from 'lucide-react-native';
 import { Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -41,6 +43,7 @@ const RecommendationSuccessModal = ({
   openSuccessModal,
   setOpenSucessModal,
   orderPlacementResponse,
+  currentBroker,
 }) => {
   // Get dynamic colors from config
   const config = useConfig();
@@ -89,6 +92,19 @@ const RecommendationSuccessModal = ({
   const partialFailurePercentage = 100 - successPercentage;
 
   const [visibleTooltipIndex, setVisibleTooltipIndex] = useState(null);
+
+  // Detect cautionary listing failures
+  const cautionaryListingStocks = orderResponse?.filter((item) => {
+    const message = (
+      item?.orderStatusMessage ||
+      item?.message_aq ||
+      item?.message ||
+      ''
+    ).toLowerCase();
+    return message.includes('cautionary') && message.includes('listing');
+  }) || [];
+
+  const hasCautionaryListingFailures = cautionaryListingStocks.length > 0;
 
   console.log('Log----', failureCount, successCount);
 
@@ -197,10 +213,11 @@ const RecommendationSuccessModal = ({
     );
   };
 
+  // Get broker display name for cautionary alert
+  const brokerDisplayName = currentBroker || 'your broker';
 
   return (
     <Modal visible={openSuccessModal} animationType="slide" transparent={false}>
-      {/* ✅ FIXED: Proper SafeAreaView structure for iOS */}
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalContent}>
           {/* Header Section */}
@@ -256,7 +273,26 @@ const RecommendationSuccessModal = ({
               </View>
             )}
 
-            {failureCount === totalCount && (
+            {totalCount === 0 && (
+              <View style={styles.statusContainer}>
+                <View style={[styles.statusIcon, { backgroundColor: '#EF4639' }]}>
+                  <XIcon size={40} color={'white'} />
+                </View>
+                <View style={styles.statusTextContainer}>
+                  <Text style={styles.statusTitle}>No Orders Placed</Text>
+                  <Text style={{
+                    marginTop: 4, fontFamily: 'Poppins-Medium',
+                    color: 'black',
+                    fontSize: 10,
+                    paddingRight: 10,
+                  }}>
+                    No trades were sent to the broker. This may be because the rebalance calculation returned no trades. Please go back and try again.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {failureCount === totalCount && totalCount > 0 && !hasCautionaryListingFailures && (
               <View style={styles.statusContainer}>
                 <View style={[styles.statusIcon, { backgroundColor: '#EF4639' }]}>
                   <XIcon size={40} color={'white'} />
@@ -297,7 +333,7 @@ const RecommendationSuccessModal = ({
             )}
 
 
-            {successCount > 0 && successCount !== totalCount && (
+            {successCount > 0 && successCount !== totalCount && !hasCautionaryListingFailures && (
               <View style={styles.statusContainer}>
                 <View style={[styles.statusIcon, { backgroundColor: '#FFCD28' }]}>
                   <AlertCircle size={40} color={'black'} />
@@ -319,6 +355,72 @@ const RecommendationSuccessModal = ({
                     below and contact your advisor for next steps.
                   </Text>
                 </View>
+              </View>
+            )}
+
+            {/* Cautionary Listing Alert */}
+            {hasCautionaryListingFailures && (
+              <View style={cautionaryStyles.alertContainer}>
+                {/* Header with icon */}
+                <View style={cautionaryStyles.headerRow}>
+                  <View style={cautionaryStyles.iconCircle}>
+                    <AlertTriangle size={20} color="#D97706" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={cautionaryStyles.alertTitle}>
+                      Cautionary Listing Restriction
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Explanation */}
+                <Text style={cautionaryStyles.alertDescription}>
+                  {brokerDisplayName} does not allow stocks under{' '}
+                  <Text style={{ fontFamily: 'Poppins-SemiBold' }}>
+                    Exchange Cautionary Listing
+                  </Text>{' '}
+                  to be placed through the broker API connection. The following
+                  stocks need to be traded directly:
+                </Text>
+
+                {/* Affected stocks badges */}
+                <View style={cautionaryStyles.stockBadgeContainer}>
+                  {cautionaryListingStocks.map((stock, idx) => (
+                    <View key={idx} style={cautionaryStyles.stockBadge}>
+                      <Text style={cautionaryStyles.stockBadgeText}>
+                        {stock?.symbol || stock?.searchSymbol || 'Unknown'}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Instructions box */}
+                <View style={cautionaryStyles.instructionsBox}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                    <Info size={14} color="#2563EB" style={{ marginTop: 2, marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={cautionaryStyles.instructionsTitle}>
+                        What you need to do:
+                      </Text>
+                      <Text style={cautionaryStyles.instructionStep}>
+                        1. Open your {brokerDisplayName} app or web platform directly
+                      </Text>
+                      <Text style={cautionaryStyles.instructionStep}>
+                        2. Place the order for the above stock(s) manually
+                      </Text>
+                      <Text style={cautionaryStyles.instructionStep}>
+                        3. This is a default restriction by {brokerDisplayName} for cautionary listed stocks
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Show success count if some orders went through */}
+                {successCount > 0 && (
+                  <Text style={cautionaryStyles.partialSuccessNote}>
+                    {successCount} of {totalCount} order(s) were placed successfully. Only the above stock(s) require manual placement.
+                  </Text>
+                )}
               </View>
             )}
 
@@ -353,7 +455,7 @@ const RecommendationSuccessModal = ({
                     />
                   )}
 
-                  {failureCount === totalCount && (
+                  {failureCount === totalCount && totalCount > 0 && (
                     <View
                       style={[
                         styles.failureBar,
@@ -393,15 +495,101 @@ const RecommendationSuccessModal = ({
           </View>
         </View>
 
-        {/* ✅ FIXED: Bottom safe area for iOS home indicator */}
+        {/* Bottom safe area for iOS home indicator */}
         {Platform.OS === 'ios' && <View style={styles.bottomSafeArea} />}
       </SafeAreaView>
     </Modal>
   );
 };
 
+// Cautionary listing alert styles
+const cautionaryStyles = StyleSheet.create({
+  alertContainer: {
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 4,
+    padding: 14,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 12,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertTitle: {
+    fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#92400E',
+  },
+  alertDescription: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Regular',
+    color: '#B45309',
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  stockBadgeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  stockBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  stockBadgeText: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+    color: '#92400E',
+  },
+  instructionsBox: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    padding: 10,
+  },
+  instructionsTitle: {
+    fontSize: 12,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#1E40AF',
+    marginBottom: 4,
+  },
+  instructionStep: {
+    fontSize: 11,
+    fontFamily: 'Poppins-Regular',
+    color: '#1D4ED8',
+    lineHeight: 18,
+    marginLeft: 2,
+  },
+  partialSuccessNote: {
+    fontSize: 11,
+    fontFamily: 'Poppins-Medium',
+    color: '#166534',
+    marginTop: 10,
+    backgroundColor: '#F0FDF4',
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+});
+
 const styles = StyleSheet.create({
-  // ✅ FIXED: Updated modal container styles
   modalContainer: {
     flex: 1,
     backgroundColor: '#fff',
@@ -411,18 +599,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
 
-  // ✅ FIXED: Header styles
   headerGradient: {
     paddingHorizontal: 15,
     paddingVertical: 10,
     borderBottomLeftRadius: 15,
     borderBottomRightRadius: 15,
-    // Remove paddingTop as SafeAreaView handles it
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Platform.OS === 'ios' ? 0 : 10, // Adjusted for iOS
+    marginTop: Platform.OS === 'ios' ? 0 : 10,
   },
   headerTextContainer: {
     justifyContent: 'center',
@@ -442,12 +628,10 @@ const styles = StyleSheet.create({
     color: '#f0f0f0',
   },
 
-  // ✅ FIXED: Content container
   contentContainer: {
     flex: 1,
   },
 
-  // ✅ FIXED: Status container styles
   statusContainer: {
     paddingHorizontal: 10,
     paddingVertical: 20,
@@ -461,7 +645,7 @@ const styles = StyleSheet.create({
   statusTextContainer: {
     flexDirection: 'column',
     marginLeft: 10,
-    flex: 1, // Prevent text overflow
+    flex: 1,
   },
   statusTitle: {
     fontFamily: 'Satoshi-Bold',
@@ -472,21 +656,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-Regular',
     color: 'black',
     fontSize: 10,
-    paddingRight: 10, // Reduced padding
+    paddingRight: 10,
   },
 
-  // ✅ FIXED: Orders list style
   ordersList: {
     flex: 1,
   },
 
-  // ✅ FIXED: Bottom safe area for home indicator
   bottomSafeArea: {
-    height: Platform.OS === 'ios' ? 34 : 0, // Height of home indicator
+    height: Platform.OS === 'ios' ? 34 : 0,
     backgroundColor: '#fff',
   },
 
-  // Rest of your existing styles remain the same
   successCard: {
     backgroundColor: '#B6FF92',
   },

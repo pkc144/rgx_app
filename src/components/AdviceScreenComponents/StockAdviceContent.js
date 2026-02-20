@@ -746,6 +746,7 @@ const StockAdviceContent = React.memo(
             openSuccessModal={openSuccessModal}
             setOpenSucessModal={setOpenSucessModal}
             orderPlacementResponse={OrderPlacementResponse}
+            currentBroker={broker}
           />
         )}
       </SafeAreaView>

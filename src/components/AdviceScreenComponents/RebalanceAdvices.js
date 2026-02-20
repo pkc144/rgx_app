@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {View, Text, StyleSheet, ActivityIndicator} from 'react-native';
+import {View, Text, StyleSheet, ActivityIndicator, Alert} from 'react-native';
 import axios from 'axios';
 import server from '../../utils/serverConfig';
 
@@ -325,6 +325,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
               Config.REACT_APP_AQ_SECRET,
             ),
           },
+          timeout: 15000,
         },
       );
       const orderResults =
@@ -332,8 +333,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
       setApiResponseData(response.data);
       setStockDataForModal(orderResults);
     } catch (error) {
-      setShowstatusModal(true);
-      console.error('Error fetching stock data:', error);
+      console.warn('Error fetching stock data:', error?.message);
     }
     setShowstatusModal(true);
   };
@@ -512,16 +512,17 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       try {
         const response = await axios.request(config);
         console.log("Rebalance Calculate API Response (from step 2):", JSON.stringify(response.data));
+        console.log("[RebalanceAdvices] Calculate response - buy count:", response.data?.buy?.length, "sell count:", response.data?.sell?.length, "status:", response.data?.status, "message:", response.data?.message);
         const { buy, sell } = response.data;
 
         const updatedStockTypeAndSymbol = [
-          ...buy.map((item) => ({
+          ...(buy || []).map((item) => ({
             Symbol: item.symbol,
             Type: "BUY",
             Exchange: item.exchange,
             Quantity: item.quantity,
           })),
-          ...sell.map((item) => ({
+          ...(sell || []).map((item) => ({
             Symbol: item.symbol,
             Type: "SELL",
             Exchange: item.exchange,
@@ -576,6 +577,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       try {
         const response = await axios.request(config);
         console.log("Rebalance Calculate API Response (DummyBroker):", JSON.stringify(response.data));
+
         setCalculatedPortfolioData(response.data);
         setOpenRebalanceModal(true);
         setStoreModalName(storeModalName);
@@ -720,7 +722,18 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       try {
         const response = await axios.request(config);
         console.log("Rebalance Calculate API Response:", JSON.stringify(response.data));
+        console.log("[RebalanceAdvices] Calculate response (else) - buy count:", response.data?.buy?.length, "sell count:", response.data?.sell?.length, "status:", response.data?.status, "message:", response.data?.message);
         const { buy, sell } = response.data;
+
+        // Empty trades: still open modal so it can show "Portfolio Already Aligned" UI
+        if ((!buy || buy.length === 0) && (!sell || sell.length === 0)) {
+          setCalculatedPortfolioData(response.data);
+          setLoading(false);
+          setOpenRebalanceModal(true);
+          setStoreModalName(storeModalName);
+          setModelObjectId(modelPortfolioModelId);
+          return;
+        }
 
         const updatedStockTypeAndSymbol = [
           ...buy.map((item) => ({
@@ -888,6 +901,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           openSuccessModal={openSuccessModal}
           setOpenSucessModal={setOpenSucessModal}
           orderPlacementResponse={OrderPlacementResponse}
+          currentBroker={broker}
         />
       )}
 
