@@ -930,7 +930,7 @@ export function AngleOneTpinModal({
       <input type="hidden" name="TransDtls" value="${
         edisStatus?.data?.TransDtls || ''
       }" />
-      <input type="hidden" name="returnURL" value="https://test.alphaquark.in/stock-recommendation" />
+      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL}/stock-recommendation" />
       <input id="submitBtn" type="submit" />
     </form>
   </body>

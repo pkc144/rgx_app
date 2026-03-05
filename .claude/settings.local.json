@@ -20,7 +20,8 @@
       "Bash(/tmp/search_summary.txt:*)",
       "Bash(node scripts/fix-redirect-url.js:*)",
       "Bash(node -e:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(keytool:*)"
     ]
   }
 }

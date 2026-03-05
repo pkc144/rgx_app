@@ -37,8 +37,8 @@ android {
         applicationId "com.rgx.aq"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 45
-        versionName "4.5.0"
+        versionCode 46
+        versionName "4.6.0"
 
         missingDimensionStrategy "store", "play"
 
@@ -54,7 +54,7 @@ android {
      */
     packaging {
         jniLibs {
-            useLegacyPackaging = false
+            useLegacyPackaging = true
         }
     }
 

@@ -736,8 +736,6 @@ const UserStrategySubscribeModal = ({
   const webViewRef = useRef(null);
   const [htmlContentfinal, setHtmlContent] = useState('');
 
-  const uro = `https://test.alphaquark.in/stock-recommendation/?request_token=Dmm9bMG9fitX4Ba4XuaF0Z5gvstgFTAZ&type=basket&status=success`;
-
   const getAdditionalPayload = () => {
     if (matchingRepairTrade) {
       return {
