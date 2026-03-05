@@ -17,7 +17,7 @@ import {ArrowLeft, Mail} from 'lucide-react-native';
 import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
-import {Image} from 'react-native-elements';
+import {Image} from 'react-native';
 import {useConfig} from '../../context/ConfigContext';
 // --- ASSETS ---
 const AlphaQuarkLogo = require('../../assets/logo.png');

@@ -119,7 +119,7 @@ export const fetchFunds = async (
         'apiKey:',
         apiKey,
       );
-      if (!clientCode || !jwtToken || !apiKey) return;
+      if (!clientCode || !jwtToken) return;
       data = JSON.stringify({
         clientId: clientCode,
         apiKey: apiKey,

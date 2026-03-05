@@ -203,10 +203,6 @@ const HomeScreen = ({ }) => {
           execution?.user_email === userEmail &&
           (!broker || execution?.user_broker === broker),
       );
-      // Check if rebalance is already executed with the CURRENT broker
-      if (userExecution && userExecution.status === 'executed') {
-        return null;
-      }
 
       const matchingFailedTrades = modelPortfolioRepairTrades?.find(
         trade =>
@@ -1245,8 +1241,7 @@ const HomeScreen = ({ }) => {
   // Data for All Tab
   const allTabData = [
 
-    ...(!planList &&
-      configData?.config.REACT_APP_MODEL_PORTFOLIO_STATUS === true
+    ...(configData?.config.REACT_APP_MODEL_PORTFOLIO_STATUS === true
       ? [
         {
           key: 'AllPlanDetailsmp',
@@ -1283,7 +1278,7 @@ const HomeScreen = ({ }) => {
         },
       ]
       : []),
-    ...(!planList && configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true
+    ...(configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true
       ? [
         {
           key: 'AllPlanDetailsbespoke',

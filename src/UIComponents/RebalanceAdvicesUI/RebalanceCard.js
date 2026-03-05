@@ -81,6 +81,8 @@ const RebalanceCard = ({
   setmatchingFailedTrades,
   userExecutionFinal,
   getUserDetails,
+  selectedOption,
+  setSelectedOption,
 }) => {
   const {configData} = useTrade();
   const angelOneApiKey = configData?.config.REACT_APP_ANGEL_ONE_API_KEY;
@@ -168,7 +170,6 @@ const RebalanceCard = ({
   const [showCheckboxModal, setShowCheckboxModal] = useState(false);
   const [apiResponseData, setApiResponseData] = useState(null);
   const [latestUpdatedResponse, setLatestUpdatedResponse] = useState(null);
-  const [selectedOption, setSelectedOption] = useState('option1');
   const [currentStep, setCurrentStep] = useState(1);
   const [modalVisibleDetails, setModalVisibleDetails] = useState(false);
   // Define 3 steps data to match web

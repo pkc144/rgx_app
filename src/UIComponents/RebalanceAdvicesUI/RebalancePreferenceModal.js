@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -27,11 +27,12 @@ const CheckBox = ({value, onValueChange, accentColor}) => (
 const RebalancePreferenceModal = ({
   showCheckboxModal,
   setShowCheckboxModal,
+  selectedOption,
+  setSelectedOption,
   handleConfirmPreference,
 }) => {
   const config = useConfig();
   const gradient2 = config?.gradient2 || '#0076FB';
-  const [selectedOption, setSelectedOption] = useState('option1');
   const stepsData = [1, 2, 3];
   const currentStep = 1;
 

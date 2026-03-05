@@ -71,8 +71,7 @@ const LoginScreen = () => {
     getModelPortfolioStrategyDetails,
   } = useTrade();
 
-  // Configure Google Sign-In with correct Web client ID
-  // IMPORTANT: Must use Web client (client_type: 3), NOT iOS client (client_type: 2)
+  // Configure Google Sign-In with correct Web client ID from google-services.json (client_type: 3)
   const WEB_CLIENT_ID = '887826618956-83tfceb7n4m4h38qk93ld1emb78uj5rh.apps.googleusercontent.com';
 
   React.useEffect(() => {
@@ -145,7 +144,9 @@ const LoginScreen = () => {
     setLoading(true);
     setErrorShow(false);
 
-    if (!email || !password) {
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail || !password) {
       setError('Email and password are required');
       setErrorShow(true);
       setLoading(false);
@@ -154,7 +155,7 @@ const LoginScreen = () => {
 
     try {
       // Step 1: Firebase auth
-      const response = await auth().signInWithEmailAndPassword(email, password);
+      const response = await auth().signInWithEmailAndPassword(trimmedEmail, password);
       const user = response.user;
 
       if (user) {
@@ -163,7 +164,7 @@ const LoginScreen = () => {
 
         try {
           const getResponse = await axios.get(
-            `${server.server.baseUrl}api/user/getUser/${email}?includeAdvisorConfig=true`,
+            `${server.server.baseUrl}api/user/getUser/${trimmedEmail}?includeAdvisorConfig=true`,
             {
               headers: {
                 'Content-Type': 'application/json',
@@ -216,14 +217,14 @@ const LoginScreen = () => {
         // Try multiple possible locations for the subdomain
         const advisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
         trackAppUser({
-          email: email,
+          email: trimmedEmail,
           firebase_id: user.uid,
           name: user.displayName,
           login_method: 'email',
           advisor_subdomain: advisorSubdomain,
         });
         logLoginAttempt({
-          email: email,
+          email: trimmedEmail,
           firebase_id: user.uid,
           status: 'success',
           login_method: 'email',
@@ -231,15 +232,15 @@ const LoginScreen = () => {
         });
 
         // Navigate with handlePostLoginNavigation
-        await handlePostLoginNavigation(userDetails, email);
+        await handlePostLoginNavigation(userDetails, trimmedEmail);
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Login error:', error.code, error.message);
 
       // Log failed login attempt (fire-and-forget) - use subdomain from config
       const failedAdvisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
       logLoginAttempt({
-        email: email,
+        email: trimmedEmail,
         status: 'failed',
         login_method: 'email',
         failure_reason: error.code?.includes('auth/') ? 'firebase_error' : 'api_error',
@@ -248,7 +249,23 @@ const LoginScreen = () => {
         advisor_subdomain: failedAdvisorSubdomain,
       });
 
-      setError(error.message);
+      // Show user-friendly error messages instead of raw Firebase errors
+      let userMessage = 'Something went wrong. Please try again.';
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        userMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (error.code === 'auth/user-not-found') {
+        userMessage = 'No account found with this email. Please sign up first.';
+      } else if (error.code === 'auth/invalid-email') {
+        userMessage = 'Please enter a valid email address.';
+      } else if (error.code === 'auth/too-many-requests') {
+        userMessage = 'Too many failed attempts. Please try again later.';
+      } else if (error.code === 'auth/user-disabled') {
+        userMessage = 'This account has been disabled. Please contact support.';
+      } else if (error.code === 'auth/network-request-failed') {
+        userMessage = 'Network error. Please check your internet connection.';
+      }
+
+      setError(userMessage);
       setErrorShow(true);
     } finally {
       setLoading(false);
