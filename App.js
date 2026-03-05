@@ -12,6 +12,7 @@ import {
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
 import { handleOAuthCallback } from './src/services/ZerodhaOAuthService';
+import Config from 'react-native-config';
 
 import Navigation from './src/components/Navigation';
 import {CartProvider} from './src/components/CartContext';
@@ -98,7 +99,8 @@ const App = () => {
       console.log('[App] Deep link received:', url);
 
       // Check if it's a Zerodha OAuth callback
-      if (url && url.startsWith('rgxapp://zerodha/callback')) {
+      const scheme = Config?.REACT_APP_DEEP_LINK_SCHEME || 'rgxapp';
+      if (url && url.startsWith(`${scheme}://zerodha/callback`)) {
         console.log('[App] Zerodha OAuth callback detected');
 
         const result = await handleOAuthCallback(url);

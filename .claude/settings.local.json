@@ -21,7 +21,10 @@
       "Bash(node scripts/fix-redirect-url.js:*)",
       "Bash(node -e:*)",
       "Bash(ls:*)",
-      "Bash(keytool:*)"
+      "Bash(keytool:*)",
+      "Bash(diff:*)",
+      "Bash(git checkout:*)",
+      "Bash(cp:*)"
     ]
   }
 }
