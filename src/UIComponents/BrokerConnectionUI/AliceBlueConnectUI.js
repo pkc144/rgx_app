@@ -5,24 +5,20 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Dimensions,
   TextInput,
   ActivityIndicator,
   Image,
-  Dimensions,
   Platform,
   KeyboardAvoidingView,
   BackHandler,
 } from 'react-native';
 import {
-  EyeIcon,
-  EyeOffIcon,
+  ChevronLeft,
   ChevronUp,
   ChevronDown,
-  ChevronLeft,
 } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
-import AliceblueHelpContent from './HelpUI/AliceblueHelpContent';
 import aliceBlueIcon from '../../assets/aliceblue.png';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
@@ -34,30 +30,26 @@ const AliceBlueConnectUI = ({
   isVisible,
   onClose,
   clientCode,
+  setClientCode,
   apiKey,
-  setclientCode,
   setApiKey,
-  isPasswordVisible,
-  isPasswordVisibleup,
-  setIsPasswordVisible,
-  setIsPasswordVisibleup,
   handleSubmit,
   loading,
-  helpVisible,
-  setHelpVisible,
 }) => {
   const scrollViewRef = useRef(null);
-  const [expanded, setExpanded] = useState(false);
   const insets = useSafeAreaInsets();
 
   // Handle Android back button
   React.useEffect(() => {
     if (!isVisible) return;
 
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      onClose();
-      return true;
-    });
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        onClose();
+        return true;
+      },
+    );
 
     return () => backHandler.remove();
   }, [isVisible, onClose]);
@@ -76,132 +68,89 @@ const AliceBlueConnectUI = ({
               <TouchableOpacity onPress={onClose} style={styles.backButton}>
                 <ChevronLeft size={24} color="#000" />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Connect AliceBlue</Text>
+              <Text style={styles.headerTitle}>Connect to AliceBlue</Text>
             </View>
-            <Image source={aliceBlueIcon} style={styles.headerIcon} />
+            <Image source={aliceBlueIcon} style={styles.headerIcon} resizeMode="contain" />
           </LinearGradient>
 
-          {/* Main Scrollable Content */}
-          {expanded ? (
-            /* Full Screen Help when expanded */
-            <View style={styles.fullScreenHelp}>
-              <ScrollView
-                ref={scrollViewRef}
-                style={{flex: 1}}
-                contentContainerStyle={{padding: 10, paddingBottom: 20}}
-                showsVerticalScrollIndicator={true}>
-                <AliceblueHelpContent expanded={expanded} />
-                <View style={[styles.toggleWrapper, {marginTop: 15, paddingBottom: insets.bottom + 10}]}>
-                  <TouchableOpacity
-                    style={styles.toggleContainer}
-                    onPress={() => setExpanded(false)}>
-                    <Text style={styles.toggleText}>See Less</Text>
-                    <View style={styles.toggleIconContainer}>
-                      <ChevronUp size={14} color="#000" />
+          {/* Scrollable Content */}
+          <KeyboardAvoidingView
+            style={{flex: 1}}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+            <ScrollView
+              ref={scrollViewRef}
+              style={{flex: 1}}
+              contentContainerStyle={{padding: 10, paddingBottom: insets.bottom + 100}}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled">
+
+              {/* Input Card */}
+              <View style={styles.inputCard}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.connectLabel}>Connect to AliceBlue</Text>
+                  <Image
+                    source={aliceBlueIcon}
+                    style={styles.cardIcon}
+                    resizeMode="contain"
+                  />
+                </View>
+
+                {/* Input Fields */}
+                <View style={styles.inputSection}>
+                  {/* User ID */}
+                  <View style={styles.inputWrapper}>
+                    <Text style={styles.headerLabel}>User ID:</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        value={clientCode}
+                        placeholder="Enter your User ID"
+                        placeholderTextColor="grey"
+                        style={[styles.inputStyles, {flex: 1}]}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        onChangeText={text => setClientCode(text.trim())}
+                      />
                     </View>
+                  </View>
+
+                  {/* API Key */}
+                  <View style={styles.inputWrapper}>
+                    <Text style={styles.headerLabel}>API Key:</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        value={apiKey}
+                        placeholder="Enter your API Key"
+                        placeholderTextColor="grey"
+                        style={[styles.inputStyles, {flex: 1}]}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        onChangeText={text => setApiKey(text.trim())}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Connect Button */}
+                  <TouchableOpacity
+                    style={[
+                      styles.proceedButton,
+                      {
+                        backgroundColor:
+                          clientCode && apiKey ? '#0056B7' : '#d3d3d3',
+                      },
+                    ]}
+                    onPress={handleSubmit}
+                    disabled={!(clientCode && apiKey)}>
+                    {loading ? (
+                      <ActivityIndicator size={27} color="#fff" />
+                    ) : (
+                      <Text style={styles.proceedButtonText}>Connect</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
-              </ScrollView>
-            </View>
-          ) : (
-            <KeyboardAvoidingView
-              style={{flex: 1}}
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-              <ScrollView
-                ref={scrollViewRef}
-                style={{flex: 1}}
-                contentContainerStyle={{padding: 10, paddingBottom: insets.bottom + 100}}
-                showsVerticalScrollIndicator={true}
-                keyboardShouldPersistTaps="handled">
-                {/* Help Content */}
-                <View style={[styles.guideBox, {maxHeight: 280}]}>
-                  <AliceblueHelpContent expanded={expanded} />
-                </View>
-
-                {/* Read More */}
-                <TouchableOpacity
-                  style={styles.toggleContainer}
-                  onPress={() => setExpanded(true)}>
-                  <Text style={styles.toggleText}>Read More</Text>
-                  <View style={styles.toggleIconContainer}>
-                    <ChevronDown size={14} color="#000" />
-                  </View>
-                </TouchableOpacity>
-
-                {/* Input Card */}
-                <View style={styles.inputCard}>
-                  <View style={styles.cardHeader}>
-                    <Text style={styles.connectLabel}>Connect to AliceBlue</Text>
-                    <Image
-                      source={aliceBlueIcon}
-                      style={styles.cardIcon}
-                      resizeMode="contain"
-                    />
-                  </View>
-
-                  {/* Input Fields */}
-                  <View style={styles.inputSection}>
-                    {/* User ID */}
-                    <View style={styles.inputWrapper}>
-                      <Text style={styles.headerLabel}>User ID:</Text>
-                      <View style={styles.inputContainer}>
-                        <TextInput
-                          value={clientCode}
-                          placeholder="Enter your User ID"
-                          placeholderTextColor="grey"
-                          style={[styles.inputStyles, {flex: 1}]}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          onChangeText={text => setclientCode(text.trim())}
-                        />
-                      </View>
-                    </View>
-
-                    {/* API Key */}
-                    <View style={styles.inputWrapper}>
-                      <Text style={styles.headerLabel}>API Key:</Text>
-                      <View style={styles.inputContainer}>
-                        <TextInput
-                          value={apiKey}
-                          placeholder="Enter your API Key"
-                          placeholderTextColor="grey"
-                          style={[styles.inputStyles, {flex: 1}]}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                          onChangeText={text => setApiKey(text.trim())}
-                        />
-                      </View>
-                    </View>
-
-                    {/* Connect Button */}
-                    <TouchableOpacity
-                      style={[
-                        styles.proceedButton,
-                        {
-                          backgroundColor:
-                            clientCode && apiKey ? '#0056B7' : '#d3d3d3',
-                        },
-                      ]}
-                      onPress={handleSubmit}
-                      disabled={!(clientCode && apiKey)}>
-                      {loading ? (
-                        <ActivityIndicator size={27} color="#fff" />
-                      ) : (
-                        <Text style={styles.proceedButtonText}>Connect</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          )}
-
-          <HelpModal
-            broker="AliceBlue"
-            visible={helpVisible}
-            onClose={() => setHelpVisible(false)}
-          />
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </View>
     </CrossPlatformOverlay>
@@ -214,6 +163,13 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
   },
+  headerIcon: {width: 35, height: 35, borderRadius: 3, backgroundColor: '#fff'},
+  backButton: {
+    padding: 4,
+    borderRadius: 5,
+    backgroundColor: '#fff',
+    elevation: 4,
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -225,49 +181,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-SemiBold',
     color: '#fff',
     marginLeft: 10,
-  },
-  backButton: {
-    padding: 4,
-    borderRadius: 5,
-    backgroundColor: '#fff',
-    elevation: 4,
-  },
-  headerIcon: {width: 35, height: 35, borderRadius: 3, backgroundColor: '#fff'},
-  container: {flex: 1, justifyContent: 'flex-start'},
-  guideBox: {
-    borderWidth: 1,
-    borderColor: '#E8E9EC',
-    borderRadius: 8,
-    padding: 10,
-  },
-  fullScreenHelp: {flex: 1, backgroundColor: '#fff'},
-  toggleWrapper: {
-    borderTopWidth: 1,
-    borderTopColor: '#E8E9EC',
-    backgroundColor: '#fff',
-    paddingVertical: 5,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderTopColor: '#E8E9EC',
-    backgroundColor: '#fff',
-  },
-  toggleText: {fontSize: 14, fontFamily: 'Poppins-SemiBold', color: '#0056B7'},
-  toggleIconContainer: {
-    marginLeft: 5,
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 3,
-    elevation: 3,
-  },
-  bottomContainer: {
-    padding: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#E8E9EC',
-    backgroundColor: '#fff',
   },
   inputCard: {
     marginTop: 10,

@@ -1555,7 +1555,7 @@ const RebalanceModal = ({
                   )}
                 </>
               }
-              // Empty state — Portfolio Already Aligned
+              // Empty state — Portfolio Already Aligned or API error message
               ListEmptyComponent={
                 <View
                   style={{
@@ -1564,72 +1564,131 @@ const RebalanceModal = ({
                     marginTop: 40,
                     paddingHorizontal: 24,
                   }}>
-                  {/* Green checkmark circle */}
-                  <View
-                    style={{
-                      width: 72,
-                      height: 72,
-                      borderRadius: 36,
-                      backgroundColor: '#DEF7EC',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: 20,
-                    }}>
-                    <CheckIcon size={36} color="#15803D" />
-                  </View>
-                  <Text
-                    style={{
-                      fontFamily: 'Poppins-SemiBold',
-                      color: '#15803D',
-                      fontSize: 20,
-                      textAlign: 'center',
-                      marginBottom: 12,
-                    }}>
-                    Your Portfolio is Already Aligned!
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: 'Poppins-Regular',
-                      color: 'rgba(0,0,0,0.6)',
-                      textAlign: 'center',
-                      marginBottom: 10,
-                      fontSize: 14,
-                      lineHeight: 22,
-                      paddingHorizontal: 10,
-                    }}>
-                    Great news! Based on your current holdings and the latest model
-                    portfolio recommendations, no trades are needed right now. Your
-                    investments are already in sync with your advisor's strategy.
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: 'Poppins-Regular',
-                      color: 'rgba(0,0,0,0.4)',
-                      textAlign: 'center',
-                      marginBottom: 24,
-                      fontSize: 13,
-                      lineHeight: 20,
-                    }}>
-                    Want to increase your investment or make changes? Go back and
-                    modify your investment amount.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={handleClose}
-                    style={{
-                      backgroundColor: '#000',
-                      paddingHorizontal: 24,
-                      paddingVertical: 12,
-                      borderRadius: 8,
-                    }}>
-                    <Text
-                      style={{
-                        color: '#fff',
-                        fontFamily: 'Poppins-Medium',
-                        fontSize: 14,
-                      }}>
-                      Go Back
-                    </Text>
-                  </TouchableOpacity>
+                  {calculatedPortfolioData?.status === 1 && calculatedPortfolioData?.message ? (
+                    <>
+                      {/* Error/warning icon */}
+                      <View
+                        style={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 36,
+                          backgroundColor: '#FEF3C7',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 20,
+                        }}>
+                        <AlertOctagon size={36} color="#D97706" />
+                      </View>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-SemiBold',
+                          color: '#D97706',
+                          fontSize: 18,
+                          textAlign: 'center',
+                          marginBottom: 12,
+                        }}>
+                        Unable to Rebalance
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.6)',
+                          textAlign: 'center',
+                          marginBottom: 24,
+                          fontSize: 14,
+                          lineHeight: 22,
+                          paddingHorizontal: 10,
+                        }}>
+                        {calculatedPortfolioData.message}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleClose}
+                        style={{
+                          backgroundColor: '#000',
+                          paddingHorizontal: 24,
+                          paddingVertical: 12,
+                          borderRadius: 8,
+                        }}>
+                        <Text
+                          style={{
+                            color: '#fff',
+                            fontFamily: 'Poppins-Medium',
+                            fontSize: 14,
+                          }}>
+                          Go Back
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      {/* Green checkmark circle */}
+                      <View
+                        style={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 36,
+                          backgroundColor: '#DEF7EC',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 20,
+                        }}>
+                        <CheckIcon size={36} color="#15803D" />
+                      </View>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-SemiBold',
+                          color: '#15803D',
+                          fontSize: 20,
+                          textAlign: 'center',
+                          marginBottom: 12,
+                        }}>
+                        Your Portfolio is Already Aligned!
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.6)',
+                          textAlign: 'center',
+                          marginBottom: 10,
+                          fontSize: 14,
+                          lineHeight: 22,
+                          paddingHorizontal: 10,
+                        }}>
+                        Great news! Based on your current holdings and the latest model
+                        portfolio recommendations, no trades are needed right now. Your
+                        investments are already in sync with your advisor's strategy.
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.4)',
+                          textAlign: 'center',
+                          marginBottom: 24,
+                          fontSize: 13,
+                          lineHeight: 20,
+                        }}>
+                        Want to increase your investment or make changes? Go back and
+                        modify your investment amount.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleClose}
+                        style={{
+                          backgroundColor: '#000',
+                          paddingHorizontal: 24,
+                          paddingVertical: 12,
+                          borderRadius: 8,
+                        }}>
+                        <Text
+                          style={{
+                            color: '#fff',
+                            fontFamily: 'Poppins-Medium',
+                            fontSize: 14,
+                          }}>
+                          Go Back
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               }
             />

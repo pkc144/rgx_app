@@ -91,7 +91,9 @@ const RebalanceAdviceContent = React.memo(
     setLatestRebalanceData,
     setuserExecution,
     setmatchingFailedTrades,
-    setRepairmessageModal
+    setRepairmessageModal,
+    selectedOption,
+    setSelectedOption
   }) => {
     const {
       modelPortfolioStrategyfinal,
@@ -496,6 +498,8 @@ const RebalanceAdviceContent = React.memo(
               setuserExecution={setuserExecution}
               setmatchingFailedTrades={setmatchingFailedTrades}
               userExecutionFinal={userExecution}
+              selectedOption={selectedOption}
+              setSelectedOption={setSelectedOption}
             />
           )}
         </View>

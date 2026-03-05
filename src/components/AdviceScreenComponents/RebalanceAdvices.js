@@ -245,19 +245,17 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const [stockDataForModal, setStockDataForModal] = useState([]);
   // console.log('store Modal Name-------------', storeModalName);
   const handleAcceptRebalanceWithoutBroker = async () => {
-    console.log('\n🚀 ============ CONTINUE WITHOUT BROKER ============');
-    console.log('📧 User Email:', userEmail);
-    console.log('📊 Model Name:', storeModalName);
-
+    console.log('Continue without broker - saving no-broker preference and calling rebalance/calculate');
     setStoreModalName(storeModalName);
 
     try {
-      const apiUrl = `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${userEmail}/${storeModalName}`;
-      console.log('🌐 API URL:', apiUrl);
-      console.log('⏳ Making API call...');
-
-      const response = await axios.get(
-        apiUrl,
+      // Save no-broker preference (matches web version)
+      await axios.put(
+        `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
+        {
+          userEmail: userEmail,
+          noBrokerRequired: true,
+        },
         {
           headers: {
             'Content-Type': 'application/json',
@@ -270,45 +268,69 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
         },
       );
 
-      console.log('✅ API Response received');
-      console.log('📦 Response Status:', response.status);
-      console.log('📦 Response Data:', JSON.stringify(response.data, null, 2));
-
-      const orderResults =
-        response.data?.data?.user_net_pf_model?.order_results || [];
-
-      console.log('📊 Order Results Count:', orderResults.length);
-      console.log('📊 Order Results:', orderResults);
-
-      // setApiResponseData(response.data);
-      setStoreModalName(storeModalName);
-      setStockDataForModal(orderResults);
-
-      console.log('✅ Closing broker modal...');
+      // Close broker modal, set non-broker flag, then call handleAcceptRebalance
       setBrokerModel(false);
+      setSelectNonBroker(true);
 
-      console.log('✅ Opening status modal...');
-      setShowstatusModal(true);
+      // Directly call rebalance/calculate with DummyBroker payload
+      // (matching web version's handleContinueWithoutBroker flow)
+      setLoading(true);
+      let payload = {
+        userEmail: userEmail,
+        userBroker: "DummyBroker",
+        modelName: storeModalName?.trim(),
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+        model_id: modelPortfolioModelId,
+        userFund: "0",
+        flag: 0,
+      };
 
-      console.log('============================================\n');
+      let config = {
+        method: "post",
+        url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
+        data: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "aq-encrypted-key": generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        },
+      };
+
+      console.log("Rebalance Calculate Payload (without broker):", JSON.stringify(payload));
+
+      const response = await axios.request(config);
+      console.log("Rebalance Calculate Response (without broker):", JSON.stringify(response.data));
+
+      const { buy, sell } = response.data;
+      const updatedStockTypeAndSymbol = [
+        ...(buy || []).map((item) => ({
+          Symbol: item.symbol,
+          Type: "BUY",
+          Exchange: item.exchange,
+          Quantity: item.quantity,
+        })),
+        ...(sell || []).map((item) => ({
+          Symbol: item.symbol,
+          Type: "SELL",
+          Exchange: item.exchange,
+          Quantity: item.quantity,
+        })),
+      ];
+
+      setStockTypeAndSymbol(updatedStockTypeAndSymbol);
+      setCalculatedPortfolioData(response.data);
+      setLoading(false);
+      setOpenRebalanceModal(true);
+      setModelObjectId(modelPortfolioModelId);
     } catch (error) {
-      console.error('\n❌ ============ CONTINUE WITHOUT BROKER ERROR ============');
-      console.error('Error Type:', error.name);
-      console.error('Error Message:', error.message);
-
+      console.error('Continue without broker error:', error.message);
       if (error.response) {
-        console.error('📦 Response Status:', error.response.status);
-        console.error('📦 Response Data:', error.response.data);
-        console.error('📦 Response Headers:', error.response.headers);
-      } else if (error.request) {
-        console.error('📦 No response received');
-        console.error('Request:', error.request);
-      } else {
-        console.error('📦 Request setup error');
+        console.error('Response:', error.response.status, error.response.data);
       }
-
-      console.error('Error Stack:', error.stack);
-      console.error('============================================\n');
+      setLoading(false);
     }
   };
 
@@ -405,14 +427,15 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     // The user has already gone through broker checks in step 1
     if (currentStep === 2) {
       // Proceed directly to calculation for step 3
+      const effectiveBroker = broker ? broker : "DummyBroker";
       let payload = {
         userEmail: userEmail,
-        userBroker: broker ? broker : "DummyBroker",
+        userBroker: effectiveBroker,
         modelName: storeModalName?.trim(),
         advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
-        flag: selectedOption === "option1" ? 1 : 0,
+        flag: effectiveBroker === "DummyBroker" ? 0 : (selectedOption === "option1" ? 1 : 0),
       };
 
       if (broker === "IIFL Securities") {
@@ -550,6 +573,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     // This prevents infinite loop when MPStatusModal calls handleAcceptRebalance on close
     if (selectNonBroker) {
       // User already chose "Continue without broker" - proceed with DummyBroker flow
+      // Always use flag=0 for DummyBroker since there are no brokerage costs to optimize
       let payload = {
         userEmail: userEmail,
         userBroker: "DummyBroker",
@@ -557,7 +581,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: "0",
-        flag: selectedOption === "option1" ? 1 : 0,
+        flag: 0,
       };
 
       let config = {
@@ -617,14 +641,15 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       setLoading(false);
     } else {
 
+      const effectiveBroker = broker ? broker : "DummyBroker";
       let payload = {
         userEmail: userEmail,
-        userBroker: broker ? broker : "DummyBroker",
+        userBroker: effectiveBroker,
         modelName: storeModalName?.trim(),
         advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
-        flag: selectedOption === "option1" ? 1 : 0,
+        flag: effectiveBroker === "DummyBroker" ? 0 : (selectedOption === "option1" ? 1 : 0),
       };
       if (broker === "IIFL Securities") {
         payload = {
@@ -834,6 +859,8 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         setuserExecution={setuserExecution}
         setmatchingFailedTrades={setmatchingFailedTrades}
         setRepairmessageModal={setRepairmessageModal}
+        selectedOption={selectedOption}
+        setSelectedOption={setSelectedOption}
       />
 
       {(brokerModel || OpenTokenExpireModel) && (
@@ -844,7 +871,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           setOpenTokenExpireModel={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
           withoutBroker={false}
-          handleAcceptRebalance={() => console.log('...')}
+          handleAcceptRebalance={handleAcceptRebalance}
           handleAcceptRebalanceWithoutBroker={
             handleAcceptRebalanceWithoutBroker
           }

@@ -1,35 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-  ScrollView,
-  SafeAreaView,
-  Pressable,
-} from 'react-native';
-import WebView from 'react-native-webview';
 
 import { getAuth } from '@react-native-firebase/auth';
 import server from '../../utils/serverConfig';
 import axios from 'axios';
-import { FloatingLabelInput } from 'react-native-floating-label-input';
 import CryptoJS from 'react-native-crypto-js';
 
-import HelpModal from './HelpModal';
-import Modal from 'react-native-modal';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
-import {
-  XIcon,
-  EyeIcon,
-  EyeOffIcon,
-  ChevronLeft,
-  ChevronDown,
-  ChevronUp,
-  ChevronRight,
-} from 'lucide-react-native';
 import ICICIConnectUI from '../../UIComponents/BrokerConnectionUI/ICICIConnectUI';
 import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
@@ -52,41 +29,22 @@ const ICICIUPModal = ({
   const [showWebView, setShowWebView] = useState(false);
   const [authUrl, setAuthUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sessionToken, setSessionToken] = useState(null);
-  const [apiSession, setApiSession] = useState(null);
   const [userDetails, setUserDetails] = useState(null);
   const [helpVisible, setHelpVisible] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [activeSections, setActiveSections] = useState([]);
 
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);
-  const isToastShown = useRef(false);
-  const hasConnectedIcici = useRef(false);
 
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;
+
   const checkValidApiAnSecretdecrypt = details => {
     const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
       return Key;
     }
-  };
-
-  // Parse query string utility
-  const parseQueryString = queryString => {
-    const params = {};
-    const query = queryString.startsWith('?')
-      ? queryString.substring(1)
-      : queryString;
-    const pairs = query.split('&');
-    pairs.forEach(pair => {
-      const [key, value] = pair.split('=');
-      params[decodeURIComponent(key)] = decodeURIComponent(value);
-    });
-    return params;
   };
 
   // Fetch user details
@@ -116,121 +74,22 @@ const ICICIUPModal = ({
       sheet.current?.present();
     } else {
       sheet.current?.dismiss();
-      // Reset states when modal closes
       setShowWebView(false);
       setAuthUrl('');
-      setApiSession(null);
     }
   }, [isVisible]);
 
-  // Connect ICICI Direct when apiSession is available
-  useEffect(() => {
-    if (apiSession && apiKey) {
-      const data = {
-        apiKey: apiKey,
-        accessToken: apiSession,
-      };
-
-      axios
-        .post(`${server.ccxtServer.baseUrl}icici/customer-details`, data, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        })
-        .then(response => {
-          if (response.data.Status === 200) {
-            setSessionToken(response.data.Success.session_token);
-          }
-        })
-        .catch(error => {
-          console.error('Error connecting to ICICI:', error.response);
-          showAlert('error', 'Connection Error', 'Failed to connect to ICICI Direct. Please try again.');
-        });
-    }
-  }, [apiSession, apiKey]);
-
-  // Update broker connection in database
-  useEffect(() => {
-    if (sessionToken && userDetails?._id && !isToastShown.current) {
-      const brokerData = {
-        uid: userDetails._id,
-        user_broker: 'ICICI Direct',
-        jwtToken: sessionToken,
-        apiKey: checkValidApiAnSecret(apiKey),
-        secretKey: checkValidApiAnSecret(secretKey),
-      };
-
-      axios
-        .put(`${server.server.baseUrl}api/user/connect-broker`, brokerData, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        })
-        .then(response => {
-          console.log('[ICICI Direct] Broker connected successfully, updating model portfolio...');
-
-          // Update model portfolio with broker information (non-critical)
-          let newBrokerData = {
-            user_email: userEmail,
-            user_broker: 'ICICI Direct',
-          };
-          let A1_broker = {
-            method: 'post',
-            url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
-            data: JSON.stringify(newBrokerData),
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
-          };
-
-          // Execute the model portfolio broker update - catch separately so connection success isn't affected
-          return axios.request(A1_broker).catch(err => {
-            console.warn('[ICICI Direct] Model portfolio update failed (non-critical):', err);
-            return null;
-          });
-        })
-        .then(response => {
-          if (response) {
-            console.log('[ICICI Direct] Model portfolio updated successfully');
-          }
-          isToastShown.current = true;
-          fetchBrokerStatusModal();
-          eventEmitter.emit('refreshEvent', { source: 'ICICI Direct broker connection' });
-          showAlert('success', 'Connected Successfully', 'Your ICICI Direct broker has been connected successfully!');
-          onClose();
-          //setShowBrokerModal(false);
-        })
-        .catch(error => {
-          console.error('Error updating broker connection:', error);
-          showAlert('error', 'Connection Error', 'Failed to connect broker. Please try again.');
-        });
-    }
-  }, [sessionToken, userDetails, fetchBrokerStatusModal, setShowBrokerModal]);
-
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
-    if (url.includes('apisession=')) {
-      const queryParams = parseQueryString(url.split('?')[1]);
-      const sessionToken1 = queryParams.apisession;
-      if (sessionToken1) {
-        setApiSession(sessionToken1);
-        setShowWebView(false);
-      }
+    const callbackUrl = configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL || '';
+
+    if (url.includes(callbackUrl) || url.includes('/callback')) {
+      setShowWebView(false);
+      fetchBrokerStatusModal();
+      eventEmitter.emit('refreshEvent', { source: 'ICICI Direct broker connection' });
+      showAlert('success', 'Connected Successfully', 'Your ICICI Direct broker has been connected successfully!');
+      onClose();
+      setShowBrokerModal(false);
     }
   };
 
@@ -275,30 +134,6 @@ const ICICIUPModal = ({
       });
   };
 
-
-  const renderHeader = section => (
-    <View
-      style={{
-        backgroundColor: '#F9FAFB',
-        borderRadius: 10,
-        flexDirection: 'row',
-        alignContent: 'center',
-        alignItems: 'center',
-        alignSelf: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 10,
-      }}>
-      <Text style={styles.stepGuide}>
-        Steps to Obtain API and Secret Key for HDFC:
-      </Text>
-      {isCollapsed ? (
-        <ChevronUp size={24} color={'black'} />
-      ) : (
-        <ChevronDown size={24} color={'black'} />
-      )}
-    </View>
-  );
-
   const [shouldRenderContent, setShouldRenderContent] = React.useState(false);
   useEffect(() => {
     if (isVisible) {
@@ -310,61 +145,13 @@ const ICICIUPModal = ({
   }, [isVisible]);
 
   const OpenHelpModal = () => {
-    // console.log('modal:',helpVisible)
     setHelpVisible(true);
   };
   const handleClose = () => {
     onClose();
-    // console.log('modal:',helpVisible)
     setShowBrokerModal(false);
   };
 
-  useEffect(() => {
-    if (
-      userDetails?._id &&
-      userDetails?.apiKey &&
-      userDetails?.secretKey &&
-      userDetails?.user_broker === 'ICICI Direct'
-    ) {
-      setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
-      setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
-      let data = JSON.stringify({
-        uid: userDetails?._id,
-        apiKey: userDetails?.apiKey,
-        secretKey: userDetails?.secretKey,
-      });
-
-      let config = {
-        method: 'put',
-        url: `${server.server.baseUrl}api/icici/update-key`,
-
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-
-        data: data,
-      };
-      axios
-        .request(config)
-        .then(response => {
-          if (response) {
-            const url = `https://api.icicidirect.com/apiuser/login?api_key=${encodeURIComponent(
-              checkValidApiAnSecretdecrypt(userDetails?.apiKey),
-            )}`;
-            setAuthUrl(url);
-            setShowWebView(true);
-          }
-        })
-        .catch(error => {
-          console.log(error.response);
-        });
-    }
-  }, [isVisible, userDetails]);
   return (
     <ICICIConnectUI
       isVisible={isVisible}

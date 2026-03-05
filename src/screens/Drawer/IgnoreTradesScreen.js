@@ -533,7 +533,7 @@ const IgnoreTradesScreen = () => {
             ...basePayload,
             clientCode,
             jwtToken,
-            apiKey,
+            apiKey: checkValidApiAnSecret(apiKey),
           };
         default:
           return {

@@ -146,7 +146,7 @@ const buildOrderBookPayload = (broker, credentials) => {
       };
 
     case 'AliceBlue':
-      if (!clientCode || !jwtToken || !apiKey) {
+      if (!clientCode || !jwtToken) {
         throw new Error('AliceBlue: Missing required credentials');
       }
       return {
@@ -297,12 +297,11 @@ const buildCancelOrderPayload = (broker, credentials, orderId, orderDetails = {}
 
     case 'AliceBlue':
       return {
-        url: `${server.ccxtServer.baseUrl}aliceblue/cancel-order`,
+        url: `${server.ccxtServer.baseUrl}aliceblue/v2/cancel-order`,
         data: {
-          clientId: clientCode,
-          apiKey: apiKey,
-          accessToken: jwtToken,
+          user_email: credentials.userEmail,
           orderId,
+          uniqueOrderId: orderId,
         },
       };
 
@@ -403,6 +402,16 @@ export const fetchOrderBook = async (broker, credentials, configData = null) => 
 
     console.log('[BrokerOrderBookAPI] Response received for:', broker);
 
+    // Check for token expiry
+    if (
+      response.data?.warning?.type === 'TOKEN_EXPIRED' ||
+      response.data?.data?.tokenExpired ||
+      response.data?.tokenExpired ||
+      response.data?.data?.brokerConnected === false
+    ) {
+      return {success: false, tokenExpired: true, message: `${broker} session expired`, orders: []};
+    }
+
     // Handle different response structures
     let orders = [];
     if (response.data) {
@@ -468,6 +477,16 @@ export const cancelOrder = async (broker, credentials, orderId, orderDetails = {
 
     console.log('[BrokerOrderBookAPI] Cancel response:', response.data);
 
+    // Check for token expiry
+    if (
+      response.data?.warning?.type === 'TOKEN_EXPIRED' ||
+      response.data?.data?.tokenExpired ||
+      response.data?.tokenExpired ||
+      response.data?.data?.brokerConnected === false
+    ) {
+      return {success: false, tokenExpired: true, message: `${broker} session expired`};
+    }
+
     return {
       success: true,
       data: response.data,
@@ -510,6 +529,64 @@ export const getOrderStatus = async (broker, credentials, orderId, configData = 
 };
 
 /**
+ * Get single order status via v2 endpoint (for brokers that support it)
+ * @param {string} broker - Broker name
+ * @param {object} credentials - Broker credentials
+ * @param {string} orderId - Order ID
+ * @param {object} configData - Config data for headers
+ * @returns {Promise<object>} - Order status response
+ */
+export const getOrderStatusV2 = async (broker, credentials, orderId, configData = null) => {
+  try {
+    console.log('[BrokerOrderBookAPI] Fetching v2 order status for:', broker, orderId);
+
+    let url;
+    let data;
+
+    switch (broker) {
+      case 'AliceBlue':
+        url = `${server.ccxtServer.baseUrl}aliceblue/v2/single-order-status`;
+        data = {
+          user_email: credentials.userEmail,
+          orderId,
+        };
+        break;
+      default:
+        // Fall back to full order book lookup for unsupported brokers
+        return getOrderStatus(broker, credentials, orderId, configData);
+    }
+
+    const response = await axios.post(url, JSON.stringify(data), {
+      headers: getHeaders(configData),
+      timeout: 30000,
+    });
+
+    // Check for token expiry
+    if (
+      response.data?.warning?.type === 'TOKEN_EXPIRED' ||
+      response.data?.data?.tokenExpired ||
+      response.data?.tokenExpired ||
+      response.data?.data?.brokerConnected === false
+    ) {
+      return {success: false, tokenExpired: true, message: `${broker} session expired`};
+    }
+
+    console.log('[BrokerOrderBookAPI] v2 order status response:', response.data);
+    return {
+      success: true,
+      data: response.data,
+    };
+  } catch (error) {
+    console.error('[BrokerOrderBookAPI] Error fetching v2 order status:', error.message);
+    return {
+      success: false,
+      error: error.message,
+      response: error.response?.data,
+    };
+  }
+};
+
+/**
  * Find pending orders for a specific symbol
  * @param {Array} orders - Array of orders
  * @param {string} symbol - Trading symbol
@@ -528,11 +605,177 @@ export const findPendingOrdersForSymbol = (orders, symbol, transactionType = nul
   });
 };
 
+/**
+ * Build modify order payload based on broker type
+ */
+const buildModifyOrderPayload = (broker, credentials, orderId, modifications) => {
+  const {
+    clientCode,
+    apiKey,
+    jwtToken,
+    secretKey,
+    sid,
+    serverId,
+  } = credentials;
+
+  const zerodhaApiKey = Config.REACT_APP_ZERODHA_API_KEY;
+  const angelApi = Config.REACT_APP_ANGEL_ONE_API_KEY;
+
+  switch (broker) {
+    case 'AliceBlue':
+      return {
+        url: `${server.ccxtServer.baseUrl}aliceblue/v2/modify-order`,
+        data: {
+          user_email: credentials.userEmail,
+          orderId,
+          uniqueOrderId: orderId,
+          price: modifications.price,
+          quantity: modifications.quantity,
+          orderType: modifications.orderType || 'LIMIT',
+          symbol: modifications.symbol,
+          tradingSymbol: modifications.tradingSymbol,
+          exchange: modifications.exchange || 'NSE',
+          transactionType: modifications.transactionType,
+          productType: modifications.productType || 'DELIVERY',
+        },
+      };
+
+    case 'Angel One':
+      return {
+        url: `${server.ccxtServer.baseUrl}angelone/modify-order`,
+        data: {
+          apiKey: angelApi,
+          accessToken: jwtToken,
+          orderId,
+          variety: modifications.variety || 'NORMAL',
+          price: modifications.price,
+          quantity: modifications.quantity,
+          orderType: modifications.orderType || 'LIMIT',
+          tradingSymbol: modifications.tradingSymbol,
+          exchange: modifications.exchange || 'NSE',
+          transactionType: modifications.transactionType,
+          productType: modifications.productType || 'DELIVERY',
+        },
+      };
+
+    case 'Zerodha':
+      return {
+        url: `${server.ccxtServer.baseUrl}zerodha/modify-order`,
+        data: {
+          apiKey: apiKey || zerodhaApiKey,
+          accessToken: jwtToken,
+          orderId,
+          price: modifications.price,
+          quantity: modifications.quantity,
+          orderType: modifications.orderType || 'LIMIT',
+          tradingSymbol: modifications.tradingSymbol,
+          exchange: modifications.exchange || 'NSE',
+          transactionType: modifications.transactionType,
+        },
+      };
+
+    case 'Upstox':
+      return {
+        url: `${server.ccxtServer.baseUrl}upstox/modify-order`,
+        data: {
+          apiKey: decryptCredential(apiKey),
+          accessToken: jwtToken,
+          apiSecret: decryptCredential(secretKey),
+          orderId,
+          price: modifications.price,
+          quantity: modifications.quantity,
+          orderType: modifications.orderType || 'LIMIT',
+        },
+      };
+
+    case 'Dhan':
+      return {
+        url: `${server.ccxtServer.baseUrl}dhan/modify-order`,
+        data: {
+          clientId: clientCode,
+          accessToken: jwtToken,
+          orderId,
+          price: modifications.price,
+          quantity: modifications.quantity,
+          orderType: modifications.orderType || 'LIMIT',
+        },
+      };
+
+    case 'Kotak':
+      return {
+        url: `${server.ccxtServer.baseUrl}kotak/modify-order`,
+        data: {
+          consumerKey: decryptCredential(apiKey),
+          consumerSecret: decryptCredential(secretKey),
+          accessToken: jwtToken,
+          sid,
+          serverId: serverId || '',
+          orderId,
+          price: modifications.price,
+          quantity: modifications.quantity,
+          orderType: modifications.orderType || 'LIMIT',
+        },
+      };
+
+    default:
+      throw new Error(`Order modification not supported for broker: ${broker}`);
+  }
+};
+
+/**
+ * Modify an existing order
+ * @param {string} broker - Broker name
+ * @param {object} credentials - Broker credentials
+ * @param {string} orderId - Order ID to modify
+ * @param {object} modifications - Modification details (price, quantity, orderType, etc.)
+ * @param {object} configData - Config data for headers
+ * @returns {Promise<object>} - Modify response
+ */
+export const modifyOrder = async (broker, credentials, orderId, modifications, configData = null) => {
+  try {
+    console.log('[BrokerOrderBookAPI] Modifying order:', orderId, 'for broker:', broker);
+
+    const {url, data} = buildModifyOrderPayload(broker, credentials, orderId, modifications);
+
+    const response = await axios.post(url, JSON.stringify(data), {
+      headers: getHeaders(configData),
+      timeout: 30000,
+    });
+
+    // Check for token expiry
+    if (
+      response.data?.warning?.type === 'TOKEN_EXPIRED' ||
+      response.data?.data?.tokenExpired ||
+      response.data?.tokenExpired ||
+      response.data?.data?.brokerConnected === false
+    ) {
+      return {success: false, tokenExpired: true, message: `${broker} session expired`};
+    }
+
+    console.log('[BrokerOrderBookAPI] Modify response:', response.data);
+
+    return {
+      success: true,
+      data: response.data,
+    };
+  } catch (error) {
+    console.error('[BrokerOrderBookAPI] Error modifying order:', orderId);
+    console.error('[BrokerOrderBookAPI] Error:', error.message);
+    return {
+      success: false,
+      error: error.message,
+      response: error.response?.data,
+    };
+  }
+};
+
 export default {
   fetchOrderBook,
   fetchPendingOrders,
   cancelOrder,
   getOrderStatus,
+  getOrderStatusV2,
+  modifyOrder,
   normalizeOrderStatus,
   findPendingOrdersForSymbol,
 };

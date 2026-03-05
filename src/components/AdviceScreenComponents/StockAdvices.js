@@ -399,6 +399,23 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
 
   const [orderPlacementResponse, setOrderPlacementResponse] = useState();
   const [openSuccessModal, setOpenSucessModal] = useState(false);
+  const [gttOpenSucessModal, setGttOpenSucessModal] = useState(false);
+
+  const BROKER_URL_MAP = {
+    'IIFL Securities': 'iifl',
+    Kotak: 'kotak',
+    Upstox: 'upstox',
+    'ICICI Direct': 'icici',
+    'Angel One': 'angelone',
+    Zerodha: 'zerodha',
+    Fyers: 'fyers',
+    AliceBlue: 'aliceblue',
+    Dhan: 'dhan',
+    Groww: 'groww',
+    'Motilal Oswal': 'motilal-oswal',
+    'Hdfc Securities': 'hdfc',
+  };
+
   const BROKER_ENDPOINTS = {
     'IIFL Securities': 'iifl',
     Kotak: 'kotak',
@@ -496,9 +513,39 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       setLoading(false);
       return;
     }
-    const getOrderPayload = () => {
+
+    // Split into GTT and regular orders
+    const gttOrders = stockDetails.filter(
+      stock => stock.gttCheck === true && ['upstox', 'zerodha'].includes(broker.toLowerCase()),
+    );
+    const regularOrders = stockDetails.filter(
+      stock => !(stock.gttCheck === true && ['upstox', 'zerodha'].includes(broker.toLowerCase())),
+    );
+
+    const getOrderPayload = (isGtt = false) => {
+      const trades = isGtt ? gttOrders : (regularOrders.length > 0 ? regularOrders : stockDetails);
+
+      // GTT payload path
+      if (isGtt) {
+        const gttPayload = {
+          trades,
+          user_broker: broker,
+        };
+        switch (broker) {
+          case 'Upstox':
+            return { ...gttPayload, apiKey, jwtToken, secretKey };
+          case 'Zerodha':
+            return { ...gttPayload, apiKey, secretKey, jwtToken };
+          case 'AliceBlue':
+            return { ...gttPayload, clientCode, apiKey: checkValidApiAnSecret(apiKey), accessToken: jwtToken };
+          default:
+            return { ...gttPayload, apiKey, jwtToken };
+        }
+      }
+
+      // Regular payload path
       let basePayload = {
-        trades: stockDetails,
+        trades,
         user_broker: broker, // Common fields
       };
 
@@ -557,7 +604,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
             ...basePayload,
             clientCode,
             jwtToken,
-            apiKey,
+            apiKey: checkValidApiAnSecret(apiKey),
           };
         case 'Fyers':
           return {
@@ -678,9 +725,48 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     }
 
     try {
+      // Handle GTT orders first if present
+      if (gttOrders.length > 0) {
+        const brokerUrl = BROKER_URL_MAP[broker];
+        const gttEndpoint = `${server.ccxtServer.baseUrl}${brokerUrl}/process-trades`;
+        const gttResponse = await axios.request({
+          method: 'post',
+          url: gttEndpoint,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+          data: JSON.stringify(getOrderPayload(true)),
+        });
+        console.log('GTT response:', gttResponse.data);
+        setOrderPlacementResponse(gttResponse.data[0]);
+        setGttOpenSucessModal(true);
+
+        // If no regular orders, finish here
+        if (regularOrders.length === 0) {
+          setLoading(false);
+          setOpenReviewTrade(false);
+          await Promise.all([
+            updatePortfolioData(broker, userEmail),
+            getAllTrades(),
+            filterCartAfterOrder(),
+            getCartAllStocks(),
+          ]);
+          eventEmitter.emit('OrderPlacedReferesh');
+          eventEmitter.emit('cartUpdated');
+          return;
+        }
+      }
+
+      // Regular order endpoint
+      const regularEndpoint = `${server.server.baseUrl}api/process-trades/order-place`;
       const response = await axios.request({
         method: 'post',
-        url: `${server.server.baseUrl}api/process-trades/order-place`,
+        url: regularEndpoint,
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
@@ -689,11 +775,11 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-        data: JSON.stringify(getOrderPayload()),
+        data: JSON.stringify(getOrderPayload(false)),
       });
 
       setLoading(false);
-      console.log('the pay load we are sending ::::', getOrderPayload());
+      console.log('the pay load we are sending ::::', getOrderPayload(false));
       // setOpenSucessModal(true);
       console.log('respoiiinsi:', response.data.response);
       setOrderPlacementResponse(response.data.response);
@@ -765,7 +851,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         if (allBuy) {
           console.log('All trades are BUY for broker:', broker);
           setOpenSucessModal(true);
-        } else if ((allSell || isMixed) && rejectedSellCount >= 1 && successCount === 0) {
+        } else if ((allSell || isMixed) && !userDetails?.is_authorized_for_sell && rejectedSellCount >= 1) {
           console.log(
             allSell ? 'All trades are SELL' : 'Trades are Mixed',
             'for broker:',
@@ -846,6 +932,23 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     } catch (error) {
       console.error('Error placing order:', error);
       setLoading(false);
+
+      // Check for token expiry / session expired signals
+      if (
+        error.response?.status === 401 ||
+        error.response?.data?.warning?.type === 'TOKEN_EXPIRED' ||
+        error.response?.data?.data?.tokenExpired ||
+        error.response?.data?.tokenExpired ||
+        error.response?.data?.data?.brokerConnected === false ||
+        error.response?.data?.message?.toLowerCase()?.includes('token') ||
+        error.response?.data?.message?.toLowerCase()?.includes('session')
+      ) {
+        setOpenTokenExpireModel(true);
+        setOpenReviewTrade(false);
+        setLoading(false);
+        return;
+      }
+
       const edisMessage =
         error.response?.data?.details?.[0]?.message_aq ||
         error.response?.data?.details?.[0]?.message ||
