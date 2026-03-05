@@ -19,7 +19,6 @@ import axios from 'axios';
 import server from '../../utils/serverConfig';
 import LottieView from 'lottie-react-native';
 import RebalanceCard from '../../UIComponents/RebalanceAdvicesUI/RebalanceCard'; // Assuming you have this component
-import RebalanceModal from './RebalanceModal';
 import {fetchFunds} from '../../FunctionCall/fetchFunds';
 import StockCardLoading from './StockCardLoading';
 import IIFLReviewTradeModal from '../IIFLReviewTradeModal';
@@ -584,49 +583,6 @@ const RebalanceAdviceContent = React.memo(
           />
         </View>
 
-        {openRebalanceModal ? (
-          //   console.log('kokkk'),
-          <RebalanceModal
-            userEmail={userEmail}
-            visible={openRebalanceModal}
-            setOpenRebalanceModal={setOpenRebalanceModal}
-            data={modelPortfolioStrategy}
-            calculatedPortfolioData={calculatedPortfolioData}
-            broker={broker}
-            apiKey={apiKey}
-            userDetails={userDetails}
-            jwtToken={jwtToken}
-            secretKey={secretKey}
-            clientCode={clientCode}
-            sid={sid}
-            setShowFyersTpinModal={setShowFyersTpinModal}
-            viewToken={viewToken}
-            serverId={serverId}
-            setBrokerModel={setBrokerModel}
-            setOpenSucessModal={setOpenSucessModal}
-            setOrderPlacementResponse={setOrderPlacementResponse}
-            modelPortfolioModelId={modelPortfolioModelId}
-            setOpenTokenExpireModel={setOpenTokenExpireModel}
-            modelPortfolioRepairTrades={modelPortfolioRepairTrades}
-            getRebalanceRepair={getRebalanceRepair}
-            storeModalName={storeModalName}
-            setIsReturningFromOtherBrokerModal={
-              setIsReturningFromOtherBrokerModal
-            }
-            isReturningFromOtherBrokerModal={isReturningFromOtherBrokerModal}
-            funds={funds}
-            getModelPortfolioStrategyDetails={getModelPortfolioStrategyDetails}
-            setShowOtherBrokerModel={setShowOtherBrokerModel}
-            setShowDhanTpinModel={setShowDhanTpinModel}
-            setShowAngleOneTpinModel={setShowAngleOneTpinModel}
-            tradeType={tradeType}
-            edisStatus={edisStatus}
-            dhanEdisStatus={dhanEdisStatus}
-            selectNonBroker={selectNonBroker}
-            setShowDdpiModal={setShowDdpiModal}
-            brokerStatus={userDetails?.connect_broker_status}
-          />
-        ) : null}
 
         {openSuccessModal && (
           <RecommendationSuccessModal

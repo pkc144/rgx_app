@@ -178,7 +178,7 @@ const RebalanceModal = ({
 
   // Check if modelPortfolioRepairTrades exists and has trades
   let dataArray = [];
-  if (repairStatus && rebalanceExecutionStatus !== "toExecute") {
+  if (repairStatus && rebalanceExecutionStatus && rebalanceExecutionStatus !== "toExecute") {
     dataArray =
       matchingRepairTrade?.failedTrades
         ?.filter((trade) => !trade?.advSymbol?.includes("CASH-EQ"))
@@ -203,6 +203,7 @@ const RebalanceModal = ({
               orderType: "BUY",
               exchange: item.exchange,
               zerodhaTradeId: item.zerodhaTradeId,
+              rebalancePrice: item.rebalance_price,
             })) || []),
           ...(calculatedPortfolioData?.sell
             ?.filter((item) => !item?.symbol?.includes("CASH-EQ"))
@@ -213,6 +214,7 @@ const RebalanceModal = ({
               orderType: "SELL",
               exchange: item.exchange,
               zerodhaTradeId: item.zerodhaTradeId,
+              rebalancePrice: item.rebalance_price,
             })) || []),
         ]
         : [];
@@ -279,10 +281,15 @@ const RebalanceModal = ({
     if (
       visible &&
       isBrokerDisconnected &&
-      dataArray.length > 0 &&
-      Object.keys(marketPrices).length > 0
+      dataArray.length > 0
     ) {
-      initializeEditableData();
+      // Initialize as soon as market prices are available, or fallback to rebalance prices
+      if (Object.keys(marketPrices).length > 0) {
+        initializeEditableData();
+      } else if (dataArray.some(item => item.rebalancePrice)) {
+        // Use rebalance prices from API response as fallback
+        initializeEditableData();
+      }
     }
   }, [visible, marketPrices, isBrokerDisconnected, dataArray]);
 
@@ -297,11 +304,9 @@ const RebalanceModal = ({
   const initializeEditableData = useCallback(() => {
     if (initializedRef.current) return;
 
-    // console.log('Initializing editable data with marketPrices:', marketPrices);
-
     const initialData = dataArray.map(item => ({
       ...item,
-      editablePrice: getLTPForSymbol(item.symbol) || 0,
+      editablePrice: getLTPForSymbol(item.symbol) || item.rebalancePrice || 0,
       editableQty: item.qty,
       id: item.symbol,
     }));

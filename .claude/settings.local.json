@@ -23,7 +23,8 @@
       "Bash(ls:*)",
       "Bash(keytool:*)",
       "Bash(diff:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(cp:*)"
     ]
   }
 }
