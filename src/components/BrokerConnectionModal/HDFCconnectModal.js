@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useDebugValue } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 import server from '../../utils/serverConfig';
 import CryptoJS from 'react-native-crypto-js';
@@ -25,7 +25,7 @@ const HDFCconnectModal = ({
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [showWebView, setShowWebView] = useState(false); // Flag to toggle WebView display
+  const [showWebView, setShowWebView] = useState(false);
   const [authUrl, setAuthUrl] = useState('');
   const auth = getAuth();
   const user = auth.currentUser;
@@ -33,7 +33,7 @@ const HDFCconnectModal = ({
   const [isPasswordVisibleup, setIsPasswordVisibleup] = useState(false);
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);
-  const [activeSections, setActiveSections] = useState([]);
+
   const checkValidApiAnSecret = details => {
     const bytesKey = CryptoJS.AES.encrypt(details, 'ApiKeySecret');
     const Key = bytesKey.toString();
@@ -43,14 +43,32 @@ const HDFCconnectModal = ({
   };
 
   const [helpVisible, setHelpVisible] = useState(false);
+  const [hdfcRequestToken, setHdfcRequestToken] = useState(null);
+  const [hdfcSessionToken, setHdfcSessionToken] = useState(null);
+  const hasConnectedHdfc = useRef(false);
+  const isToastShown = useRef(false);
+
   const OpenHelpModal = () => {
-    // console.log('modal:',helpVisible)
     setHelpVisible(true);
   };
 
   const handleWebViewClose = () => {
-    setShowWebView(false); // Close WebView and return to the form
+    setShowWebView(false);
   };
+
+  const parseQueryString = queryString => {
+    const params = {};
+    const query = queryString?.startsWith('?') ? queryString.substring(1) : queryString;
+    const pairs = query?.split('&') || [];
+    pairs.forEach(pair => {
+      const [key, value] = pair.split('=');
+      if (key && value) {
+        params[decodeURIComponent(key)] = decodeURIComponent(value);
+      }
+    });
+    return params;
+  };
+
   const [userDetails, setUserDetails] = useState();
   const getUserDeatils = () => {
     axios
@@ -67,75 +85,45 @@ const HDFCconnectModal = ({
       .then(res => {
         setUserDetails(res.data.User);
       })
-      .catch(err => console.log('errorrrrrrrr====', err));
+      .catch(err => console.log('[HDFC] Error fetching user:', err));
   };
   useEffect(() => {
     getUserDeatils();
   }, [userEmail, server.server.baseUrl]);
 
   const userId = userDetails && userDetails._id;
-  console.log('NEw Data---', userDetails);
-  const parseQueryString = queryString => {
-    const params = {};
-    const query = queryString.startsWith('?')
-      ? queryString.substring(1)
-      : queryString;
-    const pairs = query.split('&');
-    pairs.forEach(pair => {
-      const [key, value] = pair.split('=');
-      params[decodeURIComponent(key)] = decodeURIComponent(value);
-    });
-    return params;
-  };
-  const [sessionToken, setSessionToken] = useState(null);
-  const [apiSession, setApiSession] = useState(null);
-  const [iciciSuccessMsg, setIciciSuccessMsg] = useState(false);
-  const [hdfcRequestToken, setHdfcRequestToken] = useState(null);
 
-  const checkValidApiAnSecretdecrypt = details => {
-    const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-    if (Key) {
-      return Key;
-    }
-  };
-
+  // Step 1: Extract requestToken from callback URL
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
-    console.log('here1', url);
+    console.log('[HDFC] WebView URL:', url);
+
     if (url.includes('requestToken=')) {
-      console.log('here2', url);
-      const queryParams = parseQueryString(url.split('?')[1]);
-      const sessionToken1 = queryParams.requestToken;
-      if (sessionToken1) {
-        console.log('here2', sessionToken1);
-        setHdfcRequestToken(sessionToken1);
-        setShowWebView(false);
+      const queryString = url.split('?')[1];
+      if (queryString) {
+        const queryParams = parseQueryString(queryString);
+        const requestToken = queryParams.requestToken;
+        if (requestToken) {
+          console.log('[HDFC] Request token received');
+          setHdfcRequestToken(requestToken);
+          setShowWebView(false);
+        }
       }
     }
   };
 
-  const [hdfcSessionToken, setHdfcSessionToken] = useState(null);
-  const hasConnectedHdfc = useRef(false);
-
-
+  // Step 2: Exchange requestToken for access token
   const connectHdfc = () => {
-    if (
-      hdfcRequestToken !== null &&
-      apiKey &&
-      secretKey &&
-      !hasConnectedHdfc.current
-    ) {
+    if (hdfcRequestToken !== null && apiKey && secretKey && !hasConnectedHdfc.current) {
       let data = JSON.stringify({
         apiKey: apiKey,
         apiSecret: secretKey,
         requestToken: hdfcRequestToken,
       });
-
+      console.log('[HDFC] Exchanging request token for access token...');
       let config = {
         method: 'post',
         url: `${server.ccxtServer.baseUrl}hdfc/access-token`,
-
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
@@ -144,27 +132,20 @@ const HDFCconnectModal = ({
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
         data: data,
       };
       axios
         .request(config)
         .then(response => {
           if (response.data) {
-            console.log(
-              'response Data:',
-              response.data,
-              response,
-              response.data.accessToken,
-            );
+            console.log('[HDFC] Access token received');
             const session_token = response.data.accessToken;
             setHdfcSessionToken(session_token);
-            console.log('hdfc session Token:', sessionToken);
           }
         })
         .catch(error => {
-          console.error(error);
-          showAlert('error', 'Invalid Credentials', 'Please check your API Key and Secret Key and try again.');
+          console.error('[HDFC] Token exchange error:', error);
+          showAlert('error', 'Connection Error', 'Failed to connect to HDFC. Please try again.');
         });
       hasConnectedHdfc.current = true;
     }
@@ -176,29 +157,20 @@ const HDFCconnectModal = ({
     }
   }, [hdfcRequestToken, userDetails]);
 
-  useEffect(() => {
-    if (userId !== undefined && hdfcRequestToken) {
-      connectBrokerDbUpadte();
-    }
-  }, [userId, hdfcRequestToken]);
-
-  useEffect(() => {
-    console.log(
-      'POP:',
-      userDetails?.apiKey,
-      userDetails?.secretKey,
-      userDetails,
-    );
-    if (userDetails?.apiKey && userDetails?.secretKey) {
-      let data = JSON.stringify({
+  // Step 3: Save broker connection to DB
+  const connectBrokerDbUpdate = () => {
+    if (hdfcSessionToken && !isToastShown.current) {
+      isToastShown.current = true;
+      let brokerData = {
         uid: userId,
-        apiKey: apiKey,
-        secretKey: secretKey,
-      });
+        user_broker: 'Hdfc Securities',
+        jwtToken: hdfcSessionToken,
+        apiKey: checkValidApiAnSecret(apiKey),
+        secretKey: checkValidApiAnSecret(secretKey),
+      };
       let config = {
-        method: 'post',
-        url: `${server.server.baseUrl}api/hdfc/update-key`,
-
+        method: 'put',
+        url: `${server.server.baseUrl}api/user/connect-broker`,
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
@@ -207,22 +179,48 @@ const HDFCconnectModal = ({
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
-        data: data,
+        data: JSON.stringify(brokerData),
       };
+
       axios
         .request(config)
         .then(response => {
-          if (response) {
-            setAuthUrl(response.data.response);
-            setShowWebView(true);
+          console.log('[HDFC] Broker connection saved successfully');
+
+          // Update model portfolio (non-critical)
+          try {
+            axios.request({
+              method: 'post',
+              url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+              data: JSON.stringify({ user_email: userEmail, user_broker: 'Hdfc Securities' }),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+              },
+            });
+          } catch (err) {
+            console.warn('[HDFC] Model portfolio update failed (non-critical):', err);
           }
+
+          fetchBrokerStatusModal();
+          eventEmitter.emit('refreshEvent', { source: 'HDFC Securities broker connection' });
+          showAlert('success', 'Connected Successfully', 'Your HDFC broker has been connected successfully!');
+          onClose();
+          setShowBrokerModal(false);
         })
         .catch(error => {
-          console.log(error);
+          console.error('[HDFC] connect-broker error:', error);
+          showAlert('error', 'Connection Error', 'Failed to save HDFC connection. Please try again.');
         });
     }
-  }, [isVisible]);
+  };
+
+  useEffect(() => {
+    if (userId !== undefined && hdfcSessionToken) {
+      connectBrokerDbUpdate();
+    }
+  }, [userId, hdfcSessionToken]);
 
   const [shouldRenderContent, setShouldRenderContent] = React.useState(false);
   useEffect(() => {
@@ -233,92 +231,6 @@ const HDFCconnectModal = ({
       sheet.current?.dismiss();
     }
   }, [isVisible]);
-
-  console.log('isvisilll hdfc--', isVisible);
-
-  const isToastShown = useRef(false);
-  const connectBrokerDbUpadte = () => {
-    if (hdfcSessionToken) {
-      if (!isToastShown.current) {
-        console.log('heref');
-        isToastShown.current = true; // Prevent further execution
-        let brokerData = {
-          uid: userId,
-          user_broker: 'Hdfc Securities',
-          jwtToken: hdfcSessionToken,
-          apiKey: checkValidApiAnSecret(apiKey),
-          secretKey: checkValidApiAnSecret(secretKey),
-        };
-        let config = {
-          method: 'put',
-          url: `${server.server.baseUrl}api/user/connect-broker`,
-
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-
-          data: JSON.stringify(brokerData),
-        };
-
-        axios
-          .request(config)
-          .then(response => {
-            console.log('[Hdfc Securities] Broker connected successfully, updating model portfolio...');
-
-            // Update model portfolio with broker information (non-critical)
-            let newBrokerData = {
-              user_email: userEmail,
-              user_broker: 'Hdfc Securities',
-            };
-            let A1_broker = {
-              method: 'post',
-              url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
-              data: JSON.stringify(newBrokerData),
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-                'aq-encrypted-key': generateToken(
-                  Config.REACT_APP_AQ_KEYS,
-                  Config.REACT_APP_AQ_SECRET,
-                ),
-              },
-            };
-
-            // Execute the model portfolio broker update - catch separately so connection success isn't affected
-            return axios.request(A1_broker).catch(err => {
-              console.warn('[Hdfc Securities] Model portfolio update failed (non-critical):', err);
-              return null;
-            });
-          })
-          .then(response => {
-            if (response) {
-              console.log('[Hdfc Securities] Model portfolio updated successfully');
-            }
-            fetchBrokerStatusModal();
-            eventEmitter.emit('refreshEvent', { source: 'HDFC Securities broker connection' });
-            showAlert('success', 'Connected Successfully', 'Your HDFC broker has been connected successfully!');
-            // setShowhdfcModal(false);
-            onClose();
-            setShowBrokerModal(false);
-          })
-          .catch(error => {
-            console.log(error);
-            showAlert('error', 'Connection Error', 'Failed to connect to HDFC. Please try again.');
-          });
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (userId !== undefined && hdfcSessionToken) {
-      connectBrokerDbUpadte();
-    }
-  }, [userId, hdfcSessionToken]);
 
   const initiateAuth = () => {
     let data = JSON.stringify({
@@ -352,54 +264,7 @@ const HDFCconnectModal = ({
       .catch(error => {
         console.log(error);
       });
-    // const url = `https://developer.hdfcsec.com/oapi/v1/login?api_key=${encodeURIComponent(apiKey)}`;
-    // Show WebView after initiating auth
   };
-
-  useEffect(() => {
-    console.log('POP:', userDetails?.user_broker);
-    if (
-      userId &&
-      userDetails?.apiKey &&
-      userDetails?.secretKey &&
-      userDetails?.user_broker === 'Hdfc Securities'
-    ) {
-      setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
-      setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
-
-      let data = JSON.stringify({
-        uid: userId,
-        apiKey: userDetails?.apiKey,
-        secretKey: userDetails?.secretKey,
-      });
-      let config = {
-        method: 'post',
-        url: `${server.server.baseUrl}api/hdfc/update-key`,
-
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-
-        data: data,
-      };
-      axios
-        .request(config)
-        .then(response => {
-          if (response) {
-            setAuthUrl(response.data.response);
-            setShowWebView(true);
-          }
-        })
-        .catch(error => {
-          console.log(error);
-        });
-    }
-  }, [isVisible, userDetails]);
 
   return (
     <HDFCConnectUI

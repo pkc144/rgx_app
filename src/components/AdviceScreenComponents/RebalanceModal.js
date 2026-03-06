@@ -24,6 +24,7 @@ import WebView from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment';
 import eventEmitter from '../../components/EventEmitter';
+import useModalStore from '../../GlobalUIModals/modalStore';
 const { height: screenHeight } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
@@ -68,6 +69,7 @@ const RebalanceModal = ({
   setShowDdpiModal,
 }) => {
   const { brokerStatus, configData } = useTrade();
+  const openBrokerModal = useModalStore(state => state.openModal);
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
   // Add fallback for API key
   let zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
@@ -178,7 +180,7 @@ const RebalanceModal = ({
 
   // Check if modelPortfolioRepairTrades exists and has trades
   let dataArray = [];
-  if (repairStatus && rebalanceExecutionStatus !== "toExecute") {
+  if (repairStatus && rebalanceExecutionStatus && rebalanceExecutionStatus !== "toExecute") {
     dataArray =
       matchingRepairTrade?.failedTrades
         ?.filter((trade) => !trade?.advSymbol?.includes("CASH-EQ"))
@@ -203,6 +205,7 @@ const RebalanceModal = ({
               orderType: "BUY",
               exchange: item.exchange,
               zerodhaTradeId: item.zerodhaTradeId,
+              rebalancePrice: item.rebalance_price,
             })) || []),
           ...(calculatedPortfolioData?.sell
             ?.filter((item) => !item?.symbol?.includes("CASH-EQ"))
@@ -213,6 +216,7 @@ const RebalanceModal = ({
               orderType: "SELL",
               exchange: item.exchange,
               zerodhaTradeId: item.zerodhaTradeId,
+              rebalancePrice: item.rebalance_price,
             })) || []),
         ]
         : [];
@@ -279,10 +283,15 @@ const RebalanceModal = ({
     if (
       visible &&
       isBrokerDisconnected &&
-      dataArray.length > 0 &&
-      Object.keys(marketPrices).length > 0
+      dataArray.length > 0
     ) {
-      initializeEditableData();
+      // Initialize as soon as market prices are available, or fallback to rebalance prices
+      if (Object.keys(marketPrices).length > 0) {
+        initializeEditableData();
+      } else if (dataArray.some(item => item.rebalancePrice)) {
+        // Use rebalance prices from API response as fallback
+        initializeEditableData();
+      }
     }
   }, [visible, marketPrices, isBrokerDisconnected, dataArray]);
 
@@ -297,11 +306,9 @@ const RebalanceModal = ({
   const initializeEditableData = useCallback(() => {
     if (initializedRef.current) return;
 
-    // console.log('Initializing editable data with marketPrices:', marketPrices);
-
     const initialData = dataArray.map(item => ({
       ...item,
-      editablePrice: getLTPForSymbol(item.symbol) || 0,
+      editablePrice: getLTPForSymbol(item.symbol) || item.rebalancePrice || 0,
       editableQty: item.qty,
       id: item.symbol,
     }));
@@ -623,7 +630,11 @@ const RebalanceModal = ({
 
   const handleFyersRedirect = async () => {
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
-    if (!sessionValid) return;
+    if (!sessionValid) {
+      setOpenRebalanceModal(false);
+      setTimeout(() => openBrokerModal(broker), 500);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -838,7 +849,12 @@ const RebalanceModal = ({
     console.log('[RebalanceModal] calculatedPortfolioData sell:', JSON.stringify(calculatedPortfolioData?.sell));
 
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
-    if (!sessionValid) return;
+    if (!sessionValid) {
+      // Open broker connection modal so user can re-authenticate
+      setOpenRebalanceModal(false);
+      setTimeout(() => openBrokerModal(broker), 500);
+      return;
+    }
 
     setLoading(true);
 
@@ -868,6 +884,16 @@ const RebalanceModal = ({
     if (broker === 'Angel One' && (allSellPre || isMixedPre) &&
       edisStatus && edisStatus.edis === false) {
       setShowAngleOneTpinModel(true);
+      setOpenRebalanceModal(false);
+      setLoading(false);
+      return;
+    }
+
+    // AliceBlue / other brokers: check DB flag before placing sell orders
+    // (AliceBlue has no EDIS API — relies on user authorizing at broker portal)
+    if (['AliceBlue', 'IIFL Securities', 'ICICI Direct', 'Upstox', 'Kotak', 'Hdfc Securities', 'Motilal Oswal', 'Groww'].includes(broker) &&
+      (allSellPre || isMixedPre) && !userDetails?.is_authorized_for_sell) {
+      setShowOtherBrokerModel(true);
       setOpenRebalanceModal(false);
       setLoading(false);
       return;
@@ -998,6 +1024,23 @@ const RebalanceModal = ({
           error: response?.data?.error,
         }));
         setOrderPlacementResponse(response?.data?.results);
+
+        // Handle session expired - broker needs reconnection
+        if (response?.data?.sessionExpired) {
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          Toast.show({
+            type: 'error',
+            text1: 'Session Expired',
+            text2: `Your ${broker} session has expired. Please reconnect your broker.`,
+            visibilityTime: 5000,
+          });
+          // Open broker connection modal so user can re-authenticate
+          setTimeout(() => {
+            openBrokerModal(broker);
+          }, 500);
+          return;
+        }
 
         // Guard: If backend returned empty results, check for cautionary listing or show error
         if (!checkData || checkData.length === 0) {
@@ -1260,7 +1303,12 @@ const RebalanceModal = ({
         if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
           errorMessage = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
         } else if (error?.response?.status === 401 || error?.response?.status === 403) {
-          errorMessage = `${broker} session has expired. Please reconnect your broker and try again.`;
+          errorMessage = `${broker} session has expired. Please reconnect your broker.`;
+          // Open broker connection modal so user can re-authenticate
+          setOpenRebalanceModal(false);
+          setTimeout(() => {
+            openBrokerModal(broker);
+          }, 500);
         } else {
           errorMessage = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Order placement failed';
         }
@@ -1555,7 +1603,7 @@ const RebalanceModal = ({
                   )}
                 </>
               }
-              // Empty state — Portfolio Already Aligned
+              // Empty state — Portfolio Already Aligned or API error message
               ListEmptyComponent={
                 <View
                   style={{
@@ -1564,72 +1612,131 @@ const RebalanceModal = ({
                     marginTop: 40,
                     paddingHorizontal: 24,
                   }}>
-                  {/* Green checkmark circle */}
-                  <View
-                    style={{
-                      width: 72,
-                      height: 72,
-                      borderRadius: 36,
-                      backgroundColor: '#DEF7EC',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: 20,
-                    }}>
-                    <CheckIcon size={36} color="#15803D" />
-                  </View>
-                  <Text
-                    style={{
-                      fontFamily: 'Poppins-SemiBold',
-                      color: '#15803D',
-                      fontSize: 20,
-                      textAlign: 'center',
-                      marginBottom: 12,
-                    }}>
-                    Your Portfolio is Already Aligned!
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: 'Poppins-Regular',
-                      color: 'rgba(0,0,0,0.6)',
-                      textAlign: 'center',
-                      marginBottom: 10,
-                      fontSize: 14,
-                      lineHeight: 22,
-                      paddingHorizontal: 10,
-                    }}>
-                    Great news! Based on your current holdings and the latest model
-                    portfolio recommendations, no trades are needed right now. Your
-                    investments are already in sync with your advisor's strategy.
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: 'Poppins-Regular',
-                      color: 'rgba(0,0,0,0.4)',
-                      textAlign: 'center',
-                      marginBottom: 24,
-                      fontSize: 13,
-                      lineHeight: 20,
-                    }}>
-                    Want to increase your investment or make changes? Go back and
-                    modify your investment amount.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={handleClose}
-                    style={{
-                      backgroundColor: '#000',
-                      paddingHorizontal: 24,
-                      paddingVertical: 12,
-                      borderRadius: 8,
-                    }}>
-                    <Text
-                      style={{
-                        color: '#fff',
-                        fontFamily: 'Poppins-Medium',
-                        fontSize: 14,
-                      }}>
-                      Go Back
-                    </Text>
-                  </TouchableOpacity>
+                  {calculatedPortfolioData?.status === 1 && calculatedPortfolioData?.message ? (
+                    <>
+                      {/* Error/warning icon */}
+                      <View
+                        style={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 36,
+                          backgroundColor: '#FEF3C7',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 20,
+                        }}>
+                        <AlertOctagon size={36} color="#D97706" />
+                      </View>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-SemiBold',
+                          color: '#D97706',
+                          fontSize: 18,
+                          textAlign: 'center',
+                          marginBottom: 12,
+                        }}>
+                        Unable to Rebalance
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.6)',
+                          textAlign: 'center',
+                          marginBottom: 24,
+                          fontSize: 14,
+                          lineHeight: 22,
+                          paddingHorizontal: 10,
+                        }}>
+                        {calculatedPortfolioData.message}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleClose}
+                        style={{
+                          backgroundColor: '#000',
+                          paddingHorizontal: 24,
+                          paddingVertical: 12,
+                          borderRadius: 8,
+                        }}>
+                        <Text
+                          style={{
+                            color: '#fff',
+                            fontFamily: 'Poppins-Medium',
+                            fontSize: 14,
+                          }}>
+                          Go Back
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      {/* Green checkmark circle */}
+                      <View
+                        style={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 36,
+                          backgroundColor: '#DEF7EC',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 20,
+                        }}>
+                        <CheckIcon size={36} color="#15803D" />
+                      </View>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-SemiBold',
+                          color: '#15803D',
+                          fontSize: 20,
+                          textAlign: 'center',
+                          marginBottom: 12,
+                        }}>
+                        Your Portfolio is Already Aligned!
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.6)',
+                          textAlign: 'center',
+                          marginBottom: 10,
+                          fontSize: 14,
+                          lineHeight: 22,
+                          paddingHorizontal: 10,
+                        }}>
+                        Great news! Based on your current holdings and the latest model
+                        portfolio recommendations, no trades are needed right now. Your
+                        investments are already in sync with your advisor's strategy.
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.4)',
+                          textAlign: 'center',
+                          marginBottom: 24,
+                          fontSize: 13,
+                          lineHeight: 20,
+                        }}>
+                        Want to increase your investment or make changes? Go back and
+                        modify your investment amount.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleClose}
+                        style={{
+                          backgroundColor: '#000',
+                          paddingHorizontal: 24,
+                          paddingVertical: 12,
+                          borderRadius: 8,
+                        }}>
+                        <Text
+                          style={{
+                            color: '#fff',
+                            fontFamily: 'Poppins-Medium',
+                            fontSize: 14,
+                          }}>
+                          Go Back
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               }
             />

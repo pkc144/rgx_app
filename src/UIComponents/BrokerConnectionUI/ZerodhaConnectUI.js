@@ -212,8 +212,7 @@ const ZerodhaConnectUI = ({
     setIsLoading(true);
     hasProcessedCallback.current = false;
     try {
-      const ccxtBaseUrl = Config?.REACT_APP_CCXT_SERVER_API_URL || server.ccxtServer.baseUrl;
-      const baseUrl = Config?.REACT_APP_NODE_SERVER_API_URL || server.server.baseUrl;
+      const brokerConnectRedirectURL = configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL || Config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
       const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
 
       if (!zerodhaApiKey) {
@@ -222,12 +221,12 @@ const ZerodhaConnectUI = ({
 
       const headers = getHeaders();
 
-      // Call CCXT server login-url endpoint (simplified flow)
+      // Call CCXT server login-url endpoint (same as RGX web app)
       const response = await axios.post(
-        `${ccxtBaseUrl}zerodha/login-url`,
+        `${server.ccxtServer.baseUrl}zerodha/login-url`,
         {
           apiKey: zerodhaApiKey,
-          site: baseUrl.replace('https://', ''),
+          site: brokerConnectRedirectURL?.replace('https://', '') || '',
         },
         { headers }
       );

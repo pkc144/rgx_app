@@ -16,7 +16,7 @@ import {fetchBrokerAllHoldings} from '../FunctionCall/fetchBrokerAllHoldings';
 import {fetchBrokerSpecificHoldings} from '../FunctionCall/fetchBrokerSpecificHoldings';
 import {fetchOrderBook, fetchPendingOrders} from '../services/BrokerOrderBookAPI';
 
-import {getConfigData} from '../utils/storageUtils';
+import {getConfigData, isUserDataComplete} from '../utils/storageUtils';
 import Config from 'react-native-config';
 const TradeContext = createContext();
 import {generateToken} from '../utils/SecurityTokenManager';
@@ -59,23 +59,52 @@ export const TradeProvider = ({children}) => {
   const [configData, setConfigData] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
 
-  // Load stored config data — single read, no retries
-  const loadStoredData = useCallback(async () => {
+  // ENHANCED: Load stored data with retry mechanism and better logging
+  const loadStoredData = useCallback(async (retryCount = 3) => {
     try {
+      const dataCheck = await isUserDataComplete();
+      if (!dataCheck.isComplete) {
+        if (retryCount > 0) {
+          setTimeout(() => loadStoredData(retryCount - 1), 1000);
+          return;
+        } else {
+          setConfigData(null);
+          setConfigLoading(false);
+          return;
+        }
+      }
       const config = await getConfigData();
-      setConfigData(config);
+      if (config) {
+        setConfigData(config);
+        setConfigLoading(false);
+        console.log('✅ [TradeContext] Config data loaded successfully');
+      } else {
+        // If no config and we have retries left, wait and try again
+        if (retryCount > 0) {
+          setTimeout(() => loadStoredData(retryCount - 1), 1000);
+          return;
+        } else {
+          setConfigData(null);
+          setConfigLoading(false);
+        }
+      }
     } catch (error) {
-      console.error('[TradeContext] Error loading config:', error);
-      setConfigData(null);
-    } finally {
-      setConfigLoading(false);
+      // Retry on error if we have attempts left
+      if (retryCount > 0) {
+        setTimeout(() => loadStoredData(retryCount - 1), 1000);
+        return;
+      } else {
+        setConfigData(null);
+        setConfigLoading(false);
+      }
     }
   }, []);
 
-  // Force reload config data (called from login/signup flows)
+  // ENHANCED: Force reload config data (called from login/signup flows)
   const reloadConfigData = useCallback(async () => {
     setConfigLoading(true);
-    await loadStoredData();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await loadStoredData(3); // Retry up to 3 times
   }, [loadStoredData]);
 
   useEffect(() => {
@@ -418,7 +447,7 @@ const getAllTrades = async () => {
       headers: {
         'Content-Type': 'application/json',
         'X-Advisor-Subdomain':
-          configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
+          configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -620,7 +649,7 @@ const getAllTrades = async () => {
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
+            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -645,7 +674,7 @@ const getAllTrades = async () => {
       //     headers: {
       //       'Content-Type': 'application/json',
       //       'X-Advisor-Subdomain':
-      //         configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
+      //         configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
       //       'aq-encrypted-key': generateToken(
       //         Config.REACT_APP_AQ_KEYS,
       //         Config.REACT_APP_AQ_SECRET,
@@ -686,14 +715,14 @@ const getAllTrades = async () => {
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
+            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
           ),
         },
       });
-      console.log("RESPONSE HERE FOR VALIDITY---cccccccccccccccccccc------", configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,response?.data)
+      console.log("RESPONSE HERE FOR VALIDITY---cccccccccccccccccccc------", configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',response?.data)
       setPlanList(response?.data?.isValid);
       return response?.data?.isValid;
     } catch (planError) {

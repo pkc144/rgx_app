@@ -27,10 +27,9 @@ const MotilalModal = ({
   const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [clientCode, setClientCode] = useState('');
-  const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [ispasswordVisibleup, setIsPasswordVisibleup] = useState(false);
-  const [showWebView, setShowWebView] = useState(false); // Flag to toggle WebView display
+  const [showWebView, setShowWebView] = useState(false);
   const [authUrl, setAuthUrl] = useState('');
   const auth = getAuth();
   const user = auth.currentUser;
@@ -38,22 +37,11 @@ const MotilalModal = ({
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);
 
-  const brokerConnectRedirectURL =
-    configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
-
   const [loading, setLoading] = useState(false);
 
   const checkValidApiAnSecret = details => {
     const bytesKey = CryptoJS.AES.encrypt(details, 'ApiKeySecret');
     const Key = bytesKey.toString();
-    if (Key) {
-      return Key;
-    }
-  };
-
-  const checkValidApiAnSecretdecrypt = details => {
-    const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
       return Key;
     }
@@ -83,27 +71,25 @@ const MotilalModal = ({
 
   const userId = userDetails && userDetails._id;
 
+  const [helpVisible, setHelpVisible] = useState(false);
+  const [jwtToken, setjwtToken] = useState(null);
+  const isToastShown = useRef(false);
+
   const parseQueryString = queryString => {
     const params = {};
-    const query = queryString.startsWith('?')
-      ? queryString.substring(1)
-      : queryString;
-    const pairs = query.split('&');
+    const query = queryString?.startsWith('?') ? queryString.substring(1) : queryString;
+    const pairs = query?.split('&') || [];
     pairs.forEach(pair => {
       const [key, value] = pair.split('=');
-      params[decodeURIComponent(key)] = decodeURIComponent(value);
+      if (key && value) {
+        params[decodeURIComponent(key)] = decodeURIComponent(value);
+      }
     });
     return params;
   };
 
-  const [helpVisible, setHelpVisible] = useState(false);
-  const OpenHelpModal = () => {
-    // console.log('modal:',helpVisible)
-    setHelpVisible(true);
-  };
-
   const initiateAuth = () => {
-    console.log('I am here--', apiKey, clientCode, userDetails?._id);
+    console.log('[Motilal] Initiating auth:', apiKey, clientCode, userDetails?._id);
     if (!userDetails?._id || !apiKey || !clientCode) {
       showAlert('error', 'Missing Fields', 'Please fill in all required fields.');
       return;
@@ -117,7 +103,6 @@ const MotilalModal = ({
         '',
       )}`,
     };
-    console.log('data---', data);
     axios
       .put(`${server.server.baseUrl}api/motilal-oswal/update-key`, data, {
         headers: {
@@ -130,113 +115,42 @@ const MotilalModal = ({
         },
       })
       .then(response => {
-        console.log('Finallll');
         if (response && response.data && response.data.response) {
-          // Get the URL from API response
-          console.log('resppp===', response.data);
           setAuthUrl(response.data.response);
           setShowWebView(true);
         } else {
-          console.error('Unexpected response format', response);
+          console.error('[Motilal] Unexpected response format', response);
         }
       })
       .catch(error => {
-        console.log('errorrr--', error.response);
-        console.error('Error during Motilal update key request:', error);
+        console.error('[Motilal] Error during update key request:', error);
+        showAlert('error', 'Incorrect Credentials', 'Please check your credentials and try again.');
       });
   };
 
-  const updateSecretKey = () => {
-    const cleanRedirectUrl = brokerConnectRedirectURL.replace(
-      /^https?:\/\//,
-      '',
-    );
-    const motilalUrl = `https://invest.motilaloswal.com/OpenAPI/Login.aspx?apikey=${apiKey}&state=${cleanRedirectUrl}`;
-    setAuthUrl(motilalUrl);
-    setShowWebView(true);
-  };
-
-  useEffect(() => {
-    console.log(
-      'POP:',
-      userDetails?.apiKey,
-      userDetails?.secretKey,
-      userDetails,
-    );
-    if (userDetails?.apiKey && userDetails?.secretKey && userDetails?.user_broker === 'Motilal Oswal' && userId) {
-      setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
-      setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
-      setClientCode(userDetails?.clientCode || '');
-      console.log('POP:111');
-      const cleanRedirectUrl = brokerConnectRedirectURL?.replace(/^https?:\/\//, '') || '';
-      let data = JSON.stringify({
-        uid: userId,
-        apiKey: userDetails?.apiKey,
-        clientCode: userDetails?.clientCode,
-        redirect_url: cleanRedirectUrl,
-      });
-      let config = {
-        method: 'put',
-        url: `${server.server.baseUrl}api/motilal-oswal/update-key`,
-
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-
-        data: data,
-      };
-      console.log(userId, apiKey, secretKey, brokerConnectRedirectURL);
-      axios
-        .request(config)
-        .then(response => {
-          if (response) {
-            const motilalUrl = `https://invest.motilaloswal.com/OpenAPI/Login.aspx?apikey=${checkValidApiAnSecretdecrypt(userDetails?.apiKey)}&state=${cleanRedirectUrl}`;
-            console.log('here motilal:', response.data);
-            setAuthUrl(motilalUrl);
-            setShowWebView(true);
-          }
-        })
-        .catch(error => {
-          console.log(error);
-          showAlert('error', 'Incorrect Credentials', 'Please check your credentials and try again.');
-        });
-    }
-  }, [isVisible]);
-
-  const [isLoading, setIsLoading] = useState(false);
-
+  // Step 1: Extract accessToken from callback URL
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
-    console.log('here1', url);
+    console.log('[Motilal] WebView URL:', url);
+
     if (url.includes('accessToken=')) {
-      console.log('here2', url);
-      const queryParams = parseQueryString(url.split('?')[1]);
-      const sessionToken1 = queryParams.accessToken;
-      if (sessionToken1) {
-        setjwtToken(sessionToken1);
-        console.log('here3', sessionToken1);
-        setShowWebView(false);
+      const queryString = url.split('?')[1];
+      if (queryString) {
+        const queryParams = parseQueryString(queryString);
+        const accessToken = queryParams.accessToken;
+        if (accessToken) {
+          console.log('[Motilal] Access token received');
+          setjwtToken(accessToken);
+          setShowWebView(false);
+        }
       }
     }
   };
 
-  const [jwtToken, setjwtToken] = useState(null);
-  const [upstoxSessionToken, setUpstoxSessionToken] = useState(null);
-  const hasConnectedUpstox = useRef(false);
-
-
-  const isToastShown = useRef(false);
-  const connectBrokerDbUpadte = () => {
-    setIsLoading(false);
-    if (jwtToken) {
-      console.log('heref');
-      console.log('Motilal oswal jwt token----', jwtToken);
-      isToastShown.current = true; // Prevent further execution
+  // Step 2: Save broker connection to DB (Motilal returns accessToken directly, no gen-access-token needed)
+  const connectBrokerDbUpdate = () => {
+    if (jwtToken && !isToastShown.current) {
+      isToastShown.current = true;
       let brokerData = {
         uid: userId,
         jwtToken: jwtToken,
@@ -248,7 +162,6 @@ const MotilalModal = ({
       let config = {
         method: 'put',
         url: `${server.server.baseUrl}api/user/connect-broker`,
-
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
@@ -257,45 +170,30 @@ const MotilalModal = ({
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
         data: JSON.stringify(brokerData),
       };
 
       axios
         .request(config)
         .then(response => {
-          console.log('[Motilal Oswal] Broker connected successfully, updating model portfolio...');
+          console.log('[Motilal] Broker connection saved successfully');
 
-          // Update model portfolio with broker information (non-critical)
-          let newBrokerData = {
-            user_email: userEmail,
-            user_broker: 'Motilal Oswal',
-          };
-          let A1_broker = {
-            method: 'post',
-            url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
-            data: JSON.stringify(newBrokerData),
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
-          };
-
-          // Execute the model portfolio broker update - catch separately so connection success isn't affected
-          return axios.request(A1_broker).catch(err => {
-            console.warn('[Motilal Oswal] Model portfolio update failed (non-critical):', err);
-            return null;
-          });
-        })
-        .then(response => {
-          if (response) {
-            console.log('[Motilal Oswal] Model portfolio updated successfully');
+          // Update model portfolio (non-critical)
+          try {
+            axios.request({
+              method: 'post',
+              url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+              data: JSON.stringify({ user_email: userEmail, user_broker: 'Motilal Oswal' }),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+              },
+            });
+          } catch (err) {
+            console.warn('[Motilal] Model portfolio update failed (non-critical):', err);
           }
-          setIsLoading(false);
+
           fetchBrokerStatusModal();
           eventEmitter.emit('refreshEvent', { source: 'Motilal Oswal broker connection' });
           showAlert('success', 'Connected Successfully', 'Your Motilal Oswal broker has been connected successfully!');
@@ -303,15 +201,15 @@ const MotilalModal = ({
           setShowBrokerModal(false);
         })
         .catch(error => {
-          console.error('got the error here----------', error);
-          showAlert('error', 'Connection Error', 'Failed to connect to Motilal Oswal. Please try again.');
+          console.error('[Motilal] connect-broker error:', error);
+          showAlert('error', 'Connection Error', 'Failed to save Motilal Oswal connection. Please try again.');
         });
     }
   };
 
   useEffect(() => {
     if (userId !== undefined && jwtToken) {
-      connectBrokerDbUpadte();
+      connectBrokerDbUpdate();
     }
   }, [userId, jwtToken]);
 
@@ -327,7 +225,7 @@ const MotilalModal = ({
   }, [isVisible]);
 
   const handleWebViewClose = () => {
-    setShowWebView(false); // Close WebView and return to the form
+    setShowWebView(false);
   };
 
   return (
@@ -367,7 +265,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 10,
-    height: '100%', // Adjust modal height for proper scrolling
+    height: '100%',
   },
   sheet: {
     borderTopLeftRadius: 20,

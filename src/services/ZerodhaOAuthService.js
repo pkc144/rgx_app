@@ -30,8 +30,8 @@ const generateState = () => {
  * Get the deep link redirect URI for OAuth callback
  */
 const getRedirectUri = () => {
-  // Use app's custom URL scheme
-  return 'rgxapp://zerodha/callback';
+  const scheme = Config?.REACT_APP_DEEP_LINK_SCHEME || 'rgxapp';
+  return `${scheme}://zerodha/callback`;
 };
 
 /**

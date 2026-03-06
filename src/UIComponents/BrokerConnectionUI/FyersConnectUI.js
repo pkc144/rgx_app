@@ -152,11 +152,11 @@ const FyersConnectUI = ({
                   {/* Input Fields */}
                   <View style={styles.inputSection}>
                     <View style={styles.inputWrapper}>
-                      <Text style={styles.headerLabel}>User ID:</Text>
+                      <Text style={styles.headerLabel}>App ID:</Text>
                       <View style={styles.inputContainer}>
                         <TextInput
                           value={secretKey}
-                          placeholder="Enter your User ID"
+                          placeholder="Enter your App ID"
                           placeholderTextColor="#aaa"
                           style={[styles.inputStyles, {flex: 1}]}
                           autoCapitalize="none"
@@ -167,11 +167,11 @@ const FyersConnectUI = ({
                     </View>
 
                     <View style={styles.inputWrapper}>
-                      <Text style={styles.headerLabel}>API Key:</Text>
+                      <Text style={styles.headerLabel}>Secret ID:</Text>
                       <View style={styles.inputContainer}>
                         <TextInput
                           value={apiKey}
-                          placeholder="Enter your API key"
+                          placeholder="Enter your Secret ID"
                           placeholderTextColor="#aaa"
                           style={[styles.inputStyles, {flex: 1}]}
                           autoCapitalize="none"

@@ -32,6 +32,7 @@ import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
 import { convertResponse } from '../../utils/tradeUtils';
 import moment from 'moment';
+import useModalStore from '../../GlobalUIModals/modalStore';
 const MPReviewTradeModal = ({
   visible,
   onCloseReviewTrade,
@@ -63,6 +64,7 @@ const MPReviewTradeModal = ({
   setIsReturningFromOtherBrokerModal,
 }) => {
   const {configData} = useTrade();
+  const openBrokerModal = useModalStore(state => state.openModal);
   console.log('MPBROKER:', broker);
   const {width} = useWindowDimensions();
 
@@ -399,6 +401,22 @@ const MPReviewTradeModal = ({
       console.log('[OrderPlacement] API Response full:', JSON.stringify(response.data));
       console.log('[OrderPlacement] Results:', response.data.results);
       const checkData = response?.data?.results;
+
+      // Handle session expired - broker needs reconnection
+      if (response?.data?.sessionExpired) {
+        onCloseReviewTrade();
+        setLoading(false);
+        Toast.show({
+          type: 'error',
+          text1: 'Session Expired',
+          text2: `Your ${broker} session has expired. Please reconnect your broker.`,
+          visibilityTime: 5000,
+        });
+        setTimeout(() => {
+          openBrokerModal(broker);
+        }, 500);
+        return;
+      }
 
       // 1. Validate for empty or invalid results before processing (matching web)
       if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
@@ -1251,6 +1269,22 @@ const MPReviewTradeModal = ({
       );
 
       const checkData = response?.data?.results;
+
+      // Handle session expired - broker needs reconnection
+      if (response?.data?.sessionExpired) {
+        onCloseReviewTrade();
+        setLoading(false);
+        Toast.show({
+          type: 'error',
+          text1: 'Session Expired',
+          text2: `Your Fyers session has expired. Please reconnect your broker.`,
+          visibilityTime: 5000,
+        });
+        setTimeout(() => {
+          openBrokerModal('Fyers');
+        }, 500);
+        return;
+      }
 
       // 1. Validate for empty or invalid results
       if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
