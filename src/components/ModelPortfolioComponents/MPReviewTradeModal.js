@@ -33,6 +33,7 @@ import { validateBrokerSession } from '../../utils/brokerSessionUtils';
 import { convertResponse } from '../../utils/tradeUtils';
 import moment from 'moment';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import { createPlaceOrderFunction } from '../../FunctionCall/ProcessTrades';
 const MPReviewTradeModal = ({
   visible,
   onCloseReviewTrade,
@@ -332,9 +333,35 @@ const MPReviewTradeModal = ({
     });
 
     const getBrokerSpecificPayload = () => {
-      return {
-        accessToken: jwtToken,
-      };
+      const base = { accessToken: jwtToken };
+      switch (broker) {
+        case 'Kotak':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode, mobileNumber, my2pin, sid, serverId };
+        case 'Fyers':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
+        case 'AliceBlue':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), clientCode, user_email: userEmail };
+        case 'Dhan':
+          return { ...base, clientCode };
+        case 'ICICI Direct':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
+        case 'IIFL Securities':
+          return { ...base, clientCode };
+        case 'Upstox':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
+        case 'Hdfc Securities':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
+        case 'Angel One':
+          return { ...base, apiKey: configData?.config?.REACT_APP_ANGEL_ONE_API_KEY || Config.REACT_APP_ANGEL_ONE_API_KEY, clientCode };
+        case 'Motilal Oswal':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), clientCode };
+        case 'Zerodha':
+          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey) };
+        case 'Groww':
+          return { ...base, clientCode };
+        default:
+          return base;
+      }
     };
 
     const payload = {

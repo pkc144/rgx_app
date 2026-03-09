@@ -44,6 +44,7 @@ import {useTrade} from '../../screens/TradeContext';
 import {convertResponse} from '../../utils/tradeUtils';
 import {useConfig} from '../../context/ConfigContext';
 import moment from 'moment';
+import RebalancePreferenceModal from './RebalancePreferenceModal';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
 const {height: screenHeight} = Dimensions.get('window');
@@ -77,6 +78,8 @@ const UserStrategySubscribeModal = ({
   const mainColor = appConfig?.mainColor || '#000';
   const [loading, setLoading] = useState(false);
   const [confirmOrder, setConfirmOrder] = useState(false);
+  const [showPreferenceModal, setShowPreferenceModal] = useState(false);
+  const [rebalanceFlag, setRebalanceFlag] = useState(0);
 
   console.log(strategyDetails);
 
@@ -194,7 +197,7 @@ const UserStrategySubscribeModal = ({
   const [calculatedPortfolioData, setCaluculatedPortfolioData] = useState([]);
   const [calculatedLoading, setCalculateLoading] = useState(false);
 
-  const calculateRebalance = () => {
+  const calculateRebalance = (flag) => {
     console.log('hereeeeee', broker, funds?.status);
     const isMarketHours = IsMarketHours();
     setCalculateLoading(true);
@@ -221,6 +224,7 @@ const UserStrategySubscribeModal = ({
         advisor: strategyDetails?.advisor,
         model_id: latestRebalance?.model_Id,
         userFund: funds?.data?.availablecash,
+        rebalanceFlag: flag !== undefined ? flag : rebalanceFlag,
       };
       if (broker === 'IIFL Securities') {
         payload = {
@@ -349,6 +353,12 @@ const UserStrategySubscribeModal = ({
           console.log(error);
         });
     }
+  };
+
+  const handlePreferenceComplete = (flag, updatedHoldings) => {
+    setRebalanceFlag(flag);
+    setShowPreferenceModal(false);
+    calculateRebalance(flag);
   };
 
   const dataArray =
@@ -1300,7 +1310,7 @@ const UserStrategySubscribeModal = ({
                 // Show the TouchableOpacity button for other cases
                 <TouchableOpacity
                   style={[styles.actionButton, {backgroundColor: mainColor}]}
-                  onPress={calculateRebalance}
+                  onPress={() => setShowPreferenceModal(true)}
                   disabled={loading || calculatedLoading}>
                   {loading || calculatedLoading ? (
                     <ActivityIndicator color="white" />
@@ -1334,6 +1344,15 @@ const UserStrategySubscribeModal = ({
         setShowDhanModal={setShowDhanModal}
         showKotakModal={showKotakModal}
         setShowKotakModal={setShowKotakModal}
+      />
+      <RebalancePreferenceModal
+        visible={showPreferenceModal}
+        onClose={() => setShowPreferenceModal(false)}
+        modelName={strategyDetails?.model_name}
+        userEmail={userEmail}
+        broker={broker}
+        strategyDetails={strategyDetails}
+        onProceedToTrade={handlePreferenceComplete}
       />
     </Modal>
   );

@@ -115,6 +115,7 @@ import AccountSettingsScreen from '../screens/Home/AccountSettingsScreen';
 import KnowledgeHub from './HomeScreenComponents/KnowledgeHub';
 import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen';
 import ChangeAdvisor from '../screens/AccountSettingScreen/ChangeAdvisor';
+import PlaceOrdersScreen from '../screens/OrderManagement/PlaceOrdersScreen';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import { useWebSocketInitializer } from '../utils/websocketInitializer';
 
@@ -1213,6 +1214,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="Logout"
           component={LogOutScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="PlaceOrdersScreen"
+          component={PlaceOrdersScreen}
           options={{headerShown: false}}
         />
       </Stack.Navigator>

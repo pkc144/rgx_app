@@ -36,6 +36,7 @@ import CustomTabBarMPPerformance from '../Drawer/CustomTabbarMPPerformance';
 import EmptyStateInfoMP from '../Drawer/EmptyStateMP';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
 import DistributionGrid from '../Drawer/DistributionRowGrid';
+import SubscribedPFList from '../../components/ModelPortfolioComponents/SubscribedPFList';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
 
@@ -386,6 +387,13 @@ const AfterSubscriptionScreen = ({route}) => {
                       ) : (
                         <EmptyStateInfoMP />
                       )}
+                      <SubscribedPFList
+                        modelPortfolioStrategy={strategyDetails ? [strategyDetails] : []}
+                        userEmail={userEmail}
+                        broker={userDetails?.user_broker}
+                        userDetails={userDetails}
+                        navigation={navigation}
+                      />
                     </View>
                   ),
 

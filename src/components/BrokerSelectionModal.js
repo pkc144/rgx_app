@@ -30,6 +30,7 @@ import useModalStore from '../GlobalUIModals/modalStore';
 import LinearGradient from 'react-native-linear-gradient';
 import {useTrade} from '../screens/TradeContext';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
+import {registerCallback} from '../utils/brokerAuth';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -122,6 +123,13 @@ const BrokerSelectionModal = ({
     userDetails ? userDetails.connect_broker_status : null,
   );
   const [showMessage, setShowMessage] = useState(false);
+  const [showLetUsKnow, setShowLetUsKnow] = useState(false);
+  const [brokerSearchText, setBrokerSearchText] = useState('');
+  const [allBrokers, setAllBrokers] = useState([]);
+  const [selectedUnavailableBroker, setSelectedUnavailableBroker] =
+    useState(null);
+  const [brokerConnected, setBrokerConnected] = useState(false);
+  const [connectingBroker, setConnectingBroker] = useState(false);
 
   const getUserDeatils = () => {
     axios
@@ -155,9 +163,73 @@ const BrokerSelectionModal = ({
     return () => clearTimeout(timer);
   }, []);
 
-  const handleBrokerSelect = broker => {
+  const fetchAllBrokers = async () => {
+    try {
+      const response = await axios.get(
+        `${server.ccxtServer.baseUrl}comms/all-brokers`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      if (response.data) {
+        setAllBrokers(response.data);
+      }
+    } catch (error) {
+      console.log('Error fetching all brokers:', error);
+    }
+  };
+
+  const handleLetUsKnowPress = () => {
+    setShowLetUsKnow(true);
+    fetchAllBrokers();
+  };
+
+  const handleUnavailableBrokerSelect = async brokerName => {
+    setSelectedUnavailableBroker(brokerName);
+    try {
+      await axios.put(
+        `${server.ccxtServer.baseUrl}comms/unavailable-broker/save`,
+        {
+          email: userEmail,
+          broker: brokerName,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+    } catch (error) {
+      console.log('Error saving unavailable broker:', error);
+    }
+  };
+
+  const filteredAllBrokers = allBrokers.filter(b =>
+    (b.name || b)
+      .toString()
+      .toLowerCase()
+      .includes(brokerSearchText.toLowerCase()),
+  );
+
+  const handleBrokerSelect = async broker => {
     const {openModal, closeModal} = useModalStore.getState();
     if (broker?.key) {
+      // Angel One nonce-based fallback: register a nonce before opening the modal
+      if (broker.key === 'Angel One') {
+        await registerCallback('angelone', '/stock-recommendation');
+      }
       setShowBrokerModal(false);
       closeModal();
       setTimeout(() => {
@@ -229,11 +301,12 @@ const BrokerSelectionModal = ({
                 </Text>
               </View>
 
-              {/* Important Notice Box */}
+              {/* SEBI Disclaimer */}
               <View style={styles.noticeBox}>
-                <Text style={styles.noticeTitle}>Important:</Text>
+                <Text style={styles.noticeTitle}>SEBI Disclaimer:</Text>
                 <Text style={styles.noticeText}>
-                  • Actions and detection are solely yours.
+                  • Actions and decisions are solely yours as per SEBI (Research
+                  Analysts) Regulations, 2014.
                 </Text>
                 <Text style={styles.noticeText}>
                   • RA doesn't control or influence your action.
@@ -289,16 +362,114 @@ const BrokerSelectionModal = ({
                 </View>
               </ScrollView>
 
-              {/* Continue Without Broker Button */}
-              <TouchableOpacity
-                style={styles.continueButton}
-                activeOpacity={0.7}
-                hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
-                onPress={handleAcceptRebalanceWithoutBroker}>
-                <Text style={styles.continueButtonText}>
-                  Continue without broker
-                </Text>
-              </TouchableOpacity>
+              {/* Bottom Button States */}
+              {brokerConnected ? (
+                <TouchableOpacity
+                  style={[styles.continueButton, styles.connectedButton]}
+                  activeOpacity={0.7}
+                  hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
+                  onPress={handleAcceptRebalanceWithoutBroker}>
+                  <Text style={styles.connectedButtonText}>
+                    Broker Connected - Continue
+                  </Text>
+                </TouchableOpacity>
+              ) : connectingBroker ? (
+                <View style={[styles.continueButton, styles.connectingButton]}>
+                  <ActivityIndicator
+                    size="small"
+                    color="#FFFFFF"
+                    style={{marginRight: 10}}
+                  />
+                  <Text style={styles.continueButtonText}>
+                    Connecting broker...
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.continueButton}
+                  activeOpacity={0.7}
+                  hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}
+                  onPress={handleAcceptRebalanceWithoutBroker}>
+                  <Text style={styles.continueButtonText}>
+                    Continue without connecting broker
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Can't find your broker? */}
+              {!showLetUsKnow ? (
+                <TouchableOpacity
+                  style={styles.letUsKnowButton}
+                  activeOpacity={0.7}
+                  onPress={handleLetUsKnowPress}>
+                  <Text style={styles.letUsKnowText}>
+                    Can't find your broker?{' '}
+                    <Text style={styles.letUsKnowLink}>Let us know</Text>
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.letUsKnowContainer}>
+                  <Text style={styles.letUsKnowTitle}>
+                    Search for your broker
+                  </Text>
+                  <TextInput
+                    style={styles.brokerSearchInput}
+                    placeholder="Search broker..."
+                    placeholderTextColor="#999"
+                    value={brokerSearchText}
+                    onChangeText={setBrokerSearchText}
+                  />
+                  <ScrollView
+                    style={styles.allBrokersList}
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={true}>
+                    {filteredAllBrokers.map((item, index) => {
+                      const brokerName =
+                        typeof item === 'string' ? item : item.name || '';
+                      return (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.allBrokersItem,
+                            selectedUnavailableBroker === brokerName &&
+                              styles.allBrokersItemSelected,
+                          ]}
+                          activeOpacity={0.7}
+                          onPress={() =>
+                            handleUnavailableBrokerSelect(brokerName)
+                          }>
+                          <Text
+                            style={[
+                              styles.allBrokersItemText,
+                              selectedUnavailableBroker === brokerName &&
+                                styles.allBrokersItemTextSelected,
+                            ]}>
+                            {brokerName}
+                          </Text>
+                          {selectedUnavailableBroker === brokerName && (
+                            <Text style={styles.selectedCheckmark}>✓</Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {filteredAllBrokers.length === 0 && (
+                      <Text style={styles.noBrokersText}>
+                        No brokers found
+                      </Text>
+                    )}
+                  </ScrollView>
+                  <TouchableOpacity
+                    style={styles.letUsKnowBackButton}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setShowLetUsKnow(false);
+                      setBrokerSearchText('');
+                      setSelectedUnavailableBroker(null);
+                    }}>
+                    <Text style={styles.letUsKnowBackText}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </SafeAreaView>
         </LinearGradient>
@@ -483,13 +654,113 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-    marginBottom: 20,
+    marginBottom: 10,
     minHeight: 54,
   },
   continueButtonText: {
     fontSize: 16,
     fontFamily: 'Satoshi-Bold',
     color: '#FFFFFF',
+  },
+  connectedButton: {
+    backgroundColor: '#1B8D1B',
+    borderColor: '#17A817',
+  },
+  connectedButtonText: {
+    fontSize: 16,
+    fontFamily: 'Satoshi-Bold',
+    color: '#FFFFFF',
+  },
+  connectingButton: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  letUsKnowButton: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  letUsKnowText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Regular',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  letUsKnowLink: {
+    fontFamily: 'Satoshi-Bold',
+    color: '#FFB800',
+    textDecorationLine: 'underline',
+  },
+  letUsKnowContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  letUsKnowTitle: {
+    fontSize: 15,
+    fontFamily: 'Satoshi-Bold',
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
+  brokerSearchInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    fontFamily: 'Satoshi-Regular',
+    color: '#000000',
+    marginBottom: 12,
+  },
+  allBrokersList: {
+    maxHeight: 180,
+    marginBottom: 12,
+  },
+  allBrokersItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginBottom: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  allBrokersItemSelected: {
+    backgroundColor: 'rgba(255, 184, 0, 0.2)',
+    borderWidth: 1,
+    borderColor: '#FFB800',
+  },
+  allBrokersItemText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    color: '#FFFFFF',
+  },
+  allBrokersItemTextSelected: {
+    color: '#FFB800',
+    fontFamily: 'Satoshi-Bold',
+  },
+  selectedCheckmark: {
+    fontSize: 16,
+    color: '#FFB800',
+    fontFamily: 'Satoshi-Bold',
+  },
+  noBrokersText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Regular',
+    color: 'rgba(255, 255, 255, 0.5)',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  letUsKnowBackButton: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  letUsKnowBackText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    color: '#FFB800',
   },
 
   // Token Expire Modal Styles

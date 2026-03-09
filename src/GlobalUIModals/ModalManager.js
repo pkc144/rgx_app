@@ -1,6 +1,12 @@
 import React from 'react';
+import axios from 'axios';
+import Toast from 'react-native-toast-message';
+import Config from 'react-native-config';
 import useModalStore from './modalStore';
 import { useTrade } from '../screens/TradeContext';
+import server from '../utils/serverConfig';
+import { generateToken } from '../utils/SecurityTokenManager';
+import { getAdvisorSubdomain } from '../utils/variantHelper';
 
 // Lazy import modals
 import IIFLModal from '../components/iiflmodal';
@@ -21,13 +27,48 @@ const ModalManager = () => {
   const visibleModal = useModalStore((state) => state.visibleModal);
   const closeModal = useModalStore((state) => state.closeModal);
   const setShowBrokerModal = useModalStore((state) => state.setShowBrokerModal);
-  const { fetchBrokerStatusModal } = useTrade();
+  const { fetchBrokerStatusModal, userEmail } = useTrade();
+
+  const onConnectionSuccess = async (brokerName) => {
+    // 1. Refresh broker status / user data
+    if (fetchBrokerStatusModal) {
+      fetchBrokerStatusModal();
+    }
+
+    // 2. Send broker connection notification email
+    try {
+      await axios.post(
+        `${server.server.baseUrl}api/comms/broker-connection-email`,
+        { email: userEmail, brokerName },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+    } catch (error) {
+      console.error('Error sending broker connection email:', error);
+    }
+
+    // 3. Show success toast
+    Toast.show({
+      type: 'success',
+      text1: 'Broker Connected',
+      text2: `${brokerName} has been connected successfully.`,
+    });
+  };
 
   const commonProps = {
     isVisible: true,
     onClose: closeModal,
     setShowBrokerModal,
     fetchBrokerStatusModal,
+    onConnectionSuccess,
   };
 
   const renderModal = () => {

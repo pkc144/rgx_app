@@ -492,6 +492,22 @@ const RecommendationSuccessModal = ({
               style={styles.ordersList}
               showsVerticalScrollIndicator={false}
             />
+
+            {/* Manage Orders Button */}
+            <TouchableOpacity
+              style={styles.manageOrdersButton}
+              onPress={() => {
+                setOpenSucessModal(false);
+                navigation.navigate('PlaceOrdersScreen', {
+                  orders: orderResponse,
+                  broker: currentBroker,
+                });
+              }}
+              activeOpacity={0.7}>
+              <Text style={styles.manageOrdersButtonText}>
+                Manage Orders
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -661,6 +677,22 @@ const styles = StyleSheet.create({
 
   ordersList: {
     flex: 1,
+  },
+  manageOrdersButton: {
+    backgroundColor: '#0066CC',
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manageOrdersButtonText: {
+    fontSize: 15,
+    fontFamily: 'Satoshi-Bold',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
 
   bottomSafeArea: {
