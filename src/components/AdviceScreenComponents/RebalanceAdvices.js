@@ -920,6 +920,10 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           setShowDdpiModal={setShowDdpiModal}
           rebalanceExecutionStatus={RebalanceExecutionStatus}
           setModelPortfolioModelId={setModelPortfolioModelId}
+          onModifyInvestment={() => {
+            setOpenRebalanceModal(false);
+            setShowstatusModal(true);
+          }}
         />
       ) : null}
 
