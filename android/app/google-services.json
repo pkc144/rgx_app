@@ -74,6 +74,14 @@
           }
         },
         {
+          "client_id": "887826618956-necuq85l0mtl94gqncc8p53elsgung3u.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.rgx.aq",
+            "certificate_hash": "d87c94dea8f6e154288e0d1bb228b8676634c090"
+          }
+        },
+        {
           "client_id": "887826618956-r7rqg1tct1a5lnqvva0bb58bqdcpoudt.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
