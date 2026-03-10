@@ -28,7 +28,8 @@
       "Bash(git log --all --oneline --grep=\"broker\\\\|safeconfig\\\\|config\" -i | head -10)",
       "Bash(java -version 2>&1)",
       "Bash(find /Users/apple/Desktop/AQ/App/rgx_app/android -type f \\\\\\( -name \"gradle.properties\" -o -name \"build.gradle\" -o -name \"google-services.json\" -o -name \"AndroidManifest.xml\" -o -name \".env*\" \\\\\\) 2>/dev/null | head -20)",
-      "Bash(/usr/libexec/java_home -v 17 2>/dev/null || echo \"NO_JAVA_17\")"
+      "Bash(/usr/libexec/java_home -v 17 2>/dev/null || echo \"NO_JAVA_17\")",
+      "Bash(kill 1372488)"
     ]
   }
 }
