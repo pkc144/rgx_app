@@ -36,7 +36,8 @@
       "Bash(npx --yes acorn --ecma2020 --module --allow-import-export-everywhere src/components/ModelPortfolioComponents/PerformanceChart.js > /dev/null 2>&1 && echo \"Syntax OK\" || echo \"Syntax error\")",
       "Bash(npx --yes acorn --ecma2020 --module --allow-import-export-everywhere --jsx src/components/ModelPortfolioComponents/PerformanceChart.js > /dev/null 2>&1 && echo \"Syntax OK\" || npx --yes acorn-jsx src/components/ModelPortfolioComponents/PerformanceChart.js 2>&1 | tail -5)",
       "Read(//home/pk/Alphaquark_docs/**)",
-      "Read(//home/pk/**)"
+      "Read(//home/pk/**)",
+      "Bash(cp /home/pk/Alphaquark_docs/AlphaQuark/codes/rgx_app/src/components/ModelPortfolioComponents/PerformanceChart.js /home/pk/Alphaquark_docs/AlphaQuark/codes/github/Alphab2bapp/src/components/ModelPortfolioComponents/PerformanceChart.js && cp /home/pk/Alphaquark_docs/AlphaQuark/codes/rgx_app/src/components/ModelPortfolioComponents/ConsentPopUp.js /home/pk/Alphaquark_docs/AlphaQuark/codes/github/Alphab2bapp/src/components/ModelPortfolioComponents/ConsentPopUp.js && cp /home/pk/Alphaquark_docs/AlphaQuark/codes/rgx_app/src/components/ModelPortfolioComponents/PerformanceDisclaimer.js /home/pk/Alphaquark_docs/AlphaQuark/codes/github/Alphab2bapp/src/components/ModelPortfolioComponents/PerformanceDisclaimer.js && echo \"All 3 files copied\")"
     ]
   }
 }
