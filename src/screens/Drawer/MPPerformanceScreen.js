@@ -51,6 +51,7 @@ import Animated from 'react-native-reanimated';
 import LinearGradient from 'react-native-linear-gradient';
 import CustomTabBarOrder from './CustomTabbarOrder';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
+import PerformanceDisclaimer from '../../components/ModelPortfolioComponents/PerformanceDisclaimer';
 import CustomTabBarMPPerformance from './CustomTabbarMPPerformance';
 import EmptyStateInfoMP from './EmptyStateMP';
 import ConsentPopup from '../../components/ModelPortfolioComponents/ConsentPopUp';
@@ -1355,60 +1356,117 @@ const MPPerformanceScreen = ({route}) => {
                   </View>
                 ),
                 overview: () => (
-                  <SafeAreaView style={{flex: 1, backgroundColor: '#fff'}}>
+                  <View style={{flex: 1, backgroundColor: '#fff'}}>
                     <ScrollView
                       nestedScrollEnabled
                       showsVerticalScrollIndicator={false}
                       contentContainerStyle={{
-                        alignItems: 'center',
                         paddingHorizontal: 16,
-                        paddingTop: 0,
-                        paddingBottom: 0, // give breathing space
+                        paddingTop: 8,
+                        paddingBottom: 40,
                       }}>
-                      <View style={{flex: 1}}>
-                        <PerformanceChart modelName={modelName} />
-                      </View>
-                      <View style={{paddingTop: 30, paddingHorizontal: 10}}>
-                        <Text style={styles.methodTextHead}>
-                          Defining the universe
-                        </Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.definingUniverse}
-                        </Text>
+                      {!globalConsent ? (
+                        <PerformanceDisclaimer
+                          onAccept={handleConsentAccept}
+                          accentColor={mainColor}
+                        />
+                      ) : (
+                        <PerformanceChart
+                          modelName={singleStrategyDetails?.model_name || modelName}
+                          advisor={singleStrategyDetails?.advisor}
+                        />
+                      )}
 
-                        <Text style={styles.methodTextHead}>Research</Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.researchOverView}
-                        </Text>
+                      {/* Methodology Section */}
+                      {(singleStrategyDetails?.definingUniverse ||
+                        singleStrategyDetails?.researchOverView ||
+                        singleStrategyDetails?.constituentScreening) && (
+                        <View
+                          style={{
+                            marginTop: 24,
+                            backgroundColor: '#fafafa',
+                            borderRadius: 12,
+                            padding: 16,
+                          }}>
+                          <Text
+                            style={{
+                              fontFamily: 'Poppins-SemiBold',
+                              fontSize: 14,
+                              color: '#1a1a1a',
+                              marginBottom: 12,
+                            }}>
+                            Methodology
+                          </Text>
 
-                        <Text style={styles.methodTextHead}>
-                          Constituent Screening
-                        </Text>
-                        <Text style={styles.methodText}>
-                          {' '}
-                          {singleStrategyDetails?.constituentScreening}
-                        </Text>
+                          {singleStrategyDetails?.definingUniverse ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Defining the universe
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.definingUniverse}
+                              </Text>
+                            </>
+                          ) : null}
 
-                        <Text style={styles.methodTextHead}>Weighting</Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.weighting}
-                        </Text>
+                          {singleStrategyDetails?.researchOverView ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Research
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.researchOverView}
+                              </Text>
+                            </>
+                          ) : null}
 
-                        <Text style={styles.methodTextHead}>Rebalance</Text>
-                        <Text style={styles.methodText}>
-                          {' '}
-                          {singleStrategyDetails?.rebalanceMethodologyText}
-                        </Text>
+                          {singleStrategyDetails?.constituentScreening ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Constituent Screening
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.constituentScreening}
+                              </Text>
+                            </>
+                          ) : null}
 
-                        <Text style={styles.methodTextHead}>
-                          Asset Allocation
-                        </Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.assetAllocationText}
-                        </Text>
-                      </View>
+                          {singleStrategyDetails?.weighting ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Weighting
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.weighting}
+                              </Text>
+                            </>
+                          ) : null}
+
+                          {singleStrategyDetails?.rebalanceMethodologyText ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Rebalance
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.rebalanceMethodologyText}
+                              </Text>
+                            </>
+                          ) : null}
+
+                          {singleStrategyDetails?.assetAllocationText ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Asset Allocation
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.assetAllocationText}
+                              </Text>
+                            </>
+                          ) : null}
+                        </View>
+                      )}
                     </ScrollView>
-                  </SafeAreaView>
+                  </View>
                 ),
               })}
               onIndexChange={setIndex}
@@ -1691,11 +1749,17 @@ const styles = StyleSheet.create({
   },
   methodTextHead: {
     color: 'rgba(0, 0, 0, 0.85)',
-    fontSize: 11,
-    fontFamily: 'Poppins-Bold',
-    marginTop: 20,
+    fontSize: 12,
+    fontFamily: 'Poppins-SemiBold',
+    marginTop: 14,
+    marginBottom: 4,
   },
-  methodText: {color: 'rgba(0, 0, 0, 1)', fontSize: 11},
+  methodText: {
+    color: 'rgba(0, 0, 0, 0.7)',
+    fontSize: 11,
+    fontFamily: 'Poppins-Regular',
+    lineHeight: 18,
+  },
   subtitle: {
     fontSize: 14,
     color: '#000000',

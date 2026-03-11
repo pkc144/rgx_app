@@ -1,30 +1,54 @@
 // PerformanceChart.js
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
   ActivityIndicator,
   Dimensions,
-  ScrollView,
   TouchableOpacity,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import server from '../../utils/serverConfig';
-import { BarChart2 } from 'lucide-react-native';
+import { BarChart2, TrendingUp, TrendingDown } from 'lucide-react-native';
 import { useTrade } from '../../screens/TradeContext';
 
-const PerformanceChart = ({ modelName }) => {
-  const {configData}=useTrade();
-  const [selectedIndex, setSelectedIndex] = useState('^NSEI');
-  const [portfolioData, setPortfolioData] = useState([]);
+const screenWidth = Dimensions.get('window').width;
+
+const TIME_PERIODS = [
+  { key: '1M', label: '1M', days: 30 },
+  { key: '3M', label: '3M', days: 90 },
+  { key: '6M', label: '6M', days: 180 },
+  { key: '1Y', label: '1Y', days: 365 },
+  { key: 'ALL', label: 'All', days: null },
+];
+
+const PerformanceChart = ({ modelName, advisor }) => {
+  const { configData } = useTrade();
+  const [selectedIndex] = useState('^NSEI');
+  const [allAlignedData, setAllAlignedData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // selectedPoint holds the clicked point info and coordinates
+  const [selectedPeriod, setSelectedPeriod] = useState('1Y');
   const [selectedPoint, setSelectedPoint] = useState(null);
-  // Example: { index: 5, datasetIndex: 0, x: 120, y: 90, portfolio: 101.23, nifty: 99.88, date: '2025-01-01' }
+
+  // Normalize modelName: replace underscores with spaces for API
+  const normalizedModelName = useMemo(
+    () => (modelName ? modelName.replace(/_/g, ' ') : modelName),
+    [modelName],
+  );
+
+  // Resolve advisor tag: prefer prop from strategy data, then configData, then .env
+  const advisorTag =
+    advisor ||
+    configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG ||
+    Config.REACT_APP_ADVISOR_SPECIFIC_TAG;
+
+  // Resolve header name: prefer configData, fallback to .env Config
+  const headerName =
+    configData?.config?.REACT_APP_HEADER_NAME ||
+    Config.REACT_APP_ADVISOR_SUBDOMAIN;
 
   const fetchIndexData = async () => {
     try {
@@ -39,13 +63,13 @@ const PerformanceChart = ({ modelName }) => {
         `${server.ccxtServer.baseUrl}misc/data-fetcher?symbol=${selectedIndex}&start_date=${startDate}&end_date=${endDate}`,
         {
           headers: {
-            'X-Advisor-Subdomain':  configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': headerName,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET
+              Config.REACT_APP_AQ_SECRET,
             ),
           },
-        }
+        },
       );
       const data = await response.json();
       return data.data || [];
@@ -57,34 +81,37 @@ const PerformanceChart = ({ modelName }) => {
 
   const fetchPortfolioData = async () => {
     try {
+      console.log('📊 PerformanceChart: Fetching with advisor:', advisorTag, 'modelName:', normalizedModelName);
+
       const response = await fetch(
         `${server.ccxtServer.baseUrl}rebalance/v2/get-portfolio-performance`,
         {
           method: 'POST',
           body: JSON.stringify({
-            advisor:  configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
-            modelName,
+            advisor: advisorTag,
+            modelName: normalizedModelName,
           }),
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain':  configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': headerName,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET
+              Config.REACT_APP_AQ_SECRET,
             ),
           },
-        }
+        },
       );
 
       if (!response.ok) {
-        console.error(`API error: ${response.status} ${response} ${modelName}` );
+        const errorText = await response.text().catch(() => '');
+        console.error(`📊 PerformanceChart API error: ${response.status}`, errorText);
         return [];
       }
 
       const data = await response.json();
+      console.log('📊 PerformanceChart: API response status:', data.status, 'data length:', data.data?.length || 0);
 
       if (data.status === 0 && data.message === 'No performance data found.') {
-        console.info('No performance data available for this portfolio');
         return [];
       }
 
@@ -96,9 +123,15 @@ const PerformanceChart = ({ modelName }) => {
   };
 
   const fetchData = async () => {
+    // Don't fetch if we don't have the advisor tag yet
+    if (!advisorTag) {
+      console.log('📊 PerformanceChart: Waiting for advisor config...');
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    setSelectedPoint(null); // clear selection when reloading
+    setSelectedPoint(null);
 
     try {
       const [portfolio, indexData] = await Promise.all([
@@ -107,47 +140,82 @@ const PerformanceChart = ({ modelName }) => {
       ]);
 
       if (!portfolio?.length || !indexData?.length) {
-        setPortfolioData([]);
+        setAllAlignedData([]);
         setLoading(false);
         return;
       }
 
-      const portfolioDates = portfolio.map((p) =>
-        new Date(p.date).toISOString().split('T')[0]
+      // Build a map of index data by date for faster lookup
+      const indexMap = {};
+      indexData.forEach(n => {
+        const dateStr = new Date(n.Date).toISOString().split('T')[0];
+        indexMap[dateStr] = n.Close;
+      });
+
+      const portfolioDates = portfolio.map(p =>
+        new Date(p.date).toISOString().split('T')[0],
       );
       const startDate = portfolioDates[0];
-
       const firstPortfolioValue =
         portfolio.find(
-          (p) => new Date(p.date).toISOString().split('T')[0] === startDate
+          p => new Date(p.date).toISOString().split('T')[0] === startDate,
         )?.value || 100;
 
-      const firstIndexValue =
-        indexData.find(
-          (n) => new Date(n.Date).toISOString().split('T')[0] === startDate
-        )?.Close || 100;
+      // Find closest index value to start date
+      let firstIndexValue = indexMap[startDate];
+      if (!firstIndexValue) {
+        // Try finding closest date within 5 days
+        for (let i = 1; i <= 5; i++) {
+          const d = new Date(startDate);
+          d.setDate(d.getDate() + i);
+          const dStr = d.toISOString().split('T')[0];
+          if (indexMap[dStr]) {
+            firstIndexValue = indexMap[dStr];
+            break;
+          }
+          d.setDate(d.getDate() - 2 * i);
+          const dStr2 = d.toISOString().split('T')[0];
+          if (indexMap[dStr2]) {
+            firstIndexValue = indexMap[dStr2];
+            break;
+          }
+        }
+      }
+      if (!firstIndexValue) firstIndexValue = 100;
 
-      const alignedData = (portfolio || [])
-        .map((p) => {
+      // Align data - use nearest date matching for index
+      const alignedData = portfolio
+        .map(p => {
           const pDate = new Date(p.date).toISOString().split('T')[0];
-          const matchingIndex = indexData.find(
-            (n) => new Date(n.Date).toISOString().split('T')[0] === pDate
-          );
+
+          // Try exact match first, then nearest within 3 days
+          let indexClose = indexMap[pDate];
+          if (!indexClose) {
+            for (let i = 1; i <= 3; i++) {
+              const d = new Date(pDate);
+              d.setDate(d.getDate() - i);
+              const dStr = d.toISOString().split('T')[0];
+              if (indexMap[dStr]) {
+                indexClose = indexMap[dStr];
+                break;
+              }
+            }
+          }
+
+          if (!indexClose) return null;
 
           return {
             date: pDate,
             portfolioValue: (p.value / firstPortfolioValue) * 100,
-            indexValue: matchingIndex
-              ? (matchingIndex.Close / firstIndexValue) * 100
-              : null,
-            actualIndexValue: matchingIndex?.Close || null,
+            indexValue: (indexClose / firstIndexValue) * 100,
+            actualIndexValue: indexClose,
             actualPortfolioValue: p.value,
           };
         })
-        .filter((d) => d.indexValue !== null)
+        .filter(d => d !== null)
         .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      setPortfolioData(alignedData);
+      setAllAlignedData(alignedData);
     } catch (err) {
       console.error('Error in fetchData:', err);
       setError(err?.message || 'Something went wrong');
@@ -158,26 +226,76 @@ const PerformanceChart = ({ modelName }) => {
 
   useEffect(() => {
     fetchData();
-  }, [selectedIndex, modelName]);
+  }, [selectedIndex, normalizedModelName, advisorTag]);
 
-  if (loading) return <ActivityIndicator size="large" color="#0070D0" />;
-  if (error)
+  // Filter data by selected time period
+  const portfolioData = useMemo(() => {
+    if (!allAlignedData.length) return [];
+    const period = TIME_PERIODS.find(p => p.key === selectedPeriod);
+    if (!period?.days) return allAlignedData;
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - period.days);
+    const filtered = allAlignedData.filter(d => new Date(d.date) >= cutoff);
+
+    if (filtered.length < 2) return allAlignedData;
+
+    // Re-normalize to base 100 for the filtered period
+    const firstP = filtered[0].portfolioValue;
+    const firstI = filtered[0].indexValue;
+    return filtered.map(d => ({
+      ...d,
+      portfolioValue: (d.portfolioValue / firstP) * 100,
+      indexValue: (d.indexValue / firstI) * 100,
+    }));
+  }, [allAlignedData, selectedPeriod]);
+
+  // Calculate summary stats
+  const stats = useMemo(() => {
+    if (!portfolioData.length) return null;
+    const last = portfolioData[portfolioData.length - 1];
+    const portfolioReturn = last.portfolioValue - 100;
+    const indexReturn = last.indexValue - 100;
+    const alpha = portfolioReturn - indexReturn;
+    return { portfolioReturn, indexReturn, alpha };
+  }, [portfolioData]);
+
+  if (loading) {
     return (
-      <View style={{ padding: 16, alignItems: 'center' }}>
-        <Text style={{ color: '#D00' }}>{error}</Text>
+      <View style={{ padding: 40, alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#0070D0" />
+        <Text
+          style={{
+            color: '#888',
+            fontFamily: 'Poppins-Regular',
+            fontSize: 12,
+            marginTop: 12,
+          }}>
+          Loading performance data...
+        </Text>
       </View>
     );
-  if (!portfolioData.length)
+  }
+
+  if (error) {
+    return (
+      <View style={{ padding: 16, alignItems: 'center' }}>
+        <Text style={{ color: '#D00', fontFamily: 'Poppins-Medium' }}>
+          {error}
+        </Text>
+      </View>
+    );
+  }
+
+  if (!portfolioData.length) {
     return (
       <View
         style={{
-          flex: 1,
           alignItems: 'center',
           justifyContent: 'center',
           paddingHorizontal: 20,
-          marginTop: 40,
-        }}
-      >
+          paddingVertical: 40,
+        }}>
         <BarChart2 size={48} color="#888" style={{ marginBottom: 16 }} />
         <Text
           style={{
@@ -185,8 +303,7 @@ const PerformanceChart = ({ modelName }) => {
             fontFamily: 'Poppins-SemiBold',
             fontSize: 16,
             marginBottom: 8,
-          }}
-        >
+          }}>
           No performance data available
         </Text>
         <Text
@@ -197,275 +314,403 @@ const PerformanceChart = ({ modelName }) => {
             textAlign: 'center',
             lineHeight: 20,
             maxWidth: 280,
-          }}
-        >
-          We couldn’t find any data for this model. Please try again later or
+          }}>
+          We couldn't find any data for this model. Please try again later or
           select a different model.
         </Text>
       </View>
     );
+  }
 
-  const portfolioValues = portfolioData.map((d) => d.portfolioValue);
-  const indexValues = portfolioData.map((d) => d.indexValue);
+  // Sample data to fit within screen - show max ~60 points for clarity
+  const maxPoints = 60;
+  const step = Math.max(1, Math.floor(portfolioData.length / maxPoints));
+  const sampledData = portfolioData.filter(
+    (_, i) => i % step === 0 || i === portfolioData.length - 1,
+  );
 
-  const portfolioMin = Math.min(...portfolioValues);
-  const portfolioMax = Math.max(...portfolioValues);
-  const indexMin = Math.min(...indexValues);
-  const indexMax = Math.max(...indexValues);
+  const portfolioValues = sampledData.map(d => d.portfolioValue);
+  const indexValues = sampledData.map(d => d.indexValue);
 
-  const chartWidth = Dimensions.get('window').width * 2.2; // scrollable width
-  const chartHeight = 280;
-  const tooltipWidth = 140;
-  const highlightSize = 12;
+  // Generate labels - show ~5 evenly spaced dates
+  const labelCount = 5;
+  const labelInterval = Math.floor(sampledData.length / (labelCount - 1)) || 1;
+  const labels = sampledData.map((d, i) => {
+    if (
+      i === 0 ||
+      i === sampledData.length - 1 ||
+      i % labelInterval === 0
+    ) {
+      return new Date(d.date).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+      });
+    }
+    return '';
+  });
+
+  const chartWidth = screenWidth - 40; // fit within screen with padding
+  const chartHeight = 220;
 
   return (
-    <View style={{ paddingHorizontal: 10 }}>
+    <View style={{ paddingTop: 4 }}>
+      {/* Header */}
       <Text
         style={{
-          fontFamily: 'Satoshi-Bold',
-          fontSize: 16,
-          marginBottom: 10,
-          color: '#000',
-        }}
-      >
-        Portfolio vs {selectedIndex === '^NSEI' ? 'Nifty' : selectedIndex}
+          fontFamily: 'Poppins-SemiBold',
+          fontSize: 15,
+          color: '#1a1a1a',
+          marginBottom: 4,
+        }}>
+        Performance
       </Text>
-
       <Text
         style={{
           fontFamily: 'Poppins-Regular',
-          fontSize: 12,
-          marginBottom: 10,
-          color: '#000',
-        }}
-      >
-        This is a simulated portfolio based on the model portfolio rebalances.
-        If you wish to execute the model portfolio in this platform and see
-        live performance,
+          fontSize: 11,
+          color: '#888',
+          marginBottom: 12,
+          lineHeight: 16,
+        }}>
+        Simulated portfolio performance vs{' '}
+        {selectedIndex === '^NSEI' ? 'Nifty 50' : selectedIndex} (base 100)
       </Text>
 
-      <View
-        style={{
-          backgroundColor: '#fff',
-          borderRadius: 16,
-          elevation: 2,
-          paddingVertical: 10,
-          paddingHorizontal: 5,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.15,
-          shadowRadius: 3,
-        }}
-      >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 10 }}
-          onScrollBeginDrag={() => {
-            // hide selection while user scrolls so highlight doesn't get out of sync
-            setSelectedPoint(null);
-          }}
-        >
+      {/* Summary Stats Cards */}
+      {stats && (
+        <View
+          style={{
+            flexDirection: 'row',
+            marginBottom: 16,
+            gap: 10,
+          }}>
           <View
             style={{
-              height: chartHeight + 30, // leave room for labels under chart
-              overflow: 'visible',
-              marginVertical: 8,
-              borderRadius: 12,
-            }}
-          >
-            <LineChart
-              data={{
-                labels: portfolioData.map((d, i) => {
-                  const interval = Math.floor(portfolioData.length / 6) || 1;
-                  if (i % interval === 0 || i === portfolioData.length - 1)
-                    return new Date(d.date).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                    });
-                  return '';
-                }),
-                datasets: [
-                  {
-                    data: portfolioValues,
-                    color: (opacity = 1) => `rgba(7, 186, 209, ${opacity})`,
-                    strokeWidth: 2,
-                  },
-                  {
-                    data: indexValues,
-                    color: (opacity = 1) => `rgba(255, 99, 71, ${opacity})`,
-                    strokeWidth: 2,
-                  },
-                ],
-                legend: ['Portfolio', 'Nifty'],
-              }}
-              width={chartWidth}
-              height={chartHeight}
-              chartConfig={{
-                backgroundColor: '#fff',
-                backgroundGradientFrom: '#fff',
-                backgroundGradientTo: '#fff',
-                decimalPlaces: 1,
-                color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
-                labelColor: (opacity = 1) => `rgba(120,120,120,${opacity})`,
-                propsForDots: { r: '3', strokeWidth: '1.5', stroke: '#fff' },
-                propsForBackgroundLines: { stroke: 'rgba(0,0,0,0.06)' },
-              }}
-              bezier
-              withInnerLines
-              withOuterLines={false}
-              yLabelsOffset={10}
-              style={{ borderRadius: 12 }}
-              // Capture click and use the x/y returned to position overlay highlight + tooltip
-              onDataPointClick={(data) => {
-                // data: { value, datasetIndex, index, x, y }
-                const idx = data.index;
-                const ds = data.datasetIndex ?? 0;
-                const x = Number(data.x);
-                const y = Number(data.y);
-                const date = portfolioData[idx]?.date || '';
-
-                const pointInfo = {
-                  index: idx,
-                  datasetIndex: ds,
-                  x,
-                  y,
-                  portfolio: portfolioData[idx]?.portfolioValue ?? null,
-                  nifty: portfolioData[idx]?.indexValue ?? null,
-                  date,
-                };
-
-                // toggle if clicking same point again
-                if (
-                  selectedPoint &&
-                  selectedPoint.index === pointInfo.index &&
-                  selectedPoint.datasetIndex === pointInfo.datasetIndex
-                ) {
-                  setSelectedPoint(null);
-                } else {
-                  setSelectedPoint(pointInfo);
-                }
-              }}
-            />
-
-            {/* Highlight dot (absolute overlay) */}
-            {selectedPoint && (
-              <>
-                <View
-                  style={{
-                    position: 'absolute',
-                    left: Math.max(
-                      0,
-                      Math.min(
-                        chartWidth - highlightSize,
-                        selectedPoint.x - highlightSize / 2
-                      )
-                    ),
-                    top: Math.max(0, selectedPoint.y+40 - highlightSize / 2),
-                    width: highlightSize,
-                    height: highlightSize,
-                    borderRadius: highlightSize / 2,
-                    backgroundColor:
-                      selectedPoint.datasetIndex === 0 ? '#07d118ff' : '#FF6347',
-                    borderWidth: 2,
-                    borderColor: '#fff',
-                    zIndex: 20,
-                    shadowColor: '#000',
-                    shadowOpacity: 0.15,
-                    shadowRadius: 3,
-                    elevation: 4,
-                  }}
-                />
-
-                {/* Tooltip box */}
-                <View
-                  style={{
-                    position: 'absolute',
-                    // center tooltip above the point but clamp inside chart width
-                    left: Math.max(
-                      8,
-                      Math.min(
-                        chartWidth - tooltipWidth - 8,
-                        selectedPoint.x - tooltipWidth / 2
-                      )
-                    ),
-                    top:
-                      selectedPoint.y - 70 > 0
-                        ? selectedPoint.y - 70
-                        : selectedPoint.y + 12,
-                    width: tooltipWidth,
-                    backgroundColor: '#000',
-                    padding: 8,
-                    borderRadius: 8,
-                    zIndex: 30,
-                  }}
-                >
-                  <Text style={{ color: '#fff', fontSize: 12, marginBottom: 4 }}>
-                    {new Date(selectedPoint.date).toLocaleDateString('en-IN')}
-                  </Text>
-                  <Text style={{ color: '#07BAD1', fontSize: 13, fontWeight: '700' }}>
-                    Portfolio: {selectedPoint.portfolio?.toFixed(2)}
-                  </Text>
-                  <Text style={{ color: '#FF6347', fontSize: 13, fontWeight: '700' }}>
-                    Nifty: {selectedPoint.nifty?.toFixed(2)}
-                  </Text>
-                </View>
-              </>
-            )}
+              flex: 1,
+              backgroundColor: stats.portfolioReturn >= 0 ? '#f0fdf4' : '#fef2f2',
+              borderRadius: 10,
+              padding: 12,
+              borderWidth: 1,
+              borderColor: stats.portfolioReturn >= 0 ? '#dcfce7' : '#fecaca',
+            }}>
+            <Text
+              style={{
+                fontFamily: 'Poppins-Regular',
+                fontSize: 10,
+                color: '#666',
+                marginBottom: 4,
+              }}>
+              Portfolio
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {stats.portfolioReturn >= 0 ? (
+                <TrendingUp size={14} color="#16a34a" />
+              ) : (
+                <TrendingDown size={14} color="#dc2626" />
+              )}
+              <Text
+                style={{
+                  fontFamily: 'Poppins-SemiBold',
+                  fontSize: 16,
+                  color: stats.portfolioReturn >= 0 ? '#16a34a' : '#dc2626',
+                  marginLeft: 4,
+                }}>
+                {stats.portfolioReturn >= 0 ? '+' : ''}
+                {stats.portfolioReturn.toFixed(2)}%
+              </Text>
+            </View>
           </View>
-        </ScrollView>
-      </View>
 
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: stats.indexReturn >= 0 ? '#f0fdf4' : '#fef2f2',
+              borderRadius: 10,
+              padding: 12,
+              borderWidth: 1,
+              borderColor: stats.indexReturn >= 0 ? '#dcfce7' : '#fecaca',
+            }}>
+            <Text
+              style={{
+                fontFamily: 'Poppins-Regular',
+                fontSize: 10,
+                color: '#666',
+                marginBottom: 4,
+              }}>
+              {selectedIndex === '^NSEI' ? 'Nifty 50' : selectedIndex}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {stats.indexReturn >= 0 ? (
+                <TrendingUp size={14} color="#16a34a" />
+              ) : (
+                <TrendingDown size={14} color="#dc2626" />
+              )}
+              <Text
+                style={{
+                  fontFamily: 'Poppins-SemiBold',
+                  fontSize: 16,
+                  color: stats.indexReturn >= 0 ? '#16a34a' : '#dc2626',
+                  marginLeft: 4,
+                }}>
+                {stats.indexReturn >= 0 ? '+' : ''}
+                {stats.indexReturn.toFixed(2)}%
+              </Text>
+            </View>
+          </View>
+
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: stats.alpha >= 0 ? '#eff6ff' : '#fef2f2',
+              borderRadius: 10,
+              padding: 12,
+              borderWidth: 1,
+              borderColor: stats.alpha >= 0 ? '#dbeafe' : '#fecaca',
+            }}>
+            <Text
+              style={{
+                fontFamily: 'Poppins-Regular',
+                fontSize: 10,
+                color: '#666',
+                marginBottom: 4,
+              }}>
+              Alpha
+            </Text>
+            <Text
+              style={{
+                fontFamily: 'Poppins-SemiBold',
+                fontSize: 16,
+                color: stats.alpha >= 0 ? '#2563eb' : '#dc2626',
+              }}>
+              {stats.alpha >= 0 ? '+' : ''}
+              {stats.alpha.toFixed(2)}%
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Time Period Selector */}
       <View
         style={{
           flexDirection: 'row',
           justifyContent: 'center',
-          marginTop: 15,
-          flexWrap: 'wrap',
-        }}
-      >
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            marginHorizontal: 10,
-            marginBottom: 6,
-          }}
-        >
-          <View
-            style={{
-              width: 12,
-              height: 12,
-              backgroundColor: '#07BAD1',
-              marginRight: 6,
-              borderRadius: 20,
+          marginBottom: 12,
+          gap: 6,
+        }}>
+        {TIME_PERIODS.map(period => {
+          const isActive = selectedPeriod === period.key;
+          return (
+            <TouchableOpacity
+              key={period.key}
+              onPress={() => {
+                setSelectedPeriod(period.key);
+                setSelectedPoint(null);
+              }}
+              style={{
+                paddingVertical: 6,
+                paddingHorizontal: 14,
+                borderRadius: 20,
+                backgroundColor: isActive ? '#1a1a1a' : '#f5f5f5',
+              }}>
+              <Text
+                style={{
+                  fontFamily: 'Poppins-Medium',
+                  fontSize: 12,
+                  color: isActive ? '#fff' : '#666',
+                }}>
+                {period.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Chart Card */}
+      <View
+        style={{
+          backgroundColor: '#fff',
+          borderRadius: 14,
+          elevation: 3,
+          paddingTop: 12,
+          paddingBottom: 6,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
+        }}>
+        <View style={{ position: 'relative' }}>
+          <LineChart
+            data={{
+              labels: labels,
+              datasets: [
+                {
+                  data: portfolioValues,
+                  color: (opacity = 1) => `rgba(7, 186, 209, ${opacity})`,
+                  strokeWidth: 2.5,
+                },
+                {
+                  data: indexValues,
+                  color: (opacity = 1) => `rgba(255, 99, 71, ${opacity})`,
+                  strokeWidth: 2,
+                },
+              ],
+            }}
+            width={chartWidth}
+            height={chartHeight}
+            chartConfig={{
+              backgroundColor: '#fff',
+              backgroundGradientFrom: '#fff',
+              backgroundGradientTo: '#fff',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(0,0,0,${opacity})`,
+              labelColor: () => 'rgba(130,130,130,1)',
+              propsForDots: { r: '0' },
+              propsForBackgroundLines: {
+                stroke: 'rgba(0,0,0,0.05)',
+                strokeDasharray: '4,4',
+              },
+              fillShadowGradient: 'rgba(7, 186, 209, 0.1)',
+              fillShadowGradientOpacity: 0.15,
+            }}
+            bezier
+            withInnerLines
+            withOuterLines={false}
+            withDots={false}
+            yLabelsOffset={8}
+            xLabelsOffset={-4}
+            fromZero={false}
+            segments={4}
+            style={{ borderRadius: 14, marginLeft: -6 }}
+            onDataPointClick={data => {
+              const idx = data.index;
+              const ds = data.datasetIndex ?? 0;
+              const x = Number(data.x);
+              const y = Number(data.y);
+              const dataPoint = sampledData[idx];
+              if (!dataPoint) return;
+
+              const pointInfo = {
+                index: idx,
+                datasetIndex: ds,
+                x,
+                y,
+                portfolio: dataPoint.portfolioValue,
+                nifty: dataPoint.indexValue,
+                date: dataPoint.date,
+              };
+
+              if (
+                selectedPoint &&
+                selectedPoint.index === idx &&
+                selectedPoint.datasetIndex === ds
+              ) {
+                setSelectedPoint(null);
+              } else {
+                setSelectedPoint(pointInfo);
+              }
             }}
           />
-          <Text style={{ color: '#000', fontFamily: 'Satoshi-Medium', fontSize: 13 }}>
-            Portfolio
-          </Text>
+
+          {/* Tooltip */}
+          {selectedPoint && (
+            <View
+              style={{
+                position: 'absolute',
+                left: Math.max(
+                  8,
+                  Math.min(
+                    chartWidth - 160,
+                    selectedPoint.x - 70,
+                  ),
+                ),
+                top: Math.max(4, Math.min(chartHeight - 80, selectedPoint.y - 75)),
+                backgroundColor: 'rgba(0,0,0,0.88)',
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                zIndex: 30,
+                minWidth: 140,
+              }}>
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.7)',
+                  fontSize: 10,
+                  fontFamily: 'Poppins-Regular',
+                  marginBottom: 3,
+                }}>
+                {new Date(selectedPoint.date).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </Text>
+              <Text
+                style={{
+                  color: '#07BAD1',
+                  fontSize: 12,
+                  fontFamily: 'Poppins-SemiBold',
+                }}>
+                Portfolio: {selectedPoint.portfolio?.toFixed(2)}
+              </Text>
+              <Text
+                style={{
+                  color: '#FF6347',
+                  fontSize: 12,
+                  fontFamily: 'Poppins-SemiBold',
+                }}>
+                Nifty: {selectedPoint.nifty?.toFixed(2)}
+              </Text>
+            </View>
+          )}
         </View>
 
+        {/* Legend */}
         <View
           style={{
             flexDirection: 'row',
-            alignItems: 'center',
-            marginHorizontal: 10,
-            marginBottom: 6,
-          }}
-        >
-          <View
-            style={{
-              width: 12,
-              height: 12,
-              backgroundColor: '#FF6347',
-              marginRight: 6,
-              borderRadius: 20,
-            }}
-          />
-          <Text style={{ color: '#000', fontFamily: 'Satoshi-Medium', fontSize: 13 }}>
-            {selectedIndex === '^NSEI' ? 'Nifty' : selectedIndex}
-          </Text>
+            justifyContent: 'center',
+            paddingVertical: 8,
+            gap: 20,
+          }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View
+              style={{
+                width: 16,
+                height: 3,
+                backgroundColor: '#07BAD1',
+                marginRight: 6,
+                borderRadius: 2,
+              }}
+            />
+            <Text
+              style={{
+                color: '#555',
+                fontFamily: 'Poppins-Medium',
+                fontSize: 11,
+              }}>
+              Portfolio
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View
+              style={{
+                width: 16,
+                height: 3,
+                backgroundColor: '#FF6347',
+                marginRight: 6,
+                borderRadius: 2,
+              }}
+            />
+            <Text
+              style={{
+                color: '#555',
+                fontFamily: 'Poppins-Medium',
+                fontSize: 11,
+              }}>
+              {selectedIndex === '^NSEI' ? 'Nifty 50' : selectedIndex}
+            </Text>
+          </View>
         </View>
       </View>
     </View>
