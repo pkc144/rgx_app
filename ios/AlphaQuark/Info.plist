@@ -104,6 +104,7 @@ We need camera access to capture photos for profile verification and uploads.
 		<string>ObviouslyDemo-NarrowBlack.otf</string>
 		<string>ObviouslyNarrow-Black.otf</string>
 		<string>Gillies.ttf</string>
+		<string>Azonix.otf</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

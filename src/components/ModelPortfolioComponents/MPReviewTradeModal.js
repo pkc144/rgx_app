@@ -311,12 +311,64 @@ const MPReviewTradeModal = ({
     const isMixedPreCheck =
       stockDetails.some(s => s.transactionType === 'BUY') &&
       stockDetails.some(s => s.transactionType === 'SELL');
+    // Pre-order EDIS/DDPI check for Dhan broker
+    // If dhanEdisStatus is null/undefined (API failed), fail-safe by showing TPIN modal
     if (
       broker === 'Dhan' &&
       (allSellPreCheck || isMixedPreCheck) &&
-      dhanEdisStatus?.data?.some((h) => h.edis === false)
+      (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))
     ) {
       setShowDhanTpinModel(true);
+      onCloseReviewTrade();
+      setLoading(false);
+      return;
+    }
+
+    // Pre-order EDIS/DDPI check for Zerodha broker
+    if (
+      broker === 'Zerodha' &&
+      (allSellPreCheck || isMixedPreCheck) &&
+      !['physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
+      !userDetails?.is_authorized_for_sell
+    ) {
+      setShowDdpiModal(true);
+      onCloseReviewTrade();
+      setLoading(false);
+      return;
+    }
+
+    // Pre-order EDIS check for Angel One broker
+    if (
+      broker === 'Angel One' &&
+      (allSellPreCheck || isMixedPreCheck) &&
+      !userDetails?.ddpi_enabled &&
+      !userDetails?.is_authorized_for_sell
+    ) {
+      setShowAngleOneTpinModel(true);
+      onCloseReviewTrade();
+      setLoading(false);
+      return;
+    }
+
+    // Pre-order EDIS check for Fyers broker
+    if (
+      broker === 'Fyers' &&
+      (allSellPreCheck || isMixedPreCheck) &&
+      !userDetails?.is_authorized_for_sell
+    ) {
+      setShowFyersTpinModal(true);
+      onCloseReviewTrade();
+      setLoading(false);
+      return;
+    }
+
+    // Pre-order EDIS check for brokers without a dedicated EDIS API
+    if (
+      ['AliceBlue', 'IIFL Securities', 'ICICI Direct', 'Upstox', 'Kotak', 'Hdfc Securities', 'Motilal Oswal', 'Groww'].includes(broker) &&
+      (allSellPreCheck || isMixedPreCheck) &&
+      !userDetails?.is_authorized_for_sell
+    ) {
+      setShowOtherBrokerModel(true);
       onCloseReviewTrade();
       setLoading(false);
       return;
@@ -356,7 +408,8 @@ const MPReviewTradeModal = ({
         case 'Motilal Oswal':
           return { ...base, apiKey: checkValidApiAnSecret(apiKey), clientCode };
         case 'Zerodha':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey) };
+          // Server fetches apiKey/secretKey from DB using userEmail
+          return base;
         case 'Groww':
           return { ...base, clientCode };
         default:

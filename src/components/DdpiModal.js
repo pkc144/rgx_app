@@ -11,6 +11,7 @@ import {
   TextInput,
   Dimensions,
   ActivityIndicator,
+  Clipboard,
 } from 'react-native';
 import DDPI from '../assets/DDPI.png';
 import LinearGradient from 'react-native-linear-gradient';
@@ -21,6 +22,7 @@ import YoutubePlayer from 'react-native-youtube-iframe';
 import server from '../utils/serverConfig';
 
 import {generateToken} from '../utils/SecurityTokenManager';
+import {getAdvisorSubdomain} from '../utils/variantHelper';
 import {
   AlertTriangle,
   BadgeAlertIcon,
@@ -45,7 +47,12 @@ export default function DdpiModal({
   isOpen = false,
   setIsOpen = () => {},
   userDetails,
+  reopenRebalanceModal,
+  getUserDetails,
 }) {
+  const [showTpinConfirmation, setShowTpinConfirmation] = useState(false);
+  const [tpinCompleted, setTpinCompleted] = useState(false);
+
   if (userDetails?.user_broker === 'Upstox') {
     setIsOpen(false);
     return null;
@@ -78,18 +85,45 @@ export default function DdpiModal({
       }
 
       const data = await response.json();
-      //  console.log("API Response:", data);
 
       if (data.status === 0) {
+        setShowTpinConfirmation(true);
         setAuthUrl(data.auth_url); // Set the authentication URL to open in WebView
       } else {
         console.error('Error in response:', data.message);
-        // Alert.alert("Error", data.message || "An error occurred.");
       }
     } catch (error) {
       setLoading(false); // Hide loading indicator
       console.error('Error in API call:', error);
-      //Alert.alert("Error", "Failed to proceed with authentication.");
+    }
+  };
+
+  const handleProceed = async () => {
+    try {
+      await fetch(
+        `${server.server.baseUrl}api/update-edis-status`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+          body: JSON.stringify({
+            uid: userDetails?._id,
+            is_authorized_for_sell: true,
+            user_broker: userDetails?.user_broker,
+          }),
+        },
+      );
+      getUserDetails?.();
+      setIsOpen(false);
+      reopenRebalanceModal?.();
+    } catch (error) {
+      console.error('Error updating EDIS status', error);
     }
   };
 
@@ -135,13 +169,46 @@ export default function DdpiModal({
                     until DDPI is active
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.proceedButton}
-                  onPress={proceedWithTpin}>
-                  <Text style={styles.buttonText}>
-                    Proceed with Authorization to Sell
-                  </Text>
-                </TouchableOpacity>
+                {showTpinConfirmation && (
+                  <View style={styles.checkboxContainer}>
+                    <TouchableOpacity
+                      onPress={() => setTpinCompleted(!tpinCompleted)}
+                      style={[
+                        styles.checkbox,
+                        tpinCompleted ? styles.checked : styles.unchecked,
+                      ]}>
+                      {tpinCompleted && <Check size={14} color={'#fff'} />}
+                    </TouchableOpacity>
+                    <Text style={styles.label}>
+                      I've authorized the sell of the stocks
+                    </Text>
+                  </View>
+                )}
+                <View style={{flexDirection: 'row', gap: 10, marginTop: 10}}>
+                  <TouchableOpacity
+                    style={styles.proceedButton}
+                    onPress={proceedWithTpin}
+                    disabled={loading}>
+                    {loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.buttonText}>
+                        Proceed with Authorization to Sell
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  {showTpinConfirmation && (
+                    <TouchableOpacity
+                      style={[
+                        styles.proceedButton,
+                        !tpinCompleted && {opacity: 0.5},
+                      ]}
+                      disabled={!tpinCompleted}
+                      onPress={handleProceed}>
+                      <Text style={styles.buttonText}>Retry Order</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             </View>
           </View>
@@ -761,7 +828,8 @@ export function ActivateTopModel(userDetails) {
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   const handleCopy = textToCopy => {
-    navigator.clipboard.writeText(textToCopy).then(
+    Clipboard.setString(textToCopy);
+    Promise.resolve().then(
       () => {
         Toast.show({
           type: 'success',
@@ -826,7 +894,7 @@ export function ActivateTopModel(userDetails) {
   };
   const handleActivateClick = () => {
     if (instructions.directLink) {
-      window.open(instructions.directLink, '_blank', 'noopener,noreferrer');
+      Linking.openURL(instructions.directLink);
     } else {
       setShowModal(true);
     }
@@ -1694,7 +1762,8 @@ export function AfterPlaceOrderDdpiModal({onClose, userDetails}) {
   const [showActivateNowModel, setShowActivateNowModel] = useState(false);
 
   const handleCopy = textToCopy => {
-    navigator.clipboard.writeText(textToCopy).then(
+    Clipboard.setString(textToCopy);
+    Promise.resolve().then(
       () => {
         Toast.show({
           type: 'success',
@@ -1839,7 +1908,7 @@ export function AfterPlaceOrderDdpiModal({onClose, userDetails}) {
   const handleActivateDDPiNow = () => {
     // Close the current modal if it's open, and show the new modal
     if (instructions.directLink) {
-      window.open(instructions.directLink, '_blank', 'noopener,noreferrer');
+      Linking.openURL(instructions.directLink);
       onClose();
     } else {
       setShowActivateNowModel(true);
@@ -1856,7 +1925,7 @@ export function AfterPlaceOrderDdpiModal({onClose, userDetails}) {
   };
 
   return (
-    <Modal visible={isModalVisible} transparent={true} animationType="fade">
+    <Modal visible={true} transparent={true} animationType="fade">
       <View style={styles.overlay}>
         {!showActivateNowModel ? (
           <View style={styles.modalContainer}>

@@ -53,6 +53,10 @@ export const createPlaceOrderFunction = ({
   sid,
   serverId,
   setShowOtherBrokerModel,
+  setShowDhanTpinModel,
+  setShowAngleOneTpinModel,
+  setShowDdpiModal,
+  setShowFyersTpinModal,
   setOpenReviewTrade,
   setOrderPlacementResponse,
   setOpenSucessModal,
@@ -199,10 +203,9 @@ export const createPlaceOrderFunction = ({
               accessToken: jwtToken,
             };
           case "Zerodha":
+            // Server fetches apiKey/secretKey from DB using userEmail
             return {
               ...gttPayload,
-              apiKey: checkValidApiAnSecret(apiKey),
-              secretKey: checkValidApiAnSecret(secretKey),
               accessToken: jwtToken,
             };
           case "Angel One":
@@ -246,13 +249,14 @@ export const createPlaceOrderFunction = ({
         case "Groww":
           return { ...regularPayload, jwtToken };
         case "AliceBlue":
-          return { ...regularPayload, clientCode, jwtToken, apiKey };
+          return { ...regularPayload, clientCode, jwtToken, apiKey: checkValidApiAnSecret(apiKey) };
         case "Fyers":
           return { ...regularPayload, clientCode, jwtToken };
         case "Motilal Oswal":
           return { ...regularPayload, apiKey, clientCode, jwtToken };
         case "Zerodha":
-          return { ...regularPayload, apiKey, secretKey, jwtToken };
+          // Server fetches apiKey/secretKey from DB using userEmail
+          return { ...regularPayload, jwtToken };
         case "Angel One":
           return {
             ...regularPayload,
@@ -319,6 +323,7 @@ export const createPlaceOrderFunction = ({
         setOrderPlacementResponse(response.data[0]);
         setGttOpenSucessModal(true);
         setOpenReviewTrade(false);
+        setLoading(false);
         await Promise.all([
           updatePortfolioData(broker, userDetails?.email),
           getAllTrades(),
@@ -339,6 +344,9 @@ export const createPlaceOrderFunction = ({
               "cancelled",
               "CANCELLED",
               "Cancelled",
+              "FAILURE",
+              "failure",
+              "Failure",
             ].includes(order?.orderStatus);
             return isRejected && order.transactionType === "SELL"
               ? count + 1
@@ -346,6 +354,36 @@ export const createPlaceOrderFunction = ({
           },
           0
         );
+
+        // Handle TPIN/EDIS modals for all brokers when sell orders are rejected
+        // Don't rely on CDSL keyword detection — error message formats can change
+        if (
+          !isReturningFromOtherBrokerModal &&
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1
+        ) {
+          if (broker === "Dhan" && setShowDhanTpinModel) {
+            setShowDhanTpinModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (broker === "Angel One" && setShowAngleOneTpinModel) {
+            setShowAngleOneTpinModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (broker === "Zerodha" && setShowDdpiModal) {
+            setShowDdpiModal(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (broker === "Fyers" && setShowFyersTpinModal) {
+            setShowFyersTpinModal(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          }
+        }
 
         if (
           !isReturningFromOtherBrokerModal &&
@@ -356,9 +394,10 @@ export const createPlaceOrderFunction = ({
             setOpenReviewTrade(false);
           } else if (
             (allSell || isMixed) &&
-            !userDetails?.is_authorized_for_sell &&
             rejectedSellCount >= 1
           ) {
+            // Don't gate on is_authorized_for_sell DB flag — it persists across
+            // sessions but EDIS authorization expires per-session
             setShowOtherBrokerModel(true);
             setOpenReviewTrade(false);
             setLoading(false);
@@ -382,11 +421,20 @@ export const createPlaceOrderFunction = ({
     } catch (error) {
       console.error("Error placing order:", error);
       setLoading(false);
+
+      let errorMsg;
+      if (error?.code === "ERR_NETWORK" || error?.code === "ECONNABORTED") {
+        errorMsg = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
+      } else if (error?.response?.status === 401 || error?.response?.status === 403) {
+        errorMsg = `${broker} session has expired. Please reconnect your broker and try again.`;
+      } else {
+        errorMsg = error?.response?.data?.error || error?.response?.data?.message || "There was an issue in placing the trade, please try again after sometime or contact your admin";
+      }
+
       Toast.show({
         type: "error",
         text1: "Order Failed",
-        text2:
-          "There was an issue in placing the trade, please try again after sometime or contact your admin",
+        text2: errorMsg,
         position: "top",
         visibilityTime: 6000,
       });

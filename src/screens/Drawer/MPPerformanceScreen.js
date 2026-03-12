@@ -341,24 +341,24 @@ const MPPerformanceScreen = ({route}) => {
 
   const [namemodel, setnamemodel] = useState('');
   const [allStrategy, setAllStrategy] = useState([]);
+  const getUserDetails = () => {
+    if (userEmail) {
+      axios
+        .get(`${server.server.baseUrl}api/user/getUser/${userEmail}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        })
+        .then(res => setUserDetails(res.data.User))
+        .catch(err => console.log(err));
+    }
+  };
   useEffect(() => {
-    const getUserDetails = () => {
-      if (userEmail) {
-        axios
-          .get(`${server.server.baseUrl}api/user/getUser/${userEmail}`, {
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': getAdvisorSubdomain(),
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
-          })
-          .then(res => setUserDetails(res.data.User))
-          .catch(err => console.log(err));
-      }
-    };
     getUserDetails();
   }, [userEmail]);
   const getStrategyDetails = () => {
@@ -1608,6 +1608,8 @@ const MPPerformanceScreen = ({route}) => {
           isOpen={showDdpiModal}
           setIsOpen={setShowDdpiModal}
           userDetails={userDetails}
+          getUserDetails={getUserDetails}
+          reopenRebalanceModal={calculateRebalance}
         />
       )}
 
