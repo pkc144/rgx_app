@@ -15,7 +15,7 @@ import server from '../../utils/serverConfig';
 import { BarChart2 } from 'lucide-react-native';
 import { useTrade } from '../../screens/TradeContext';
 
-const PerformanceChart = ({ modelName }) => {
+const PerformanceChart = ({ modelName, advisor: advisorProp }) => {
   const {configData}=useTrade();
   const [selectedIndex, setSelectedIndex] = useState('^NSEI');
   const [portfolioData, setPortfolioData] = useState([]);
@@ -35,11 +35,13 @@ const PerformanceChart = ({ modelName }) => {
         .toISOString()
         .split('T')[0];
 
+      console.log('[PerformanceChart] fetchIndexData:', { selectedIndex, startDate, endDate });
+
       const response = await fetch(
         `${server.ccxtServer.baseUrl}misc/data-fetcher?symbol=${selectedIndex}&start_date=${startDate}&end_date=${endDate}`,
         {
           headers: {
-            'X-Advisor-Subdomain':  configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || Config.REACT_APP_HEADER_NAME || Config.REACT_APP_ADVISOR_SUBDOMAIN,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET
@@ -48,26 +50,36 @@ const PerformanceChart = ({ modelName }) => {
         }
       );
       const data = await response.json();
+      console.log('[PerformanceChart] Index data length:', data.data?.length || 0);
       return data.data || [];
     } catch (err) {
-      console.error('Error fetching index data:', err);
+      console.error('[PerformanceChart] Error fetching index data:', err);
       return [];
     }
   };
 
   const fetchPortfolioData = async () => {
     try {
+      const advisorTag = advisorProp || configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || Config.REACT_APP_ADVISOR_SPECIFIC_TAG;
+      const headerName = configData?.config?.REACT_APP_HEADER_NAME || Config.REACT_APP_HEADER_NAME || Config.REACT_APP_ADVISOR_SUBDOMAIN;
+      console.log('[PerformanceChart] fetchPortfolioData params:', {
+        advisor: advisorTag,
+        modelName,
+        headerName,
+        url: `${server.ccxtServer.baseUrl}rebalance/v2/get-portfolio-performance`,
+      });
+
       const response = await fetch(
         `${server.ccxtServer.baseUrl}rebalance/v2/get-portfolio-performance`,
         {
           method: 'POST',
           body: JSON.stringify({
-            advisor:  configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+            advisor: advisorTag,
             modelName,
           }),
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain':  configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': headerName,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET
@@ -77,20 +89,21 @@ const PerformanceChart = ({ modelName }) => {
       );
 
       if (!response.ok) {
-        console.error(`API error: ${response.status} ${response} ${modelName}` );
+        console.error(`[PerformanceChart] API error: ${response.status} ${modelName}`);
         return [];
       }
 
       const data = await response.json();
+      console.log('[PerformanceChart] API response:', JSON.stringify(data).substring(0, 500));
 
       if (data.status === 0 && data.message === 'No performance data found.') {
-        console.info('No performance data available for this portfolio');
+        console.info('[PerformanceChart] No performance data available for this portfolio');
         return [];
       }
 
       return data.data || [];
     } catch (err) {
-      console.error('Error fetching portfolio data:', err);
+      console.error('[PerformanceChart] Error fetching portfolio data:', err);
       return [];
     }
   };
@@ -106,7 +119,13 @@ const PerformanceChart = ({ modelName }) => {
         fetchIndexData(),
       ]);
 
+      console.log('[PerformanceChart] fetchData results:', {
+        portfolioLength: portfolio?.length || 0,
+        indexDataLength: indexData?.length || 0,
+      });
+
       if (!portfolio?.length || !indexData?.length) {
+        console.warn('[PerformanceChart] Empty data - portfolio:', portfolio?.length, 'index:', indexData?.length);
         setPortfolioData([]);
         setLoading(false);
         return;
@@ -158,7 +177,7 @@ const PerformanceChart = ({ modelName }) => {
 
   useEffect(() => {
     fetchData();
-  }, [selectedIndex, modelName]);
+  }, [selectedIndex, modelName, advisorProp]);
 
   if (loading) return <ActivityIndicator size="large" color="#0070D0" />;
   if (error)

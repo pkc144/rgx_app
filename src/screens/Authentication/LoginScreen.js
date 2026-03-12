@@ -72,13 +72,16 @@ const LoginScreen = () => {
     getModelPortfolioStrategyDetails,
   } = useTrade();
 
-  // Configure Google Sign-In with googleWebClientId from database
+  // Configure Google Sign-In with googleWebClientId from database (with .env fallback)
   React.useEffect(() => {
-    if (config?.googleWebClientId) {
+    const webClientId = config?.googleWebClientId || Config.GOOGLE_WEB_CLIENT_ID;
+    if (webClientId) {
       GoogleSignin.configure({
-        webClientId: config.googleWebClientId,
+        webClientId,
+        iosClientId: Config.GOOGLE_IOS_CLIENT_ID || undefined,
+        offlineAccess: false,
       });
-      console.log('Google Sign-In configured with Client ID from database:', config.googleWebClientId);
+      console.log('Google Sign-In configured with Client ID:', webClientId);
     }
   }, [config?.googleWebClientId]);
 

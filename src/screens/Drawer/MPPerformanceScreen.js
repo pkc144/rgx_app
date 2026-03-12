@@ -1294,7 +1294,7 @@ const MPPerformanceScreen = ({route}) => {
                         paddingBottom: 0, // give breathing space
                       }}>
                       <View style={{flex: 1}}>
-                        <PerformanceChart modelName={modelName} />
+                        <PerformanceChart modelName={modelName} advisor={strategyDetails?.advisor} />
                       </View>
                       <View style={{paddingTop: 30, paddingHorizontal: 10}}>
                         <Text style={styles.methodTextHead}>

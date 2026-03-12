@@ -10,6 +10,7 @@ import {
 // import LinearGradient from 'react-native-linear-gradient';
 import {getAuth, signOut} from '@react-native-firebase/auth';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
+import Config from 'react-native-config';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,11 +31,14 @@ const LogoutScreen = ({navigation}) => {
 
   const auth = getAuth();
 
-  // Configure Google Sign-In with googleWebClientId from backend config
+  // Configure Google Sign-In with googleWebClientId from backend config (with .env fallback)
   useEffect(() => {
-    if (config?.googleWebClientId) {
+    const webClientId = config?.googleWebClientId || Config.GOOGLE_WEB_CLIENT_ID;
+    if (webClientId) {
       GoogleSignin.configure({
-        webClientId: config.googleWebClientId,
+        webClientId,
+        iosClientId: Config.GOOGLE_IOS_CLIENT_ID || undefined,
+        offlineAccess: false,
       });
     }
   }, [config?.googleWebClientId]);
