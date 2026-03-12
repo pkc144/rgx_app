@@ -16,7 +16,7 @@ import {fetchBrokerAllHoldings} from '../FunctionCall/fetchBrokerAllHoldings';
 import {fetchBrokerSpecificHoldings} from '../FunctionCall/fetchBrokerSpecificHoldings';
 import {fetchOrderBook, fetchPendingOrders} from '../services/BrokerOrderBookAPI';
 
-import {getConfigData, isUserDataComplete} from '../utils/storageUtils';
+import {getConfigData, isUserDataComplete, getUserData} from '../utils/storageUtils';
 import Config from 'react-native-config';
 const TradeContext = createContext();
 import {generateToken} from '../utils/SecurityTokenManager';
@@ -46,7 +46,34 @@ export const TradeProvider = ({children}) => {
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const [resolvedEmail, setResolvedEmail] = useState(user?.email || null);
+
+  // Resolve user email - Firebase may return null for Apple Sign-In users
+  const resolveUserEmail = useCallback(async () => {
+    const firebaseEmail = getAuth().currentUser?.email;
+    if (firebaseEmail) {
+      setResolvedEmail(firebaseEmail);
+      return firebaseEmail;
+    }
+    // Fallback: read from stored user data (set during login)
+    try {
+      const userData = await getUserData();
+      const storedEmail = userData?.email;
+      if (storedEmail) {
+        setResolvedEmail(storedEmail);
+        return storedEmail;
+      }
+    } catch (e) {
+      console.error('Error resolving user email:', e);
+    }
+    return null;
+  }, []);
+
+  useEffect(() => {
+    resolveUserEmail();
+  }, [resolveUserEmail]);
+
+  const userEmail = resolvedEmail;
 
   const [configData, setConfigData] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
@@ -95,9 +122,10 @@ export const TradeProvider = ({children}) => {
   // ENHANCED: Force reload config data (called from login/signup flows)
   const reloadConfigData = useCallback(async () => {
     setConfigLoading(true);
+    await resolveUserEmail(); // Re-resolve email (important for Apple Sign-In)
     await new Promise(resolve => setTimeout(resolve, 500));
     await loadStoredData(3); // Retry up to 3 times
-  }, [loadStoredData]);
+  }, [loadStoredData, resolveUserEmail]);
 
   useEffect(() => {
     loadStoredData();
@@ -343,9 +371,7 @@ export const TradeProvider = ({children}) => {
   };
 
   const getModelPortfolioStrategyDetails = async () => {
-    const auth = getAuth();
-    const user = auth.currentUser;
-    const userEmail = user?.email;
+    const userEmail = resolvedEmail || (await resolveUserEmail());
 
     try {
       setIsDatafetchingMP(true);
@@ -402,9 +428,7 @@ export const TradeProvider = ({children}) => {
     }
   }
 const getAllTrades = async () => {
-  const auth = getAuth();
-  const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = resolvedEmail || (await resolveUserEmail());
 
   if (!userEmail) {
     console.error('[Trade Fetch] Error: User email is missing');

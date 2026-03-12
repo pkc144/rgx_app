@@ -88,9 +88,14 @@ const LoginScreen = () => {
   // Navigation handler - store data and navigate
   const handlePostLoginNavigation = async (userDetails, userEmail) => {
     try {
+      console.log('handlePostLoginNavigation called with email:', userEmail);
+      console.log('userDetails response:', JSON.stringify(userDetails?.data));
+
+      const userData = userDetails?.data?.User;
+
       const hasAdvisorRaCode = Config?.ADVISOR_RA_CODE
         ? Config?.ADVISOR_RA_CODE
-        : !!userDetails.data?.User?.advisor_ra_code;
+        : !!userData?.advisor_ra_code;
 
       setIsProfileCompleted(hasAdvisorRaCode);
       await storeLoginTime();
@@ -98,14 +103,14 @@ const LoginScreen = () => {
       if (hasAdvisorRaCode) {
         const advisorRaCode = Config?.ADVISOR_RA_CODE
           ? Config?.ADVISOR_RA_CODE
-          : userDetails.data.User.advisor_ra_code;
+          : userData.advisor_ra_code;
 
         // Store user data
         await setUserData({
           email: userEmail,
           advisor_ra_code: advisorRaCode,
           profileCompleted: true,
-          ...userDetails.data.User,
+          ...userData,
         });
 
         // Fetch advisor config
@@ -134,14 +139,23 @@ const LoginScreen = () => {
         await setUserData({
           email: userEmail,
           profileCompleted: false,
-          ...userDetails?.data?.User,
+          ...userData,
         });
         navigation.replace('SignUpRADetails', {
           userEmail: userEmail,
         });
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('handlePostLoginNavigation error:', error);
+      // Still store minimal user data so Home screen has something to work with
+      try {
+        await setUserData({
+          email: userEmail,
+          profileCompleted: false,
+        });
+      } catch (e) {
+        console.error('Failed to store minimal user data:', e);
+      }
       navigation.replace('Home');
     }
   };
@@ -446,6 +460,10 @@ const LoginScreen = () => {
   const completeAppleSignIn = async (user, userEmail, fullName) => {
     try {
       setLoading(true);
+
+      console.log('Apple Sign-In - userEmail:', userEmail);
+      console.log('Apple Sign-In - firebase user email:', user.email);
+      console.log('Apple Sign-In - fullName:', JSON.stringify(fullName));
 
       // Construct display name from Apple's fullName object
       let displayName = user.displayName;
