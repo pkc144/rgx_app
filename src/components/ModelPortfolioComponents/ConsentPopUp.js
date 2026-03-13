@@ -1,40 +1,50 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet } from 'react-native';
+import {View, Text, TouchableOpacity, Modal, StyleSheet} from 'react-native';
+import {ShieldAlert} from 'lucide-react-native';
 
-const ConsentPopup = ({ isConsentPopupOpen, setIsConsentPopupOpen, handleConsentAccept }) => {
+const ConsentPopup = ({
+  isConsentPopupOpen,
+  setIsConsentPopupOpen,
+  handleConsentAccept,
+}) => {
   return (
     <Modal
       visible={isConsentPopupOpen}
       transparent
       animationType="fade"
-      onRequestClose={() => setIsConsentPopupOpen(false)}
-    >
+      onRequestClose={() => setIsConsentPopupOpen(false)}>
       {/* Semi-transparent background */}
       <View style={styles.overlay} />
 
       {/* Centered popup */}
       <View style={styles.container}>
         <View style={styles.popup}>
-          <Text style={styles.title}>Consent Required</Text>
+          <View style={styles.iconRow}>
+            <ShieldAlert size={22} color="#f59e0b" />
+            <Text style={styles.title}>Important Disclaimer</Text>
+          </View>
           <Text style={styles.message}>
-            By clicking to view performance, I understand that historical
-            performance data is NOT a promise of future returns. For new
-            portfolio, data would be limited and will not show CAGR.
+            By proceeding, I acknowledge that past performance data shown is
+            simulated and does not guarantee future results. Investments in the
+            securities market are subject to market risks. For newer portfolios,
+            data may be limited and CAGR may not be available.
+          </Text>
+          <Text style={styles.sebiNote}>
+            Registration with SEBI is no guarantee of performance or assurance
+            of returns to investors.
           </Text>
 
           <View style={styles.buttonRow}>
             <TouchableOpacity
               style={[styles.button, styles.cancelButton]}
-              onPress={() => setIsConsentPopupOpen(false)}
-            >
+              onPress={() => setIsConsentPopupOpen(false)}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.button, styles.agreeButton]}
-              onPress={handleConsentAccept}
-            >
-              <Text style={styles.agreeButtonText}>I Agree</Text>
+              onPress={handleConsentAccept}>
+              <Text style={styles.agreeButtonText}>I Understand</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -64,20 +74,33 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {width: 0, height: 4},
     elevation: 8,
   },
+  iconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    gap: 8,
+  },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    color: '#000',
+    fontSize: 18,
+    fontFamily: 'Poppins-SemiBold',
+    color: '#1a1a1a',
   },
   message: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 24,
+    fontSize: 13,
+    fontFamily: 'Poppins-Regular',
+    color: '#374151',
+    marginBottom: 10,
     lineHeight: 20,
+  },
+  sebiNote: {
+    fontSize: 11,
+    fontFamily: 'Poppins-Regular',
+    color: '#9ca3af',
+    marginBottom: 20,
+    lineHeight: 16,
   },
   buttonRow: {
     flexDirection: 'row',
@@ -86,22 +109,24 @@ const styles = StyleSheet.create({
   },
   button: {
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     borderRadius: 8,
   },
   cancelButton: {
-    backgroundColor: '#E5E5E5',
+    backgroundColor: '#f3f4f6',
   },
   cancelButtonText: {
-    color: '#333',
-    fontWeight: '600',
+    color: '#374151',
+    fontFamily: 'Poppins-Medium',
+    fontSize: 13,
   },
   agreeButton: {
-    backgroundColor: '#2056DF',
+    backgroundColor: '#1a1a1a',
   },
   agreeButtonText: {
     color: '#fff',
-    fontWeight: '600',
+    fontFamily: 'Poppins-Medium',
+    fontSize: 13,
   },
 });
 

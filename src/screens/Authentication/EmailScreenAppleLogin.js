@@ -12,8 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
-// import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../../components/GradientView';
 import Toast from 'react-native-toast-message';
 import {Mail} from 'lucide-react-native';
 import {useConfig} from '../../context/ConfigContext';
@@ -89,9 +88,11 @@ const EmailScreenAppleLogin = ({route}) => {
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
-      {/* View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background */}
-      <View
-        style={[styles.container, {backgroundColor: gradient1, overflow: 'hidden'}]}>
+      <GradientView
+        colors={[gradient1, gradient2]}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 1}}
+        style={styles.container}>
         <StatusBar barStyle="light-content" />
 
         {/* Decorative background circles */}
@@ -143,7 +144,7 @@ const EmailScreenAppleLogin = ({route}) => {
           </TouchableOpacity>
         </View>
         <Toast />
-      </View>
+      </GradientView>
     </KeyboardAvoidingView>
   );
 };

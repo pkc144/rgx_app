@@ -13,8 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import DDPI from '../assets/DDPI.png';
-// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
-// Using solid background color with View instead
+import GradientView from './GradientView';
 import Toast from 'react-native-toast-message';
 import WebView from 'react-native-webview';
 import Config from 'react-native-config';
@@ -34,6 +33,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTrade} from '../screens/TradeContext';
 const {height: screenHeight, width: screenWidth} = Dimensions.get('window');
 const checkValidApiAnSecret = data => {
+  if (!data) return null;
   const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
   const Key = bytesKey.toString(CryptoJS.enc.Utf8);
   if (Key) {
@@ -59,7 +59,7 @@ export default function DdpiModal({
       setLoading(true); // Show loading indicator
 
       const response = await fetch(
-        `https://ccxtprod.alphaquark.in/zerodha/auth-sell`,
+        `${server.ccxtServer.baseUrl}zerodha/auth-sell`,
         {
           method: 'POST',
           headers: {
@@ -737,9 +737,10 @@ export function ActivateNowModel({
               </View>
             </View>
 
-            {/* Action Button - View replaces LinearGradient for iOS Fabric compatibility */}
-            <View
-              style={[styles.buttonGradient, { backgroundColor: '#D97706', overflow: 'hidden' }]}>
+            {/* Action Button */}
+            <GradientView
+              colors={['#D97706', '#F59E0B', '#D97706']}
+              style={styles.buttonGradient}>
               <TouchableOpacity
                 style={styles.activateButton}
                 onPress={onActivate}>
@@ -747,7 +748,7 @@ export function ActivateNowModel({
                   Activate DDPI Now &gt;&gt;
                 </Text>
               </TouchableOpacity>
-            </View>
+            </GradientView>
           </View>
         </ScrollView>
       </View>
@@ -929,7 +930,7 @@ export function AngleOneTpinModal({
       <input type="hidden" name="TransDtls" value="${
         edisStatus?.data?.TransDtls || ''
       }" />
-      <input type="hidden" name="returnURL" value="https://test.alphaquark.in/stock-recommendation" />
+      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL}/stock-recommendation" />
       <input id="submitBtn" type="submit" />
     </form>
   </body>
@@ -1093,12 +1094,36 @@ export function DhanTpinModal({
           });
           setMatchedIsin(matchedOrder.isin);
         } else {
-          console.log('No matching order found');
-          setShowNoHoldingModal(true);
+          console.log('No matching order found, trying fallback');
+          const fallbackOrder = dhanEdisStatus.data.find(
+            (order) => order.edis === false && order.isin,
+          );
+          if (fallbackOrder) {
+            setMatchedData({
+              isin: fallbackOrder.isin,
+              symbol: fallbackOrder.symbol,
+              exchange: fallbackOrder.exchange,
+            });
+            setMatchedIsin(fallbackOrder.isin);
+          } else {
+            setShowNoHoldingModal(true);
+          }
         }
       } else {
-        console.log('No SELL order found');
-        setShowNoHoldingModal(true);
+        console.log('No SELL order found, trying fallback');
+        const fallbackOrder = dhanEdisStatus.data.find(
+          (order) => order.edis === false && order.isin,
+        );
+        if (fallbackOrder) {
+          setMatchedData({
+            isin: fallbackOrder.isin,
+            symbol: fallbackOrder.symbol,
+            exchange: fallbackOrder.exchange,
+          });
+          setMatchedIsin(fallbackOrder.isin);
+        } else {
+          setShowNoHoldingModal(true);
+        }
       }
     } else {
       console.log('dhanEdisStatus or its data is not available');
@@ -1111,12 +1136,22 @@ export function DhanTpinModal({
   const proceedWithDhanTpin = async () => {
     setLoading(true);
 
+    if (!matchedData || !matchedData.isin) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'No holdings found to authorize.',
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       const broker = userDetails?.user_broker;
       if (broker === 'Dhan') {
         // Generate TPIN API call
         const generateTpinResponse = await fetch(
-          'https://ccxtprod.alphaquark.in/dhan/generate-tpin',
+          `${server.ccxtServer.baseUrl}dhan/generate-tpin`,
           {
             method: 'POST',
             headers: {
@@ -1139,7 +1174,7 @@ export function DhanTpinModal({
 
           // Enter TPIN API call
           const enterTpinResponse = await fetch(
-            'https://ccxtprod.alphaquark.in/dhan/enter-tpin',
+            `${server.ccxtServer.baseUrl}dhan/enter-tpin`,
             {
               method: 'POST',
               headers: {
@@ -1469,6 +1504,8 @@ export function OtherBrokerModel({
     onContinue();
     setLoadingRebalance(true);
 
+    // Simplified payload - backend fetches credentials server-side
+    // Only send accessToken for authentication
     let payload = {
       userEmail: userEmail,
       userBroker: broker,
@@ -1476,61 +1513,8 @@ export function OtherBrokerModel({
       advisor: advisorName,
       model_id: modelPortfolioModelId,
       userFund: funds?.data?.availablecash,
+      accessToken: jwtToken,
     };
-    if (broker === 'IIFL Securities') {
-      payload = {
-        ...payload,
-        clientCode: clientCode,
-      };
-    } else if (broker === 'ICICI Direct') {
-      payload = {
-        ...payload,
-        apiKey: checkValidApiAnSecret(apiKey),
-        secretKey: checkValidApiAnSecret(secretKey),
-        sessionToken: jwtToken,
-      };
-    } else if (broker === 'Upstox') {
-      payload = {
-        ...payload,
-        apiKey: checkValidApiAnSecret(apiKey),
-        apiSecret: checkValidApiAnSecret(secretKey),
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Angel One') {
-      payload = {
-        ...payload,
-        apiKey: angelOneApiKey,
-        jwtToken: jwtToken,
-      };
-    } else if (broker === 'Zerodha') {
-      payload = {
-        ...payload,
-        apiKey: zerodhaApiKey,
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Dhan') {
-      payload = {
-        ...payload,
-        clientId: clientCode,
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Hdfc Securities') {
-      payload = {
-        ...payload,
-        apiKey: checkValidApiAnSecret(apiKey),
-        accessToken: jwtToken,
-      };
-    } else if (broker === 'Kotak') {
-      payload = {
-        ...payload,
-        consumerKey: checkValidApiAnSecret(apiKey),
-        consumerSecret: checkValidApiAnSecret(secretKey),
-        accessToken: jwtToken,
-        viewToken: viewToken,
-        sid: sid,
-        serverId: serverId,
-      };
-    }
     let config = {
       method: 'post',
       url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
@@ -1980,7 +1964,7 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
       if (broker === 'Fyers') {
         console.log('Generating TPIN...');
         const generateTpinResponse = await fetch(
-          'https://ccxtprod.alphaquark.in/fyers/tpin',
+          `${server.ccxtServer.baseUrl}fyers/tpin`,
           {
             method: 'POST',
             headers: {
@@ -2004,7 +1988,7 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
 
           console.log('Submitting holdings for Fyers...');
           const submitHoldingsResponse = await fetch(
-            'https://ccxtprod.alphaquark.in/fyers/submit-holdings',
+            `${server.ccxtServer.baseUrl}fyers/submit-holdings`,
             {
               method: 'POST',
               headers: {

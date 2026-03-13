@@ -32,16 +32,13 @@ const FyersConnect = ({
   const [authUrl, setAuthUrl] = useState('');
 
   const [loading, setLoading] = useState(false);
-  const [sessionToken, setSessionToken] = useState(null);
-  //
+  const [fyersAuthCode, setFyersAuthCode] = useState(null);
+  const [fyersAccessToken, setFyersAccessToken] = useState(null);
+  const hasConnectedFyers = useRef(false);
 
   const brokerConnectRedirectURL =
     configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
 
-  const [apiSession, setApiSession] = useState(null);
-  const [fyersAuthCode, setFyersAuthCode] = useState(null);
-
-  //
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;
@@ -49,6 +46,7 @@ const FyersConnect = ({
 
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);
+
   const parseQueryString = queryString => {
     const params = {};
     const query = queryString.startsWith('?')
@@ -86,35 +84,37 @@ const FyersConnect = ({
 
   const userId = userDetails && userDetails._id;
 
+  // Step 1: Extract auth_code from OAuth callback URL
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
-    console.log('here1-----', url);
+    console.log('[Fyers] WebView URL:', url);
+
     if (url.includes('auth_code=')) {
-      const queryParams = parseQueryString(url.split('?')[1]);
-      const authcode = queryParams.auth_code;
-      if (authcode) {
-        setFyersAuthCode(authcode);
-        console.log('here2 authcode', authcode);
-        setShowWebView(false);
+      const queryString = url.split('?')[1];
+      if (queryString) {
+        const queryParams = parseQueryString(queryString);
+        const authcode = queryParams.auth_code;
+        if (authcode) {
+          console.log('[Fyers] Authorization code received');
+          setFyersAuthCode(authcode);
+          setShowWebView(false);
+        }
       }
     }
   };
 
-  const [fyersAccessToken, setFyersAccessToken] = useState(null);
-  const hasConnectedFyers = useRef(false);
+  // Step 2: Exchange auth_code for access token
   const connectFyers = () => {
-    console.log('ConnectFyers called', apiKey, secretKey);
     if (fyersAuthCode !== null && apiKey && secretKey) {
       let data = JSON.stringify({
         clientId: secretKey,
         clientSecret: apiKey,
         authCode: fyersAuthCode,
       });
-      console.log('data:', data);
+      console.log('[Fyers] Exchanging auth code for access token...');
       let config = {
         method: 'post',
         url: `${server.ccxtServer.baseUrl}fyers/gen-access-token`,
-
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
@@ -123,7 +123,6 @@ const FyersConnect = ({
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
         data: data,
       };
       axios
@@ -131,12 +130,12 @@ const FyersConnect = ({
         .then(response => {
           if (response.data) {
             const session_token = response.data.accessToken;
-            console.log('sesss', session_token, response.data);
+            console.log('[Fyers] Access token received');
             setFyersAccessToken(session_token);
           }
         })
         .catch(error => {
-          console.error(error);
+          console.error('[Fyers] Token exchange error:', error);
           showAlert('error', 'Connection Error', 'Failed to connect to Fyers. Please try again.');
         });
       hasConnectedFyers.current = true;
@@ -149,76 +148,83 @@ const FyersConnect = ({
     }
   }, [fyersAuthCode, userDetails]);
 
-  const isToastShown = useRef(false);
-  const connectBrokerDbUpadte = () => {
+  // Step 3: Save broker connection to DB
+  const connectBrokerDbUpdate = () => {
     if (fyersAccessToken) {
-      console.log('Get Here Fyers AccessTOken:', fyersAccessToken);
-      if (true) {
-        console.log('heref');
-        isToastShown.current = true; // Prevent further execution
-        let brokerData = {
-          uid: userId,
-          user_broker: 'Fyers',
-          jwtToken: fyersAccessToken,
-          clientCode: secretKey,
-          secretKey: checkValidApiAnSecret(apiKey),
-        };
-        let config = {
-          method: 'put',
-          url: `${server.server.baseUrl}api/user/connect-broker`,
+      let brokerData = {
+        uid: userId,
+        user_broker: 'Fyers',
+        jwtToken: fyersAccessToken,
+        clientCode: secretKey,
+        secretKey: checkValidApiAnSecret(apiKey),
+      };
+      let config = {
+        method: 'put',
+        url: `${server.server.baseUrl}api/user/connect-broker`,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'aq-encrypted-key': generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        },
+        data: JSON.stringify(brokerData),
+      };
 
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
+      axios
+        .request(config)
+        .then(response => {
+          console.log('[Fyers] Broker connection saved successfully');
 
-          data: JSON.stringify(brokerData),
-        };
+          // Update model portfolio with broker information
+          try {
+            axios.request({
+              method: 'post',
+              url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+              data: JSON.stringify({
+                user_email: userEmail,
+                user_broker: 'Fyers',
+              }),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            });
+          } catch (modelPortfolioError) {
+            console.warn('[Fyers] Model portfolio update failed (non-critical):', modelPortfolioError);
+          }
 
-        axios
-          .request(config)
-          .then(response => {
-            console.log('success brooooohh');
-            fetchBrokerStatusModal();
-            eventEmitter.emit('refreshEvent', { source: 'Fyers broker connection' });
-            showAlert('success', 'Connected Successfully', 'Your Fyers broker has been connected successfully!');
-            onClose();
-            setShowBrokerModal(false);
-          })
-          .catch(error => {
-            console.log(error);
-            showAlert('error', 'Connection Error', 'Failed to connect to Fyers. Please try again.');
-          });
-      }
+          fetchBrokerStatusModal();
+          eventEmitter.emit('refreshEvent', { source: 'Fyers broker connection' });
+          showAlert('success', 'Connected Successfully', 'Your Fyers broker has been connected successfully!');
+          onClose();
+          setShowBrokerModal(false);
+        })
+        .catch(error => {
+          console.error('[Fyers] connect-broker error:', error);
+          showAlert('error', 'Connection Error', 'Failed to save Fyers connection. Please try again.');
+        });
     }
   };
 
   useEffect(() => {
     if (userId !== undefined && fyersAccessToken) {
-      connectBrokerDbUpadte();
+      connectBrokerDbUpdate();
     }
   }, [userId, fyersAccessToken]);
 
   const handleClose = () => {
-    setShowWebView(false); // Update the state to reflect the sheet is closed
-    // Call the parent onClose function
+    setShowWebView(false);
   };
 
   const checkValidApiAnSecret = details => {
     const bytesKey = CryptoJS.AES.encrypt(details, 'ApiKeySecret');
     const Key = bytesKey.toString();
-    if (Key) {
-      return Key;
-    }
-  };
-
-  const checkValidApiAnSecretdecrypt = details => {
-    const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
       return Key;
     }
@@ -252,7 +258,7 @@ const FyersConnect = ({
       .request(config)
       .then(response => {
         if (response) {
-          console.log('here upstox:', response.data);
+          console.log('[Fyers] Auth URL received:', response.data);
           setAuthUrl(response.data.response);
           setShowWebView(true);
         }
@@ -262,53 +268,6 @@ const FyersConnect = ({
         showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
       });
   };
-
-  useEffect(() => {
-    console.log(
-      'POP:',
-      userDetails?.apiKey,
-      userDetails?.secretKey,
-      userDetails,
-    );
-    if (userDetails?.apiKey && userDetails?.secretKey) {
-      let data = JSON.stringify({
-        uid: userId,
-        redirect_url: brokerConnectRedirectURL,
-        clientCode: secretKey,
-        secretKey: apiKey,
-      });
-      let config = {
-        method: 'post',
-        url: `${server.server.baseUrl}api/fyers/update-key`,
-
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-
-        data: data,
-      };
-      console.log(userId, apiKey, secretKey, brokerConnectRedirectURL);
-      axios
-        .request(config)
-        .then(response => {
-          if (response) {
-            console.log('here upstox:', response.data);
-            setAuthUrl(response.data.response);
-            setShowWebView(true);
-          }
-        })
-        .catch(error => {
-          console.log(error);
-          // showToast('Incorrect credential.Please try again','error','');
-        });
-    }
-  }, [isVisible]);
-
 
   const [shouldRenderContent, setShouldRenderContent] = React.useState(false);
   useEffect(() => {
@@ -323,7 +282,6 @@ const FyersConnect = ({
   const [isPasswordVisibleup, setIsPasswordVisibleup] = useState(false);
 
   const OpenHelpModal = () => {
-    // console.log('modal:',helpVisible)
     setHelpVisible(true);
   };
 

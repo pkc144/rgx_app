@@ -123,6 +123,7 @@ const IgnoreTradesScreen = () => {
   const zerodhaApiKey = Config.REACT_APP_ZERODHA_API_KEY;
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
@@ -532,7 +533,7 @@ const IgnoreTradesScreen = () => {
             ...basePayload,
             clientCode,
             jwtToken,
-            apiKey,
+            apiKey: checkValidApiAnSecret(apiKey),
           };
         default:
           return {
@@ -706,6 +707,27 @@ const IgnoreTradesScreen = () => {
   const [loadingStatus, setLoadingStatus] = useState(null); // Track success status
   const [mbasket, setmbasket] = useState(null);
 
+  // Helper function to map product type to Kite product type
+  const mapKiteProductType = (productType) => {
+    if (!productType) return "CNC";
+    const upper = productType.toUpperCase();
+    if (upper === "DELIVERY" || upper === "CNC") return "CNC";
+    if (upper === "INTRADAY" || upper === "MIS") return "MIS";
+    if (upper === "BO") return "BO";
+    if (upper === "CO") return "CO";
+    return "CNC";
+  };
+
+  // Helper function to map order type to Kite order type
+  const mapKiteOrderType = (orderType) => {
+    if (!orderType) return "MARKET";
+    const upper = orderType.toUpperCase();
+    if (upper === "MARKET") return "MARKET";
+    if (upper === "LIMIT") return "LIMIT";
+    if (upper === "SL" || upper === "SL_M" || upper === "STOP") return "SL";
+    return "MARKET";
+  };
+
   const handlefinal = async () => {
     try {
       // Store stockDetails in AsyncStorage (similar to localStorage)
@@ -715,38 +737,33 @@ const IgnoreTradesScreen = () => {
       );
 
       const basket = stockDetails.map(stock => {
+        // Get LTP for price calculation (default to 0 if not available)
+        const ltp = 0;
+        let orderPrice = 0;
+
+        if (stock.orderType === 'LIMIT') {
+          orderPrice = stock.limitPrice || parseFloat(stock.price) || 0;
+        } else if (stock.orderType === 'MARKET' || stock.orderType === 'SL') {
+          orderPrice = ltp !== '-' ? parseFloat(ltp) : 0;
+        }
+
         let baseOrder = {
           variety: 'regular',
           tradingsymbol: stock.tradingSymbol,
-          exchange: stock.exchange,
-          transaction_type: stock.transactionType,
-          order_type: stock.orderType,
-          quantity: stock.quantity,
+          exchange: stock.exchange || 'NSE',
+          transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
+          order_type: mapKiteOrderType(stock.orderType),
+          quantity: parseInt(stock.quantity, 10) || 1,
+          product: mapKiteProductType(stock.productType),
           readonly: false,
+          price: orderPrice,
         };
-
-        // Get LTP for the current stock (this should be handled with an API call or static data)
-        const ltp = 0; //getLTPForSymbol(stock.tradingSymbol);
-
-        // If LTP is available and not '-', use it as the price
-        if (ltp !== '-') {
-          baseOrder.price = parseFloat(ltp);
-        }
-
-        // Handle LIMIT orders
-        if (stock.orderType === 'LIMIT') {
-          if (ltp !== '-') {
-            baseOrder.price = parseFloat(ltp);
-            baseOrder.variety = 'regular';
-          } else {
-            baseOrder.variety = 'regular';
-            baseOrder.price = stock.limitPrice || 0; // Use limitPrice if available, or set to 0
-          }
-        }
 
         if (stock.quantity > 100) {
           baseOrder.readonly = true;
         }
+
+        console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(baseOrder));
 
         return baseOrder;
       });
@@ -831,18 +848,13 @@ const IgnoreTradesScreen = () => {
     const istDatetime = moment(currentISTDateTime).format();
 
     if (zerodhaStatus !== null && zerodhaRequestType === 'basket') {
-      const data = JSON.stringify({
-        apiKey: zerodhaApiKey,
-        jwtToken: jwtToken,
-        userEmail: userEmail,
-        returnDateTime: istDatetime,
-        trades: zerodhaStockDetails,
-      });
+      // Use Publisher flow - call publisher/record-orders endpoint
+      // This fetches order book from Zerodha and matches with our trades
+      console.log('[ZerodhaPublisher] Recording publisher orders...');
 
-      const config = {
+      const recordConfig = {
         method: 'post',
-        url: `${server.server.baseUrl}api/zerodha/order-place`,
-
+        url: `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
@@ -851,14 +863,23 @@ const IgnoreTradesScreen = () => {
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
-        data: data,
+        data: JSON.stringify({
+          stockDetails: zerodhaStockDetails,
+          publisherResults: [{ status: 'success', batchIndex: 0 }],
+          userEmail: userEmail,
+          broker: 'Zerodha',
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+        }),
       };
 
       try {
-        const response = await axios.request(config);
+        const response = await axios.request(recordConfig);
+        console.log('[ZerodhaPublisher] Record orders response:', response.data.response);
+
+        const orderResults = response.data.response || response.data.results || [];
+
         setOpenSucessModal(true);
-        setOrderPlacementResponse(response.data.response);
+        setOrderPlacementResponse(orderResults);
         setOpenReviewTrade(false);
         getAllTrades();
         updatePortfolioData();

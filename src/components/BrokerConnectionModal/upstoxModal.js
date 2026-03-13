@@ -11,6 +11,7 @@ import { generateToken } from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import UpstoxConnectUI from '../../UIComponents/BrokerConnectionUI/UpstoxConnectUI';
 import { useTrade } from '../../screens/TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
@@ -25,12 +26,13 @@ const UpstoxModal = ({
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
+  const freshConfig = useConfig();
   const showAlert = useModalStore((state) => state.showAlert);
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [ispasswordVisibleup, setIsPasswordVisibleup] = useState(false);
-  const [showWebView, setShowWebView] = useState(false); // Flag to toggle WebView display
+  const [showWebView, setShowWebView] = useState(false);
   const [authUrl, setAuthUrl] = useState('');
   const auth = getAuth();
   const user = auth.currentUser;
@@ -38,10 +40,18 @@ const UpstoxModal = ({
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);
 
+  // Prefer fresh config from ConfigContext (fetches from API on app start),
+  // fallback to TradeContext (cached in AsyncStorage from login), then .env
   const brokerConnectRedirectURL =
-    configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+    freshConfig?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+    configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+    Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
 
   const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [upstoxCode, setUpstoxCode] = useState(null);
+  const [upstoxSessionToken, setUpstoxSessionToken] = useState(null);
+  const hasConnectedUpstox = useRef(false);
 
   const checkValidApiAnSecret = details => {
     const bytesKey = CryptoJS.AES.encrypt(details, 'ApiKeySecret');
@@ -51,12 +61,17 @@ const UpstoxModal = ({
     }
   };
 
-  const checkValidApiAnSecretdecrypt = details => {
-    const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-    if (Key) {
-      return Key;
-    }
+  const parseQueryString = queryString => {
+    const params = {};
+    const query = queryString.startsWith('?')
+      ? queryString.substring(1)
+      : queryString;
+    const pairs = query.split('&');
+    pairs.forEach(pair => {
+      const [key, value] = pair.split('=');
+      params[decodeURIComponent(key)] = decodeURIComponent(value);
+    });
+    return params;
   };
 
   const [userDetails, setUserDetails] = useState();
@@ -83,26 +98,18 @@ const UpstoxModal = ({
 
   const userId = userDetails && userDetails._id;
 
-  const parseQueryString = queryString => {
-    const params = {};
-    const query = queryString.startsWith('?')
-      ? queryString.substring(1)
-      : queryString;
-    const pairs = query.split('&');
-    pairs.forEach(pair => {
-      const [key, value] = pair.split('=');
-      params[decodeURIComponent(key)] = decodeURIComponent(value);
-    });
-    return params;
-  };
-
   const [helpVisible, setHelpVisible] = useState(false);
   const OpenHelpModal = () => {
-    // console.log('modal:',helpVisible)
     setHelpVisible(true);
   };
 
   const updateSecretKey = () => {
+    // Validate redirect URL before proceeding
+    if (!brokerConnectRedirectURL) {
+      showAlert('error', 'Configuration Error', 'Broker redirect URL is not configured. Please contact support.');
+      return;
+    }
+
     setIsLoading(true);
     let data = JSON.stringify({
       uid: userId,
@@ -125,43 +132,78 @@ const UpstoxModal = ({
 
       data: data,
     };
-    console.log(userId, apiKey, secretKey, brokerConnectRedirectURL);
+    console.log('[Upstox] updateSecretKey params:', userId, apiKey, secretKey, brokerConnectRedirectURL);
     axios
       .request(config)
       .then(response => {
         if (response) {
-          console.log('here upstox:', response.data);
-          setAuthUrl(response.data.response);
+          console.log('[Upstox] Backend response:', JSON.stringify(response.data));
+          const authUrlResponse = response.data.response || '';
+
+          // Check if Upstox returned an error in the redirect URL
+          if (authUrlResponse.includes('error_code') || authUrlResponse.includes('error_message')) {
+            setIsLoading(false);
+            try {
+              const urlObj = new URL(authUrlResponse);
+              const errorMsg = decodeURIComponent(urlObj.searchParams.get('error_message') || '');
+              console.log('[Upstox] OAuth error:', errorMsg);
+              showAlert(
+                'error',
+                'Upstox Connection Failed',
+                errorMsg || 'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings and try again.',
+              );
+            } catch (e) {
+              showAlert(
+                'error',
+                'Upstox Connection Failed',
+                'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings and try again.',
+              );
+            }
+            return;
+          }
+
+          setAuthUrl(authUrlResponse);
           setShowWebView(true);
         }
       })
       .catch(error => {
-        console.log(error);
+        console.log('[Upstox] Error:', error?.response?.data || error?.message || error);
+        setIsLoading(false);
         showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
       });
   };
 
-  useEffect(() => {
-    console.log(
-      'POP:',
-      userDetails?.apiKey,
-      userDetails?.secretKey,
-      userDetails,
-    );
-    if (userDetails?.apiKey && userDetails?.secretKey) {
-      setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
-      setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
-      console.log('POP:111');
+  const handleWebViewNavigationStateChange = newNavState => {
+    const { url } = newNavState;
+    console.log('[Upstox] WebView URL:', url);
+
+    if (url.includes('code=')) {
+      const queryString = url.split('?')[1];
+      if (queryString) {
+        const queryParams = parseQueryString(queryString);
+        const authCode = queryParams.code;
+        if (authCode) {
+          console.log('[Upstox] Authorization code received');
+          setUpstoxCode(authCode);
+          setShowWebView(false);
+        }
+      }
+    }
+  };
+
+  // Step 2: Exchange authorization code for access token
+  const connectUpstox = () => {
+    if (upstoxCode !== null && apiKey && secretKey) {
       let data = JSON.stringify({
-        uid: userId,
-        apiKey: userDetails?.apiKey,
-        secretKey: userDetails?.secretKey,
-        redirect_uri: brokerConnectRedirectURL,
+        apiKey: apiKey,
+        apiSecret: secretKey,
+        code: upstoxCode,
+        redirectUri: brokerConnectRedirectURL,
       });
+      console.log('[Upstox] Exchanging code for access token...');
       let config = {
         method: 'post',
-        url: `${server.server.baseUrl}api/upstox/update-key`,
-
+        url: `${server.ccxtServer.baseUrl}upstox/gen-access-token`,
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
@@ -170,96 +212,23 @@ const UpstoxModal = ({
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
-        data: data,
-      };
-      console.log(userId, apiKey, secretKey, brokerConnectRedirectURL);
-      axios
-        .request(config)
-        .then(response => {
-          if (response) {
-            console.log('here upstox:', response.data);
-            setAuthUrl(response.data.response);
-            setShowWebView(true);
-          }
-        })
-        .catch(error => {
-          console.log(error);
-          showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
-        });
-    }
-  }, [isVisible]);
-
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleWebViewNavigationStateChange = newNavState => {
-    const { url } = newNavState;
-    console.log('here1', url);
-    if (url.includes('code=')) {
-      console.log('here2', url);
-      const queryParams = parseQueryString(url.split('?')[1]);
-      const sessionToken1 = queryParams.code;
-      if (sessionToken1) {
-        setUpstoxCode(sessionToken1);
-        console.log('here3', sessionToken1);
-        setShowWebView(false);
-      }
-    }
-  };
-
-  const [upstoxCode, setUpstoxCode] = useState(null);
-  const [upstoxSessionToken, setUpstoxSessionToken] = useState(null);
-  const hasConnectedUpstox = useRef(false);
-
-  const connectUpstox = () => {
-    setUpstoxSessionToken(null);
-    // console.log('this get called',upstoxCode,apiKey,secretKey);
-    if (upstoxCode !== null && apiKey && secretKey) {
-      let data = JSON.stringify({
-        apiKey: apiKey,
-        apiSecret: secretKey,
-        code: upstoxCode,
-        redirectUri: brokerConnectRedirectURL,
-      });
-      console.log(
-        'apikk',
-        apiKey,
-        secretKey,
-        upstoxCode,
-        brokerConnectRedirectURL,
-      );
-      let config = {
-        method: 'post',
-        url: `${server.ccxtServer.baseUrl}upstox/gen-access-token`,
-
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-
         data: data,
       };
       axios
         .request(config)
         .then(response => {
           if (response.data) {
-            console.log('response data:', response.data);
+            console.log('[Upstox] Access token received');
             const session_token = response.data.access_token;
             setUpstoxSessionToken(session_token);
           }
         })
         .catch(error => {
-          console.error(error);
+          console.error('[Upstox] Token exchange error:', error);
           setIsLoading(false);
           showAlert('error', 'Connection Error', 'Failed to connect to Upstox. Please try again.');
         });
       hasConnectedUpstox.current = true;
-    } else if (hasConnectedUpstox.current) {
-      showAlert('info', 'Already Connected', 'Your broker is already connected.');
     }
   };
 
@@ -269,14 +238,10 @@ const UpstoxModal = ({
     }
   }, [upstoxCode, userDetails]);
 
-
-  const isToastShown = useRef(false);
-  const connectBrokerDbUpadte = () => {
-    // console.log('this get called 123;');
-    setIsLoading(false);
+  // Step 3: Save broker connection to DB
+  const connectBrokerDbUpdate = () => {
     if (upstoxSessionToken) {
-      console.log('heref');
-      isToastShown.current = true; // Prevent further execution
+      setIsLoading(false);
       let brokerData = {
         uid: userId,
         user_broker: 'Upstox',
@@ -287,7 +252,6 @@ const UpstoxModal = ({
       let config = {
         method: 'put',
         url: `${server.server.baseUrl}api/user/connect-broker`,
-
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
@@ -296,32 +260,54 @@ const UpstoxModal = ({
             Config.REACT_APP_AQ_SECRET,
           ),
         },
-
         data: JSON.stringify(brokerData),
       };
 
       axios
         .request(config)
         .then(response => {
-          console.log('success brooooohh');
+          console.log('[Upstox] Broker connection saved successfully');
           setIsLoading(false);
+
+          // Update model portfolio with broker information
+          try {
+            axios.request({
+              method: 'post',
+              url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+              data: JSON.stringify({
+                user_email: userEmail,
+                user_broker: 'Upstox',
+              }),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            });
+          } catch (modelPortfolioError) {
+            console.warn('[Upstox] Model portfolio update failed (non-critical):', modelPortfolioError);
+          }
+
           fetchBrokerStatusModal();
           eventEmitter.emit('refreshEvent', { source: 'Upstox broker connection' });
           showAlert('success', 'Connected Successfully', 'Your Upstox broker has been connected successfully!');
-          //  setShowupstoxModal(false);
           onClose();
           setShowBrokerModal(false);
         })
         .catch(error => {
-          console.log(error);
-          showAlert('error', 'Connection Error', 'Failed to connect to Upstox. Please try again.');
+          console.error('[Upstox] connect-broker error:', error);
+          setIsLoading(false);
+          showAlert('error', 'Connection Error', 'Failed to save Upstox connection. Please try again.');
         });
     }
   };
 
   useEffect(() => {
     if (userId !== undefined && upstoxSessionToken) {
-      connectBrokerDbUpadte();
+      connectBrokerDbUpdate();
     }
   }, [userId, upstoxSessionToken]);
 
@@ -337,53 +323,8 @@ const UpstoxModal = ({
   }, [isVisible]);
 
   const handleWebViewClose = () => {
-    setShowWebView(false); // Close WebView and return to the form
+    setShowWebView(false);
   };
-
-  useEffect(() => {
-    if (
-      userDetails?.apiKey &&
-      userDetails?.secretKey &&
-      userDetails?.user_broker === 'Upstox'
-    ) {
-      setApiKey(checkValidApiAnSecretdecrypt(userDetails?.apiKey));
-      setSecretKey(checkValidApiAnSecretdecrypt(userDetails?.secretKey));
-      let data = JSON.stringify({
-        uid: userId,
-        apiKey: userDetails?.apiKey,
-        secretKey: userDetails?.secretKey,
-        redirect_uri: brokerConnectRedirectURL,
-      });
-      let config = {
-        method: 'post',
-        url: `${server.server.baseUrl}api/upstox/update-key`,
-
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-
-        data: data,
-      };
-      console.log(userId, apiKey, secretKey, brokerConnectRedirectURL);
-      axios
-        .request(config)
-        .then(response => {
-          if (response) {
-            setAuthUrl(response.data.response);
-            setShowWebView(true);
-          }
-        })
-        .catch(error => {
-          console.log(error);
-          showAlert('error', 'Incorrect Credentials', 'Please check your API Key and Secret Key and try again.');
-        });
-    }
-  }, [isVisible, userDetails]);
 
   return (
     <UpstoxConnectUI
@@ -407,7 +348,7 @@ const UpstoxModal = ({
       handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
       helpVisible={helpVisible}
       setHelpVisible={setHelpVisible}
-      scrollViewRef={null} // Adjust if you use a ref
+      scrollViewRef={null}
       screenHeight={screenHeight}
     />
   );

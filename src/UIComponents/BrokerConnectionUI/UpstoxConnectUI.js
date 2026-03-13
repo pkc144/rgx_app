@@ -22,6 +22,7 @@ import {
 } from 'lucide-react-native';
 import WebView from 'react-native-webview';
 import UpstoxHelpContent from './HelpUI/UpstoxHelpContent';
+import GradientView from '../../components/GradientView';
 import upstoxIcon from '../../assets/upstox.png';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
@@ -65,9 +66,12 @@ const UpstoxConnectUI = ({
   return (
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
-        {/* HEADER - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-        <View
-          style={[styles.headerRow, {backgroundColor: 'rgba(0, 38, 81, 1)', overflow: 'hidden'}]}>
+        {/* HEADER */}
+        <GradientView
+          colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.headerRow}>
           {shouldRenderContent && !showWebView ? (
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
               <TouchableOpacity style={styles.backButton} onPress={onClose}>
@@ -88,7 +92,7 @@ const UpstoxConnectUI = ({
             style={styles.headerIcon}
             resizeMode="contain"
           />
-        </View>
+        </GradientView>
 
         {/* CONTENT */}
         <View style={styles.contentContainer}>
@@ -220,10 +224,9 @@ const UpstoxConnectUI = ({
 
 const styles = StyleSheet.create({
   fullScreen: {
-    flex: 1,
     width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   backButton: {
     padding: 4,

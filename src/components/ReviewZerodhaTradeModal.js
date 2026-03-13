@@ -359,7 +359,28 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
     return fetchedData;
   };
 
-  
+  // Helper function to map product type to Kite product type
+  const mapKiteProductType = (productType) => {
+    if (!productType) return "CNC";
+    const upper = productType.toUpperCase();
+    if (upper === "DELIVERY" || upper === "CNC") return "CNC";
+    if (upper === "INTRADAY" || upper === "MIS") return "MIS";
+    if (upper === "BO") return "BO";
+    if (upper === "CO") return "CO";
+    return "CNC";
+  };
+
+  // Helper function to map order type to Kite order type
+  const mapKiteOrderType = (orderType) => {
+    if (!orderType) return "MARKET";
+    const upper = orderType.toUpperCase();
+    if (upper === "MARKET") return "MARKET";
+    if (upper === "LIMIT") return "LIMIT";
+    if (upper === "SL" || upper === "SL_M" || upper === "STOP") return "SL";
+    return "MARKET";
+  };
+
+
  // console.log('stock details i get zerodha--0',stockDetails);
 
   const handleZerodhaRedirect = async () => {
@@ -382,48 +403,43 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
   const basket = stockDetails.map((stock) => {
 
     console.log('stock detailskkkkkk  i get here-',stock);
-    let baseOrder = {
-      variety: "regular",
-      tradingsymbol: stock.tradingSymbol,
-      exchange: stock.exchange,
-      transaction_type: stock.transactionType,
-      order_type: stock.orderType,
-      quantity: stock.quantity,
-      readonly: false,
-      price: stock.price,
-      tag: stock.zerodhaTradeId,
-    };
 
-    // If the stock is in 'NFO' or 'BFO', update the baseOrder with fetched data
+    // Use LTP for price calculation
+    const ltp = getLastKnownPrice(stock.tradingSymbol);
+    let orderPrice = 0;
+
+    if (stock.orderType === "LIMIT") {
+      orderPrice = parseFloat(stock.price || 0);
+    } else if (stock.orderType === "MARKET" || stock.orderType === "SL") {
+      orderPrice = ltp !== "-" ? parseFloat(ltp) : 0;
+    }
+
+    // If the stock is in 'NFO' or 'BFO', update with fetched data
+    let finalQuantity = stock.quantity;
+    let finalSymbol = stock.tradingSymbol;
     if (fetchedData[stock.tradingSymbol]) {
       const { lotsize, new_symbol } = fetchedData[stock.tradingSymbol];
-      baseOrder.tradingsymbol = new_symbol;
-      baseOrder.quantity = parseInt(lotsize, 10);
+      finalSymbol = new_symbol;
+      finalQuantity = parseInt(lotsize, 10);
     }
 
-    // Get the LTP for the current stock
-    const ltp = getLastKnownPrice(stock.tradingSymbol);
-
-    // If LTP is available and not '-', use it as the price
-    if (ltp !== "-") {
-      baseOrder.price = parseFloat(ltp);
-    }
-
-    // If it's a LIMIT order, use the price in stock details
-    if (stock.orderType === "LIMIT") {
-      baseOrder.price = parseFloat(stock.price || 0);
-    } else if (stock.orderType === "MARKET") {
-      if (ltp !== "-") {
-        baseOrder.price = parseFloat(ltp);
-      } else {
-        baseOrder.price = 0;
-      }
-    }
+    let baseOrder = {
+      variety: "regular",
+      tradingsymbol: finalSymbol,
+      exchange: stock.exchange || "NSE",
+      transaction_type: (stock.transactionType || "BUY").toUpperCase(),
+      order_type: mapKiteOrderType(stock.orderType),
+      quantity: finalQuantity,
+      product: mapKiteProductType(stock.productType),
+      readonly: false,
+      price: orderPrice,
+      tag: stock.zerodhaTradeId,
+    };
 
     if (stock.quantity > 100) {
       baseOrder.readonly = true;
     }
-    console.log('final BaseOrder:',baseOrder);
+    console.log('[ZerodhaPublisher] final BaseOrder:', JSON.stringify(baseOrder));
     return baseOrder;
   });
 
@@ -522,21 +538,21 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
         
         if (zerodhaStatus === "success" && zerodhaRequestType === "basket") {
           try {
-            let data = JSON.stringify({
-              apiKey: zerodhaApiKey,
-              advisor: Config.REACT_APP_ADVISOR_SPECIFIC_TAG,
-              jwtToken: jwtToken,
-              userEmail: userEmail,
-              returnDateTime: istDatetime,
-              trades: zerodhaStockDetails,
-            });
-            
-            console.log('data to belll sent:', data);
-            
-            const config = {
+            // Use Publisher flow - call publisher/record-orders endpoint
+            // This fetches order book from Zerodha and matches with our trades
+            console.log('[ZerodhaPublisher] Recording publisher orders...');
+
+            const recordConfig = {
               method: "post",
-              url: `${server.server.baseUrl}api/zerodha/order-place`,
-              data: data,
+              url: `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
+              data: JSON.stringify({
+                stockDetails: zerodhaStockDetails,
+                publisherResults: [{ status: 'success', batchIndex: 0 }],
+                userEmail: userEmail,
+                broker: 'Zerodha',
+                // Include model portfolio info if available
+                advisor: Config.REACT_APP_ADVISOR_SPECIFIC_TAG,
+              }),
               headers: {
                 "Content-Type": "application/json",
                 "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
@@ -546,13 +562,15 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
                 ),
               },
             };
-            
-            // Make the first API call
-            const response = await axios.request(config);
-            console.log('Status Call here:2,', response.data.response);
-            
+
+            // Make the publisher/record-orders API call
+            const response = await axios.request(recordConfig);
+            console.log('[ZerodhaPublisher] Record orders response:', response.data.response);
+
+            const orderResults = response.data.response || response.data.results || [];
+
             // Update UI based on response
-            setOrderPlacementResponse(response.data.response);
+            setOrderPlacementResponse(orderResults);
             setOpenSucessModal(true);
             setBasketData([]);
             setOpenZerodhaModel(false);
@@ -600,11 +618,30 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
             console.error("Order placement error:", orderError.response?.data || orderError.message);
             console.error("Status code:", orderError.response?.status || "No status");
             console.error("Full error:", orderError.response);
-            
-            // Show user-friendly error message
-            
+
+            // Build synthetic rejected response and show the modal
+            const errorMessage =
+              orderError.response?.data?.message ||
+              orderError.message ||
+              'Orders cannot be placed. Please try again later.';
+            const { zerodhaStockDetails: savedStockDetails } = await fetchData();
+            const syntheticResponse = (savedStockDetails || stockDetails || []).map(stock => ({
+              symbol: stock.tradingSymbol,
+              tradingSymbol: stock.tradingSymbol,
+              transactionType: stock.transactionType || 'BUY',
+              quantity: stock.quantity,
+              orderType: stock.orderType || 'MARKET',
+              exchange: stock.exchange || 'NSE',
+              orderStatus: 'rejected',
+              orderPlacement: 'failed',
+              orderStatusMessage: errorMessage,
+              message_aq: errorMessage,
+            }));
+            setOrderPlacementResponse(syntheticResponse);
+            setOpenSucessModal(true);
+            setOpenZerodhaModel(false);
+
             setflag(false);
-            throw orderError;
           }
         } else {
           console.log("Zerodha status conditions not met");
@@ -612,9 +649,29 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
         }
       } catch (error) {
         console.error("Error in checkZerodhaStatus:", error);
-  
+
+        // If the modal wasn't already opened by inner catch, show it now
+        const errorMessage =
+          error.response?.data?.message ||
+          error.message ||
+          'Orders cannot be placed. Please try again later.';
+        const syntheticResponse = (stockDetails || []).map(stock => ({
+          symbol: stock.tradingSymbol,
+          tradingSymbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || 'NSE',
+          orderStatus: 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: errorMessage,
+          message_aq: errorMessage,
+        }));
+        setOrderPlacementResponse(syntheticResponse);
+        setOpenSucessModal(true);
+        setOpenZerodhaModel(false);
+
         setflag(false);
-        throw error;
       }
     };
 

@@ -1,11 +1,14 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../GradientView';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 
 const { width } = Dimensions.get('window');
 
 const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
   const isBespoke = type === 'bespoke';
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   // 🟢 Calculate minimum amount + validity
   const { minAmount, validity } = useMemo(() => {
@@ -59,12 +62,12 @@ const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
   const infoLabelStyle = isBespoke ? styles.infoLabelBespoke : styles.infoLabelMp;
   const infoValueStyle = isBespoke ? styles.infoValueBespoke : styles.infoValueMp;
 
-  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
-  const cardBackgroundColor = isBespoke ? '#FFFFFF' : '#002651';
-
   return (
-    <View
-      style={[styles.container, containerStyle, {backgroundColor: cardBackgroundColor, overflow: 'hidden'}]}
+    <GradientView
+      colors={isBespoke ? ['#FFFFFF', '#FFFFFF'] : ['#002651', '#0070EF']}
+      start={{ x: 0, y: 1 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, containerStyle]}
     >
       {/* Header */}
       <View style={styles.header}>
@@ -83,7 +86,12 @@ const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
       <View style={styles.footer}>
         <View style={styles.infoColumn}>
           <Text style={infoLabelStyle}>Min. Amt.</Text>
-          <Text style={infoValueStyle}>₹ {minAmount}</Text>
+          <Text style={infoValueStyle}>₹ {minAmount !== '-' ? (configGst && configGstWithText ? withGst(minAmount) : minAmount) : '-'}</Text>
+          {minAmount !== '-' && configGst && (
+            <Text style={[infoLabelStyle, { fontSize: 10, marginTop: -2 }]}>
+              {configGstWithText ? 'including GST' : '+ GST'}
+            </Text>
+          )}
         </View>
 
         {data.validity && (
@@ -109,7 +117,7 @@ const PlanCard = ({ data, type, onSubscribe, onMoreDetails }) => {
           <Text style={subscribeButtonTextStyle}>Subscribe</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </GradientView>
   );
 };
 

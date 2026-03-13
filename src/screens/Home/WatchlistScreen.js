@@ -44,9 +44,9 @@ import axios from 'axios';
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import server from '../../utils/serverConfig';
+import GradientView from '../../components/GradientView';
 import { useTrade } from '../TradeContext';
 import { useConfig } from '../../context/ConfigContext';
-import SVGGradient from '../../components/SVGGradient';
 
 const WatchlistScreen = props => {
   // Get dynamic config from API
@@ -577,18 +577,17 @@ const WatchlistScreen = props => {
             zIndex: 1,
             borderTopWidth: 0,
           }}>
-               <SVGGradient
-                 colors={[gradient1, gradient2]}
-                 start={{x: 0, y: 0}}
-                 end={{x: 1, y: 1}}
-                 style={styles.headerGradient}>
+               <GradientView  colors={[gradient1, gradient2]}
+        start={{ x: 0, y: 0 }}
+  end={{ x: 0, y: 1 }}
+   style={styles.headerGradient}>
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-      <ChevronLeft size={24} color="#000" />
+      <ChevronLeft size={24} color="#000" /> 
     </TouchableOpacity>
           <Text style={styles.headerTitle}>WatchList</Text>
         </View>
-      </SVGGradient>
+      </GradientView>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}

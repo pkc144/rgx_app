@@ -1,6 +1,7 @@
 import ARFSLogo from '../assets/ARFS_Black.svg';
 import ARFSLogotool from '../assets/ARFS_FINAL3.svg';
 import MagnusLogo from '../assets/logo.png';
+import RGXLogo from '../assets/RGXResearchLogo.jpg';
 import ZamzamLogo from '../assets/AppLogo/logo.png';
 
 const APP_VARIANTS = {
@@ -99,8 +100,8 @@ const APP_VARIANTS = {
   },
   rgxresearch: {
     themeColor: '#0000ff',
-    logo: MagnusLogo,
-    toolbarlogo: MagnusLogo,
+    logo: RGXLogo,
+    toolbarlogo: RGXLogo,
     homeScreenLayout: 'layout2',
     mainColor: '#4CAAA0',
     secondaryColor: '#F0F0F0',
@@ -119,6 +120,8 @@ const APP_VARIANTS = {
     basket1: '#9D2115',
     basket2: '#6B1207',
     subdomain: 'rgxresearch',
+    // Google Sign-In Web Client ID (from google-services.json for com.rgx.aq)
+    googleWebClientId: '887826618956-83tfceb7n4m4h38qk93ld1emb78uj5rh.apps.googleusercontent.com',
     // Payment Modal Colors
     paymentModal: {
       headerBg: '#0056B7',
@@ -134,9 +137,9 @@ const APP_VARIANTS = {
   },
 
   zamzamcapital: {
-//    themeColor: '#ff0000',
-   // logo: ZamzamLogo,
-  //  toolbarlogo: ZamzamLogo,
+    themeColor: '#ff0000',
+    logo: ZamzamLogo,
+    toolbarlogo: ZamzamLogo,
     homeScreenLayout: 'layout1',
     mainColor: '#0D021F',
     secondaryColor: '#ffffff',

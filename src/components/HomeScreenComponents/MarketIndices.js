@@ -88,7 +88,7 @@ const MarketIndices = () => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || 'common',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -280,13 +280,12 @@ const MarketIndices = () => {
   };
 
   return (
-    <View style={{overflow: 'hidden'}}>
+    <View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
-        bounces={false}
       >
         {displayIndices.map((index) => {
           const showChange = comparisonType === "prevClose" && basePrices[index.key] != null && !index.loading;

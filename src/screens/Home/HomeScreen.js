@@ -19,7 +19,7 @@ import {
   Modal,
 } from 'react-native';
 import { getAuth } from '@react-native-firebase/auth';
-import SVGGradient from '../../components/SVGGradient';
+import GradientView from '../../components/GradientView';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import YoutubePlayer from 'react-native-youtube-iframe';
@@ -32,7 +32,7 @@ import EducationalVideos from '../../components/HomeScreenComponents/Educational
 import EducationalPDF from '../../components/HomeScreenComponents/EducationalPDF';
 
 import StockAdvices from '../../components/AdviceScreenComponents/StockAdvices';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import {
   ArrowLeft,
   Clock,
@@ -195,12 +195,14 @@ const HomeScreen = ({ }) => {
       //  console.log('sorted',sortedRebalances[0]);
       if (!latest) return null;
 
+      // Find execution for this user AND current broker
+      // A user may execute the same rebalance with multiple brokers,
+      // so we check broker match to allow re-execution with a different broker
       const userExecution = latest?.subscriberExecutions?.find(
-        execution => execution?.user_email === userEmail,
+        execution =>
+          execution?.user_email === userEmail &&
+          (!broker || execution?.user_broker === broker),
       );
-      if (userExecution && userExecution.status === 'executed') {
-        return null;
-      }
 
       const matchingFailedTrades = modelPortfolioRepairTrades?.find(
         trade =>
@@ -1042,13 +1044,20 @@ const HomeScreen = ({ }) => {
       extrapolate: 'clamp',
     });
 
+    const AnimatedLinearGradient =
+      Animated.createAnimatedComponent(LinearGradient);
+
+    const headerColors = [gradient1, gradient2];
+
     return (
       <View
         style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 11 }}>
-        <Animated.View
+        <AnimatedLinearGradient
+          colors={headerColors}
+          start={{ x: 1, y: 0 }}
+          end={{ x: 0, y: 1 }}
           style={[
             {
-              overflow: 'hidden',
               paddingVertical: selectedVariant === 'arfs' ? 40 : 10,
               marginBottom: 10,
               borderBottomLeftRadius: 20,
@@ -1061,21 +1070,6 @@ const HomeScreen = ({ }) => {
               transform: [{ translateY: animatedTranslateY }],
             },
           ]}>
-          {/* SVG Gradient Background */}
-          <SVGGradient
-            colors={[gradient1, gradient2]}
-            start={{x: 0, y: 0}}
-            end={{x: 1, y: 1}}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              borderBottomLeftRadius: 20,
-              borderBottomRightRadius: 20,
-            }}
-          />
           {/* Rest of the header content remains the same */}
           <View style={{ flex: 1 }}>
             <Animated.View
@@ -1155,19 +1149,24 @@ const HomeScreen = ({ }) => {
 
                       <View style={styles.magnusCredentials}>
                         <View style={styles.magnusBadgeRow}>
-                          {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-                          <View
-                            style={[styles.magnusAIBadge, {backgroundColor: mainColor, overflow: 'hidden'}]}>
+                          <GradientView
+                            colors={[mainColor, mainColor]} // Gold gradient for AI-POWERED
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.magnusAIBadge}>
                             <Text style={styles.magnusAIBadgeText}>
                               ALL-IN-ONE APP
                             </Text>
-                          </View>
-                          <View
-                            style={[styles.magnusVerified, {backgroundColor: mainColor, overflow: 'hidden'}]}>
+                          </GradientView>
+                          <GradientView
+                            colors={[mainColor, mainColor]} // Blue gradient for SEBI CERTIFIED
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.magnusVerified}>
                             <Text style={styles.magnusVerifiedText}>
                               🏛️ SEBI CERTIFIED
                             </Text>
-                          </View>
+                          </GradientView>
                         </View>
                         <Text style={styles.magnusTagline}>
                           Ethical Investing • Real-time Market Analysis
@@ -1190,10 +1189,11 @@ const HomeScreen = ({ }) => {
                               setShowEthicalList(true);
                               fetchEthicalList();
                             }}>
-                            {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-                            <View
+                            <GradientView
+                              colors={['#000000', '#3A3A3A']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
                               style={{
-                                backgroundColor: '#000000',
                                 borderRadius: 20,
                                 borderWidth: 1,
                                 borderColor: '#212121',
@@ -1212,7 +1212,7 @@ const HomeScreen = ({ }) => {
                                 }}>
                                 {ETHICAL_CONFIG.buttonText}
                               </Text>
-                            </View>
+                            </GradientView>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1227,7 +1227,7 @@ const HomeScreen = ({ }) => {
               </View>
             </Animated.View>
           </View>
-        </Animated.View>
+        </AnimatedLinearGradient>
       </View>
     );
   };
@@ -1239,18 +1239,9 @@ const HomeScreen = ({ }) => {
   const [hasBespokeData, setHasBespokeData] = useState(false);
 
   // Data for All Tab
-  // Debug logging for plans card visibility
-  console.log('🔍 [HomeScreen Debug] planList:', planList);
-  console.log('🔍 [HomeScreen Debug] !planList:', !planList);
-  console.log('🔍 [HomeScreen Debug] REACT_APP_MODEL_PORTFOLIO_STATUS:', configData?.config?.REACT_APP_MODEL_PORTFOLIO_STATUS);
-  console.log('🔍 [HomeScreen Debug] REACT_APP_BESPOKE_PLANS_STATUS:', configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS);
-  console.log('🔍 [HomeScreen Debug] hasMPData:', hasMPData);
-  console.log('🔍 [HomeScreen Debug] hasBespokeData:', hasBespokeData);
-
   const allTabData = [
 
-    ...(!planList &&
-      configData?.config.REACT_APP_MODEL_PORTFOLIO_STATUS === true
+    ...(configData?.config.REACT_APP_MODEL_PORTFOLIO_STATUS === true
       ? [
         {
           key: 'AllPlanDetailsmp',
@@ -1287,7 +1278,7 @@ const HomeScreen = ({ }) => {
         },
       ]
       : []),
-    ...(!planList && configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true
+    ...(configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true
       ? [
         {
           key: 'AllPlanDetailsbespoke',
@@ -1374,10 +1365,11 @@ const HomeScreen = ({ }) => {
                   fetchEthicalList();
                 }}
               >
-                {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-                <View
+                <GradientView
+                  colors={['#000000', '#3A3A3A']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                   style={{
-                    backgroundColor: '#000000',
                     borderRadius: 20,
                     borderWidth: 1,
                     borderColor: '#212121',
@@ -1396,7 +1388,7 @@ const HomeScreen = ({ }) => {
                     }}>
                     {ETHICAL_CONFIG.buttonText}
                   </Text>
-                </View>
+                </GradientView>
               </TouchableOpacity>
             </View>
           )}
@@ -1498,10 +1490,13 @@ const HomeScreen = ({ }) => {
               borderBottomLeftRadius: 30,
               borderBottomRightRadius: 30,
             }}>
-            {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
+            {/* Gradient Border */}
             {selectedVariant === 'arfs' && (
-              <View
-                style={[styles.borderGradient, {backgroundColor: '#212121', overflow: 'hidden'}]}
+              <GradientView
+                colors={['#212121', '#212121']} // Border gradient colors arfs: '#6A29CA', '#773D9A'
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.borderGradient} // Border gradient container
               >
                 <TouchableOpacity
                   onPress={OpenNewsScreen}
@@ -1517,7 +1512,7 @@ const HomeScreen = ({ }) => {
                   />
                   <Icon1 name="search" size={12} color={'#fff'} />
                 </TouchableOpacity>
-              </View>
+              </GradientView>
             )}
           </View>
         )}

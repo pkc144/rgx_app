@@ -21,6 +21,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from 'lucide-react-native';
+import GradientView from '../../components/GradientView';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
 import FyersHelpContent from './HelpUI/FyersHelpContent';
 import fyersIcon from '../../assets/fyers.png';
@@ -68,9 +69,12 @@ const FyersConnectUI = ({
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={styles.fullScreen}>
         <View style={{flex: 1, paddingTop: insets.top}}>
-          {/* Header - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-          <View
-            style={[styles.headerRow, {backgroundColor: '#0B3D91', overflow: 'hidden'}]}>
+          {/* Header */}
+          <GradientView
+            colors={['#0B3D91', '#0056B7']}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+            style={styles.headerRow}>
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
               <Pressable onPress={onClose} style={styles.backButton}>
                 <ChevronLeft size={24} color="#000" />
@@ -78,7 +82,7 @@ const FyersConnectUI = ({
               <Text style={styles.headerTitle}>Connect Fyers</Text>
             </View>
             <Image source={fyersIcon} style={styles.headerIcon} />
-          </View>
+          </GradientView>
 
           {showWebView ? (
             <WebView
@@ -148,11 +152,11 @@ const FyersConnectUI = ({
                   {/* Input Fields */}
                   <View style={styles.inputSection}>
                     <View style={styles.inputWrapper}>
-                      <Text style={styles.headerLabel}>User ID:</Text>
+                      <Text style={styles.headerLabel}>App ID:</Text>
                       <View style={styles.inputContainer}>
                         <TextInput
                           value={secretKey}
-                          placeholder="Enter your User ID"
+                          placeholder="Enter your App ID"
                           placeholderTextColor="#aaa"
                           style={[styles.inputStyles, {flex: 1}]}
                           autoCapitalize="none"
@@ -163,11 +167,11 @@ const FyersConnectUI = ({
                     </View>
 
                     <View style={styles.inputWrapper}>
-                      <Text style={styles.headerLabel}>API Key:</Text>
+                      <Text style={styles.headerLabel}>Secret ID:</Text>
                       <View style={styles.inputContainer}>
                         <TextInput
                           value={apiKey}
-                          placeholder="Enter your API key"
+                          placeholder="Enter your Secret ID"
                           placeholderTextColor="#aaa"
                           style={[styles.inputStyles, {flex: 1}]}
                           autoCapitalize="none"
@@ -214,10 +218,9 @@ const FyersConnectUI = ({
 
 const styles = StyleSheet.create({
   fullScreen: {
-    flex: 1,
     width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',

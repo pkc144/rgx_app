@@ -14,19 +14,16 @@ import {
   Image,
 } from 'react-native';
 import {ChevronLeft, Bell} from 'lucide-react-native';
-// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
-// Using solid background color with View instead
+import GradientView from '../../components/GradientView';
 import {getAuth} from '@react-native-firebase/auth';
 import {useTrade} from '../TradeContext';
 import {useNavigation, CommonActions} from '@react-navigation/native';
 import logo from '../../assets/fadedlogo.png';
 
-// Import the functions correctly
 import {
   updateRACodeAndConfig,
   getRaId,
   getUserData,
-  getConfigData,
 } from '../../utils/storageUtils';
 
 // Try to import RNRestart safely
@@ -265,21 +262,25 @@ const ChangeAdvisor = () => {
 
   if (initialLoading) {
     return (
-      // View with solid background replaces LinearGradient for iOS Fabric compatibility
-      <View
-        style={[styles.container, { backgroundColor: '#002651', overflow: 'hidden' }]}>
+      <GradientView
+        colors={['#002651', '#0056B7']}
+        start={{x: 0, y: 0}}
+        end={{x: 0, y: 1}}
+        style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Loading settings...</Text>
         </View>
-      </View>
+      </GradientView>
     );
   }
 
   return (
-    // View with solid background replaces LinearGradient for iOS Fabric compatibility
-    <View
-      style={[styles.container, { backgroundColor: '#002651', overflow: 'hidden' }]}>
+    <GradientView
+      colors={['#002651', '#0056B7']}
+      start={{x: 0, y: 0}}
+      end={{x: 0, y: 1}}
+      style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor="#002651" />
 
@@ -367,7 +368,7 @@ const ChangeAdvisor = () => {
           </View>
         </View>
       </SafeAreaView>
-    </View>
+    </GradientView>
   );
 };
 

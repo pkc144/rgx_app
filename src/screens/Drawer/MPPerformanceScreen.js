@@ -48,15 +48,25 @@ import RecommendationSuccessModal from '../../components/ModelPortfolioComponent
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import Animated from 'react-native-reanimated';
-// LinearGradient import removed - replaced with View for iOS Fabric compatibility
+import GradientView from '../../components/GradientView';
 import CustomTabBarOrder from './CustomTabbarOrder';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
+import PerformanceDisclaimer from '../../components/ModelPortfolioComponents/PerformanceDisclaimer';
 import CustomTabBarMPPerformance from './CustomTabbarMPPerformance';
 import EmptyStateInfoMP from './EmptyStateMP';
 import ConsentPopup from '../../components/ModelPortfolioComponents/ConsentPopUp';
 import DistributionGrid from './DistributionRowGrid';
 import {useTrade} from '../TradeContext';
+import {convertResponse} from '../../utils/tradeUtils';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
+import {useConfig} from '../../context/ConfigContext';
+import {useGstConfig} from '../../context/GstConfigContext';
+import {withGst, gstLabel} from '../../utils/gstHelpers';
+import DdpiModal from '../../components/DdpiModal';
+import {DhanTpinModal} from '../../components/DdpiModal';
+import {AngleOneTpinModal} from '../../components/DdpiModal';
+import {FyersTpinModal} from '../../components/DdpiModal';
+import {OtherBrokerModel} from '../../components/DdpiModal';
 const colorPalette = [
   '#EAE7DC',
   '#F5F3F4',
@@ -229,6 +239,13 @@ const MPPerformanceScreen = ({route}) => {
   const {modelName, specificPlan} = route.params;
   const {configData} = useTrade();
   const navigation = useNavigation();
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
+
+  // Get dynamic colors from config
+  const appConfig = useConfig();
+  const gradient1 = appConfig?.gradient1 || '#002651';
+  const gradient2 = appConfig?.gradient2 || '#0076fb';
+  const mainColor = appConfig?.mainColor || '#0056B7';
 
   const auth = getAuth();
   const user = auth.currentUser;
@@ -511,25 +528,94 @@ const MPPerformanceScreen = ({route}) => {
   const [BrokerModel, setBrokerModel] = useState(false);
   const [OpenTokenExpireModel, setOpenTokenExpireModel] = useState(false);
 
+  // EDIS/DDPI state
+  const [edisStatus, setEdisStatus] = useState(null);
+  const [dhanEdisStatus, setDhanEdisStatus] = useState(null);
+  const [showDdpiModal, setShowDdpiModal] = useState(false);
+  const [showAngleOneTpinModel, setShowAngleOneTpinModel] = useState(false);
+  const [showDhanTpinModel, setShowDhanTpinModel] = useState(false);
+  const [showFyersTpinModal, setShowFyersTpinModal] = useState(false);
+  const [showOtherBrokerModel, setShowOtherBrokerModel] = useState(false);
+  const [isReturningFromOtherBrokerModal, setIsReturningFromOtherBrokerModal] = useState(false);
+
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     try {
-      // Decrypt the encrypted data using AES and the secret key
       const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
-
-      // Convert the decrypted bytes to a UTF-8 string
       const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-
-      // Check if the Key is valid and return it
       if (Key) {
         return Key;
       } else {
         throw new Error('Invalid Key');
       }
     } catch (error) {
-      //  console.error('Decryption failed: ', error);
-      return null; // Return null or handle the error as needed
+      return null;
     }
   };
+
+  // Fetch EDIS status on page load
+  useEffect(() => {
+    if (!userDetails || !broker) return;
+
+    // Angel One EDIS verification
+    if (broker === 'Angel One') {
+      const verifyEdis = async () => {
+        try {
+          const response = await axios.post(
+            `${server.ccxtServer.baseUrl}angelone/verify-edis`,
+            {
+              apiKey: checkValidApiAnSecret(apiKey),
+              jwtToken: userDetails.jwtToken,
+              userEmail: userDetails?.email,
+            },
+          );
+          setEdisStatus(response.data);
+        } catch (error) {
+          // silent fail
+        }
+      };
+      verifyEdis();
+    }
+
+    // Dhan EDIS verification
+    if (broker === 'Dhan') {
+      const verifyDhanEdis = async () => {
+        try {
+          const response = await axios.post(
+            `${server.ccxtServer.baseUrl}dhan/edis-status`,
+            {
+              clientId: clientCode,
+              accessToken: userDetails.jwtToken,
+            },
+          );
+          setDhanEdisStatus(response.data);
+        } catch (error) {
+          // silent fail
+        }
+      };
+      verifyDhanEdis();
+    }
+
+    // Zerodha DDPI verification
+    if (broker === 'Zerodha' && apiKey && secretKey) {
+      const verifyZerodhaDdpi = async () => {
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}zerodha/save-ddpi-status`,
+            {
+              apiKey: checkValidApiAnSecret(apiKey),
+              secretKey: checkValidApiAnSecret(secretKey),
+              accessToken: userDetails.jwtToken,
+              userEmail: userDetails.email,
+            },
+          );
+        } catch (error) {
+          // silent fail
+        }
+      };
+      verifyZerodhaDdpi();
+    }
+  }, [userDetails, broker]);
 
   const calculateRebalance = () => {
     const isMarketHours = IsMarketHours();
@@ -678,24 +764,7 @@ const MPPerformanceScreen = ({route}) => {
       return total + investment;
     }, 0);
 
-  const convertResponse = dataArray => {
-    return dataArray.map(item => {
-      return {
-        transactionType: item.orderType,
-        exchange: item.exchange,
-        segment: 'EQUITY',
-        productType: 'DELIVERY',
-        orderType: 'MARKET',
-        price: 0,
-        tradingSymbol: item.symbol,
-        quantity: item.qty,
-        priority: 0,
-        user_broker: broker,
-      };
-    });
-  };
-
-  const stockDetails = convertResponse(dataArray);
+  const stockDetails = convertResponse(dataArray, broker);
 
   const [planDetails, setPlanDetails] = useState(null);
   const getSpecificPlan = () => {
@@ -999,10 +1068,12 @@ const MPPerformanceScreen = ({route}) => {
           <View>
             <View>
               <View style={styles.container}>
-                {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
                 <TouchableOpacity activeOpacity={1}>
-                  <View
-                    style={[styles.cardContainer, {backgroundColor: '#002651', overflow: 'hidden'}]}>
+                  <GradientView
+                    colors={[gradient1, gradient2]}
+                    start={{x: 0, y: 1}}
+                    end={{x: 1, y: 1}}
+                    style={[styles.cardContainer]}>
                     <View
                       style={{
                         flexDirection: 'row',
@@ -1049,7 +1120,7 @@ const MPPerformanceScreen = ({route}) => {
                       }}>
                       <View style={styles.priceSection}>
                         <Text style={styles.currentPrice}>
-                          ₹ {currentPrice?.toFixed(2)}
+                          ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}{gstLabel(configGst, configGstWithText)}
                         </Text>
                         {discount > 0 && (
                           <Text style={styles.originalPrice}>
@@ -1057,14 +1128,16 @@ const MPPerformanceScreen = ({route}) => {
                           </Text>
                         )}
                       </View>
-                      {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
                       {discount > 0 && (
-                        <View
-                          style={[styles.saveTag, {backgroundColor: '#58a100', overflow: 'hidden'}]}>
+                        <GradientView
+                          colors={[appConfig?.paymentModal?.stepCompletedColor || '#58a100', appConfig?.paymentModal?.stepCompletedColor || '#1f7d00']}
+                          start={{x: 0, y: 0}}
+                          end={{x: 1, y: 0}}
+                          style={styles.saveTag}>
                           <Text style={styles.saveTagText}>
                             Save {discount}%
                           </Text>
-                        </View>
+                        </GradientView>
                       )}
                     </View>
 
@@ -1205,7 +1278,7 @@ const MPPerformanceScreen = ({route}) => {
                           onPress={handleConsentOpen} // opens consent popup if needed
                           disabled={globalConsent} // optional: disable press if consent is already given
                         >
-                          <Text style={styles.cagrValue}>
+                          <Text style={[styles.cagrValue, {color: mainColor}]}>
                             {!globalConsent
                               ? 'View'
                               : false
@@ -1245,7 +1318,7 @@ const MPPerformanceScreen = ({route}) => {
                         </Text>
                       </View>
                     </View>
-                  </View>
+                  </GradientView>
                 </TouchableOpacity>
 
                 {/* Expanded Section */}
@@ -1283,60 +1356,117 @@ const MPPerformanceScreen = ({route}) => {
                   </View>
                 ),
                 overview: () => (
-                  <SafeAreaView style={{flex: 1, backgroundColor: '#fff'}}>
+                  <View style={{flex: 1, backgroundColor: '#fff'}}>
                     <ScrollView
                       nestedScrollEnabled
                       showsVerticalScrollIndicator={false}
                       contentContainerStyle={{
-                        alignItems: 'center',
                         paddingHorizontal: 16,
-                        paddingTop: 0,
-                        paddingBottom: 0, // give breathing space
+                        paddingTop: 8,
+                        paddingBottom: 40,
                       }}>
-                      <View style={{flex: 1}}>
-                        <PerformanceChart modelName={modelName} advisor={strategyDetails?.advisor} />
-                      </View>
-                      <View style={{paddingTop: 30, paddingHorizontal: 10}}>
-                        <Text style={styles.methodTextHead}>
-                          Defining the universe
-                        </Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.definingUniverse}
-                        </Text>
+                      {!globalConsent ? (
+                        <PerformanceDisclaimer
+                          onAccept={handleConsentAccept}
+                          accentColor={mainColor}
+                        />
+                      ) : (
+                        <PerformanceChart
+                          modelName={singleStrategyDetails?.model_name || modelName}
+                          advisor={singleStrategyDetails?.advisor}
+                        />
+                      )}
 
-                        <Text style={styles.methodTextHead}>Research</Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.researchOverView}
-                        </Text>
+                      {/* Methodology Section */}
+                      {(singleStrategyDetails?.definingUniverse ||
+                        singleStrategyDetails?.researchOverView ||
+                        singleStrategyDetails?.constituentScreening) && (
+                        <View
+                          style={{
+                            marginTop: 24,
+                            backgroundColor: '#fafafa',
+                            borderRadius: 12,
+                            padding: 16,
+                          }}>
+                          <Text
+                            style={{
+                              fontFamily: 'Poppins-SemiBold',
+                              fontSize: 14,
+                              color: '#1a1a1a',
+                              marginBottom: 12,
+                            }}>
+                            Methodology
+                          </Text>
 
-                        <Text style={styles.methodTextHead}>
-                          Constituent Screening
-                        </Text>
-                        <Text style={styles.methodText}>
-                          {' '}
-                          {singleStrategyDetails?.constituentScreening}
-                        </Text>
+                          {singleStrategyDetails?.definingUniverse ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Defining the universe
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.definingUniverse}
+                              </Text>
+                            </>
+                          ) : null}
 
-                        <Text style={styles.methodTextHead}>Weighting</Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.weighting}
-                        </Text>
+                          {singleStrategyDetails?.researchOverView ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Research
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.researchOverView}
+                              </Text>
+                            </>
+                          ) : null}
 
-                        <Text style={styles.methodTextHead}>Rebalance</Text>
-                        <Text style={styles.methodText}>
-                          {' '}
-                          {singleStrategyDetails?.rebalanceMethodologyText}
-                        </Text>
+                          {singleStrategyDetails?.constituentScreening ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Constituent Screening
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.constituentScreening}
+                              </Text>
+                            </>
+                          ) : null}
 
-                        <Text style={styles.methodTextHead}>
-                          Asset Allocation
-                        </Text>
-                        <Text style={styles.methodText}>
-                          {singleStrategyDetails?.assetAllocationText}
-                        </Text>
-                      </View>
+                          {singleStrategyDetails?.weighting ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Weighting
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.weighting}
+                              </Text>
+                            </>
+                          ) : null}
+
+                          {singleStrategyDetails?.rebalanceMethodologyText ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Rebalance
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.rebalanceMethodologyText}
+                              </Text>
+                            </>
+                          ) : null}
+
+                          {singleStrategyDetails?.assetAllocationText ? (
+                            <>
+                              <Text style={styles.methodTextHead}>
+                                Asset Allocation
+                              </Text>
+                              <Text style={styles.methodText}>
+                                {singleStrategyDetails.assetAllocationText}
+                              </Text>
+                            </>
+                          ) : null}
+                        </View>
+                      )}
                     </ScrollView>
-                  </SafeAreaView>
+                  </View>
                 ),
               })}
               onIndexChange={setIndex}
@@ -1377,7 +1507,7 @@ const MPPerformanceScreen = ({route}) => {
             }}>
             <TouchableOpacity
               onPress={handleInvestNow}
-              style={styles.investButton}>
+              style={[styles.investButton, {backgroundColor: mainColor}]}>
               <Text style={styles.investButtonText}>
                 {isActive ? 'Renew now' : 'Invest now'}
               </Text>
@@ -1453,6 +1583,15 @@ const MPPerformanceScreen = ({route}) => {
           calculatedLoading={calculatedLoading}
           calculatedPortfolioData={calculatedPortfolioData}
           calculateRebalance={calculateRebalance}
+          edisStatus={edisStatus}
+          dhanEdisStatus={dhanEdisStatus}
+          setShowDdpiModal={setShowDdpiModal}
+          setShowAngleOneTpinModel={setShowAngleOneTpinModel}
+          setShowDhanTpinModel={setShowDhanTpinModel}
+          setShowFyersTpinModal={setShowFyersTpinModal}
+          setShowOtherBrokerModel={setShowOtherBrokerModel}
+          isReturningFromOtherBrokerModal={isReturningFromOtherBrokerModal}
+          setIsReturningFromOtherBrokerModal={setIsReturningFromOtherBrokerModal}
         />
       )}
 
@@ -1461,6 +1600,51 @@ const MPPerformanceScreen = ({route}) => {
           openSuccessModal={openSuccessModal}
           setOpenSucessModal={setOpenSucessModal}
           orderPlacementResponse={orderPlacementResponse}
+        />
+      )}
+
+      {showDdpiModal && (
+        <DdpiModal
+          isOpen={showDdpiModal}
+          setIsOpen={setShowDdpiModal}
+          userDetails={userDetails}
+        />
+      )}
+
+      {showAngleOneTpinModel && (
+        <AngleOneTpinModal
+          isOpen={showAngleOneTpinModel}
+          setIsOpen={setShowAngleOneTpinModel}
+          userDetails={userDetails}
+          edisStatus={edisStatus}
+        />
+      )}
+
+      {showDhanTpinModel && (
+        <DhanTpinModal
+          isOpen={showDhanTpinModel}
+          setIsOpen={setShowDhanTpinModel}
+          userDetails={userDetails}
+          dhanEdisStatus={dhanEdisStatus}
+        />
+      )}
+
+      {showFyersTpinModal && (
+        <FyersTpinModal
+          isOpen={showFyersTpinModal}
+          setIsOpen={setShowFyersTpinModal}
+          userDetails={userDetails}
+        />
+      )}
+
+      {showOtherBrokerModel && (
+        <OtherBrokerModel
+          userDetails={userDetails}
+          onContinue={() => {
+            setIsReturningFromOtherBrokerModal(true);
+            setShowOtherBrokerModel(false);
+          }}
+          visible={showOtherBrokerModel}
         />
       )}
       {console.log('OPennnser', OpenSubscribeModel, latestRebalance)}
@@ -1565,11 +1749,17 @@ const styles = StyleSheet.create({
   },
   methodTextHead: {
     color: 'rgba(0, 0, 0, 0.85)',
-    fontSize: 11,
-    fontFamily: 'Poppins-Bold',
-    marginTop: 20,
+    fontSize: 12,
+    fontFamily: 'Poppins-SemiBold',
+    marginTop: 14,
+    marginBottom: 4,
   },
-  methodText: {color: 'rgba(0, 0, 0, 1)', fontSize: 11},
+  methodText: {
+    color: 'rgba(0, 0, 0, 0.7)',
+    fontSize: 11,
+    fontFamily: 'Poppins-Regular',
+    lineHeight: 18,
+  },
   subtitle: {
     fontSize: 14,
     color: '#000000',
@@ -1659,7 +1849,6 @@ const styles = StyleSheet.create({
     marginLeft: 5,
   },
   investButton: {
-    backgroundColor: '#0056B7',
     margin: 10,
     borderRadius: 5,
     flex: 1,
@@ -1830,7 +2019,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   cagrValue: {
-    color: '#60a5fa',
     fontSize: 12,
     fontFamily: 'Poppins-SemiBold',
     textAlign: 'flex-start',
@@ -1863,7 +2051,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   subscribeText: {
-    color: '#1e3a8a',
     fontSize: 12,
     fontFamily: 'Poppins-SemiBold',
   },
@@ -1881,14 +2068,12 @@ const styles = StyleSheet.create({
   },
   expandedContent: {alignItems: 'flex-start', justifyContent: 'flex-start'},
   descriptionText: {
-    color: '#2359DE',
     fontFamily: 'Poppins-Regular',
     fontSize: 13,
     lineHeight: 18,
     textAlign: 'left',
   },
   overviewLabel: {
-    color: '#2359DE',
     fontFamily: 'Poppins-SemiBold',
     fontSize: 13,
   },

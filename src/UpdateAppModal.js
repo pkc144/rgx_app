@@ -8,9 +8,9 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
+import GradientView from './components/GradientView';
 import VersionCheck from 'react-native-version-check';
 import { useConfig } from './context/ConfigContext';
-import SVGGradient from './components/SVGGradient';
 import DeviceInfo from 'react-native-device-info';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import semver from 'semver';
@@ -134,10 +134,8 @@ const UpdateAppModal = ({visible, onClose}) => {
   return (
     <Modal visible={showModal} transparent animationType="fade">
       <View style={styles.overlay}>
-        <SVGGradient
+        <GradientView
           colors={[gradientStart, gradientEnd]}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 1}}
           style={styles.container}>
           <Text style={styles.heading}>Update Available!</Text>
           <Text style={styles.message}>
@@ -156,7 +154,7 @@ const UpdateAppModal = ({visible, onClose}) => {
             activeOpacity={0.8}>
             <Text style={styles.laterButtonText}>Maybe Later</Text>
           </TouchableOpacity>
-        </SVGGradient>
+        </GradientView>
       </View>
     </Modal>
   );

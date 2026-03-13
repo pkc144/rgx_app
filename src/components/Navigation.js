@@ -53,7 +53,7 @@ import NotificationListScreen from './NotificationListScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NewsInfoScreen from '../screens/Home/NewsScreen/NewsInfoScreen';
 import ProgressBar from 'react-native-progress-step-bar';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from './GradientView';
 import Icon1 from 'react-native-vector-icons/Octicons';
 import Icon2 from 'react-native-vector-icons/Ionicons';
 import SignupScreen from '../screens/Authentication/SignupScreen';
@@ -97,10 +97,11 @@ import ProfileModal from './ProfileModal';
 
 import ReviewScreen from '../screens/Drawer/ReviewScreen';
 import AfterSubscriptionScreen from '../screens/Home/AfterSubscriptionScreen';
+import MySubscriptionsScreen from '../screens/Home/MySubscriptionsScreen';
 import NewsScreen from '../screens/Home/NewsScreen/NewsScreen';
 import SplashScreen from './SplashScreen';
 import {useTrade} from '../screens/TradeContext';
-import Config from 'react-native-config';
+import Config from '../utils/safeConfig';
 import {generateToken} from '../utils/SecurityTokenManager';
 import APP_VARIANTS from '../utils/Config';
 import {style} from 'twrnc';
@@ -114,9 +115,9 @@ import AccountSettingsScreen from '../screens/Home/AccountSettingsScreen';
 import KnowledgeHub from './HomeScreenComponents/KnowledgeHub';
 import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen';
 import ChangeAdvisor from '../screens/AccountSettingScreen/ChangeAdvisor';
+import PlaceOrdersScreen from '../screens/OrderManagement/PlaceOrdersScreen';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import { useWebSocketInitializer } from '../utils/websocketInitializer';
-import DeleteAccountScreen from '../screens/Home/DeleteAccountScreen';
 
 
 const auth = getAuth();
@@ -126,7 +127,18 @@ const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 const {height: screenHeight} = Dimensions.get('window');
 
-const selectedVariant = Config.APP_VARIANT; // Default to "arfs" if not set
+// Bottom sheet positioning - accounts for tab bar (~60px) + some padding
+const TAB_BAR_HEIGHT = 60;
+const BOTTOM_SHEET_PADDING = 10;
+const getBottomSheetPosition = (insets) => {
+  // Position sheet to show above tab bar with safe area consideration
+  const safeBottom = insets?.bottom || 0;
+  return screenHeight - TAB_BAR_HEIGHT - safeBottom - BOTTOM_SHEET_PADDING;
+};
+
+const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
+// Ensure the variant exists in APP_VARIANTS, otherwise use 'rgxresearch'
+const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
 const {
   logo: LogoComponent,
   themeColor,
@@ -141,7 +153,7 @@ const {
   cardverticalmargin,
   placeholderText,
   tabIconColor,
-} = APP_VARIANTS[selectedVariant];
+} = APP_VARIANTS[validVariant];
 const CustomTabBarIcon = ({name, focused}) => {
   let IconComponent;
   if (name === 'Home') {
@@ -203,6 +215,7 @@ const MainTabNavigator = () => {
     successclosemodel,
   } = useModal();
   const insets = useSafeAreaInsets();
+  const bottomSheetPosition = getBottomSheetPosition(insets);
   const translateY = useRef(new Animated.Value(screenHeight)).current;
   const [cartCount, setCartCount1] = useState(0);
   const navigation = useNavigation();
@@ -232,7 +245,7 @@ const MainTabNavigator = () => {
     console.log('success after:', successclosemodel);
     const startTime = global.performance.now();
     Animated.timing(translateY, {
-      toValue: screenHeight * 0.82,
+      toValue: bottomSheetPosition,
       duration: 300,
       isInteraction: false,
       useNativeDriver: true,
@@ -261,7 +274,7 @@ const MainTabNavigator = () => {
       onMoveShouldSetPanResponder: (evt, gestureState) => gestureState.dy > 10,
       onPanResponderMove: (evt, gestureState) => {
         if (gestureState.dy > 0) {
-          translateY.setValue(screenHeight * 0.82 + gestureState.dy);
+          translateY.setValue(bottomSheetPosition + gestureState.dy);
         }
       },
       onPanResponderRelease: (evt, gestureState) => {
@@ -567,10 +580,12 @@ const CustomDrawerContent = props => {
     );
   };
 
-  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
-    <View
-      style={{flex: 1, backgroundColor: '#012651', overflow: 'hidden'}}>
+    <GradientView
+      colors={['#012651', '#0157B8']} // Adjust gradient colors as needed
+      start={{x: 1, y: 0}}
+      end={{x: 0, y: 1}}
+      style={{flex: 1}}>
       <SafeAreaView style={{flex: 1}}>
         {/* Scrollable Drawer Content */}
 
@@ -738,17 +753,17 @@ const CustomDrawerContent = props => {
                   alignItems: 'center',
                   alignSelf: 'center',
                 }}>
-                {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-                <View
+                <GradientView
+                  colors={['#00000040', '#FFFFFF1A']}
+                  start={{x: 0, y: 0}}
+                  end={{x: 0, y: 1}}
                   style={{
-                    backgroundColor: 'rgba(0, 0, 0, 0.25)',
                     borderRadius: 15,
                     elevation: 0,
                     paddingVertical: 0,
                     paddingHorizontal: 10,
                     borderColor: '#fff',
                     borderWidth: 0.5,
-                    overflow: 'hidden',
                   }}>
                   <Text
                     style={{
@@ -759,7 +774,7 @@ const CustomDrawerContent = props => {
                     }}>
                     Complete Profile
                   </Text>
-                </View>
+                </GradientView>
               </TouchableOpacity>
             </View>
           </View>
@@ -906,7 +921,7 @@ const CustomDrawerContent = props => {
 
         {/* Profile Section at the Bottom */}
       </SafeAreaView>
-    </View>
+    </GradientView>
   );
 };
 
@@ -1072,6 +1087,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           options={{headerShown: false}}
         />
         <Stack.Screen
+          name="MySubscriptionsScreen"
+          component={MySubscriptionsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
           name="HistoryScreen"
           component={HistoryScreen}
           options={{headerShown: false}}
@@ -1197,8 +1217,8 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           options={{headerShown: false}}
         />
         <Stack.Screen
-          name="DeleteAccount"
-          component={DeleteAccountScreen}
+          name="PlaceOrdersScreen"
+          component={PlaceOrdersScreen}
           options={{headerShown: false}}
         />
       </Stack.Navigator>

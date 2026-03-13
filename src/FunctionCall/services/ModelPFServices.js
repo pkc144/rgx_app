@@ -1,12 +1,11 @@
 import axios from "axios";
 import server from "../../utils/serverConfig";
-import { encryptApiKey } from "../utils/cryptoUtils";
+
 import { generateToken } from "../../utils/SecurityTokenManager";
 import Config from "react-native-config";
-import { useTrade } from "../../screens/TradeContext";
 
-export function getStrategyDetails(modelSpecificStrategy) {
-  const {configData}=useTrade();
+
+export function getStrategyDetails(modelSpecificStrategy, configData) {
   const normalizedStrategyName = modelSpecificStrategy
     .replaceAll("_", " ")
     .toLowerCase();
@@ -25,8 +24,7 @@ export function getStrategyDetails(modelSpecificStrategy) {
   );
 }
 
-export function updateStrategySubscription(email, action, strategyDetails) {
-    const {configData}=useTrade();
+export function updateStrategySubscription(email, action, strategyDetails, configData) {
   let payloadData = JSON.stringify({
     email: email,
     action: action,
@@ -47,8 +45,7 @@ export function updateStrategySubscription(email, action, strategyDetails) {
   );
 }
 
-export function userInsertDoc(email, strategyDetails, investAmount, broker) {
-    const {configData}=useTrade();
+export function userInsertDoc(email, strategyDetails, investAmount, broker, configData) {
   const insertDocPayload = {
     userEmail: email,
     model: strategyDetails?.model_name,

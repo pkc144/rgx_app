@@ -116,7 +116,37 @@ const AngleOneBookingTrueSheet = ({
         axios
           .request(config)
           .then(response => {
-            console.log('success brooooohh', response);
+            console.log('[AngelOne] Broker connected successfully, updating model portfolio...');
+
+            // Update model portfolio with broker information (non-critical)
+            let newBrokerData = {
+              user_email: userEmail,
+              user_broker: 'AngelOne',
+            };
+            let A1_broker = {
+              method: 'post',
+              url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+              data: JSON.stringify(newBrokerData),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            };
+
+            // Execute the model portfolio broker update - catch separately so connection success isn't affected
+            return axios.request(A1_broker).catch(err => {
+              console.warn('[AngelOne] Model portfolio update failed (non-critical):', err);
+              return null;
+            });
+          })
+          .then(response => {
+            if (response) {
+              console.log('[AngelOne] Model portfolio updated successfully');
+            }
             fetchBrokerStatusModal();
             // Emit refresh event to update portfolio data in listening components
             eventEmitter.emit('refreshEvent', { source: 'AngleOne broker connection' });

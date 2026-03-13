@@ -50,7 +50,7 @@ import RecommendationSuccessModal from '../../components/ModelPortfolioComponent
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import Animated from 'react-native-reanimated';
-// LinearGradient import removed - replaced with View for iOS Fabric compatibility
+import GradientView from '../../components/GradientView';
 import CustomTabBarOrder from './CustomTabbarOrder';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
 import CustomTabBarMPPerformance from './CustomTabbarMPPerformance';
@@ -58,6 +58,9 @@ import EmptyStateInfoMP from './EmptyStateMP';
 import ConsentPopup from '../../components/ModelPortfolioComponents/ConsentPopUp';
 import DistributionGrid from './DistributionRowGrid';
 import {useTrade} from '../TradeContext';
+import {convertResponse} from '../../utils/tradeUtils';
+import {useGstConfig} from '../../context/GstConfigContext';
+import {withGst, gstLabel} from '../../utils/gstHelpers';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 const colorPalette = [
   '#EAE7DC',
@@ -231,6 +234,7 @@ const BespokePerformanceScreen = ({route}) => {
   const {modelName, specificPlan} = route.params;
   const {configData} = useTrade();
   const navigation = useNavigation();
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   const auth = getAuth();
   const user = auth.currentUser;
@@ -514,22 +518,17 @@ const BespokePerformanceScreen = ({route}) => {
   const [OpenTokenExpireModel, setOpenTokenExpireModel] = useState(false);
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     try {
-      // Decrypt the encrypted data using AES and the secret key
       const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
-
-      // Convert the decrypted bytes to a UTF-8 string
       const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-
-      // Check if the Key is valid and return it
       if (Key) {
         return Key;
       } else {
         throw new Error('Invalid Key');
       }
     } catch (error) {
-      //  console.error('Decryption failed: ', error);
-      return null; // Return null or handle the error as needed
+      return null;
     }
   };
 
@@ -680,24 +679,7 @@ const BespokePerformanceScreen = ({route}) => {
       return total + investment;
     }, 0);
 
-  const convertResponse = dataArray => {
-    return dataArray.map(item => {
-      return {
-        transactionType: item.orderType,
-        exchange: item.exchange,
-        segment: 'EQUITY',
-        productType: 'DELIVERY',
-        orderType: 'MARKET',
-        price: 0,
-        tradingSymbol: item.symbol,
-        quantity: item.qty,
-        priority: 0,
-        user_broker: broker,
-      };
-    });
-  };
-
-  const stockDetails = convertResponse(dataArray);
+  const stockDetails = convertResponse(dataArray, broker);
 
   const [planDetails, setPlanDetails] = useState(null);
   const getSpecificPlan = () => {
@@ -1001,10 +983,12 @@ const BespokePerformanceScreen = ({route}) => {
           <View>
             <View>
               <View style={styles.container}>
-                {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
                 <TouchableOpacity activeOpacity={1}>
-                  <View
-                    style={[styles.cardContainer, {backgroundColor: '#002651', overflow: 'hidden'}]}>
+                  <GradientView
+                    colors={['#002651', '#0076fb']}
+                    start={{x: 0, y: 1}}
+                    end={{x: 1, y: 1}}
+                    style={[styles.cardContainer]}>
                     <View
                       style={{
                         flexDirection: 'row',
@@ -1051,7 +1035,7 @@ const BespokePerformanceScreen = ({route}) => {
                       }}>
                       <View style={styles.priceSection}>
                         <Text style={styles.currentPrice}>
-                          ₹ {currentPrice?.toFixed(2)}
+                          ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}{gstLabel(configGst, configGstWithText)}
                         </Text>
                         {discount > 0 && (
                           <Text style={styles.originalPrice}>
@@ -1059,14 +1043,16 @@ const BespokePerformanceScreen = ({route}) => {
                           </Text>
                         )}
                       </View>
-                      {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
                       {discount > 0 && (
-                        <View
-                          style={[styles.saveTag, {backgroundColor: '#58a100', overflow: 'hidden'}]}>
+                        <GradientView
+                          colors={['#58a100', '#1f7d00']}
+                          start={{x: 0, y: 0}}
+                          end={{x: 1, y: 0}}
+                          style={styles.saveTag}>
                           <Text style={styles.saveTagText}>
                             Save {discount}%
                           </Text>
-                        </View>
+                        </GradientView>
                       )}
                     </View>
 
@@ -1111,7 +1097,7 @@ const BespokePerformanceScreen = ({route}) => {
                     </View>
 
                     {/* Stats */}
-                  </View>
+                  </GradientView>
                 </TouchableOpacity>
 
                 {/* Expanded Section */}

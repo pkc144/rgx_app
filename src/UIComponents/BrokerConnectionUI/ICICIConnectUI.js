@@ -22,6 +22,7 @@ import {
   ChevronDown,
 } from 'lucide-react-native';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
+import GradientView from '../../components/GradientView';
 import iciciIcon from '../../assets/icici.png';
 import ICICIHelpContent from './HelpUI/ICICIHelpContent';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -69,9 +70,11 @@ const ICICIConnectUI = ({
   return (
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
-        {/* Header - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-        <View
-          style={[styles.headerRow, {backgroundColor: 'rgba(0, 38, 81, 1)', overflow: 'hidden'}]}>
+        <GradientView
+          colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.headerRow}>
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
             <TouchableOpacity style={styles.backButton} onPress={onClose}>
               <ChevronLeft size={24} color="#000" />
@@ -88,7 +91,7 @@ const ICICIConnectUI = ({
             }}
             resizeMode="contain"
           />
-        </View>
+        </GradientView>
         {shouldRenderContent && !showWebView && expanded && (
           /* Full Screen Help when expanded */
           <View style={styles.fullScreenHelp}>
@@ -252,10 +255,9 @@ export default ICICIConnectUI;
 
 const styles = StyleSheet.create({
   fullScreen: {
-    flex: 1,
     width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   backButton: {
     padding: 4,

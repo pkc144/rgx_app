@@ -26,6 +26,7 @@ import { Picker } from '@react-native-picker/picker';
 import { debounce } from 'lodash';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
+import { isOrderRejected } from '../../utils/orderStatusUtils';
 const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
@@ -45,6 +46,7 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { useTrade } from '../../screens/TradeContext';
+import { useConfig } from '../../context/ConfigContext';
 
 const Icon = ({ name, size = 24, color = '#000' }) => {
   switch (name) {
@@ -78,12 +80,7 @@ const formatPrice = price => {
 
 const isStockFailed = stock => {
   return (
-    stock.orderStatus === 'REJECTED' ||
-    stock.orderStatus === 'rejected' ||
-    stock.orderStatus === 'Rejected' ||
-    stock.orderStatus === 'cancelled' ||
-    stock.orderStatus === 'CANCELLED' ||
-    stock.orderStatus === 'Cancelled' ||
+    isOrderRejected(stock.orderStatus) ||
     stock.rebalance_status === 'failed' ||
     stock.rebalance_status === 'failure'
   );
@@ -108,8 +105,11 @@ const MPStatusModal = ({
   setgoBack,
   handlefirstBack,
   brokerStatus,
+  isRetryRebalance = false,
 }) => {
   const { configData, marketPrices, fetchMarketPrices } = useTrade();
+  const config = useConfig();
+  const gradient2 = config?.gradient2 || '#0076FB';
   const [viewMode, setViewMode] = useState('viewing');
   const [localStockList, setLocalStockList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -471,14 +471,13 @@ const MPStatusModal = ({
       if (setCurrentStep) {
         setCurrentStep(3);
       }
-      console.log('here i am');
 
       if (handleAcceptRebalance) {
         await handleAcceptRebalance();
       }
 
-      // Wait longer to ensure smooth transition
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Brief delay to let RebalanceModal render before closing this modal
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       onClose();
 
@@ -632,28 +631,26 @@ const MPStatusModal = ({
       setTimeout(async () => {
         try {
           setSuccessMessage(null);
+          setShowSuccessLoader(false);
 
           console.log('🔄 Moving to step 3...');
           if (setCurrentStep) {
             setCurrentStep(3);
           }
 
-          // Wait a bit for step 3 to be ready
-          await new Promise(resolve => setTimeout(resolve, 500));
-
           console.log('🔄 Calling handleAcceptRebalance...');
           if (handleAcceptRebalance) {
-            await handleAcceptRebalance();
-            console.log('✅ handleAcceptRebalance completed');
+            handleAcceptRebalance();
+            console.log('✅ handleAcceptRebalance called');
+
+            // Wait longer to ensure RebalanceModal state is set and rendered
+            // before closing this modal
+            await new Promise(resolve => setTimeout(resolve, 800));
+            onClose();
           } else {
             console.warn('⚠️ handleAcceptRebalance not provided');
+            onClose();
           }
-
-          // Wait another moment to ensure the next screen is rendered
-          await new Promise(resolve => setTimeout(resolve, 300));
-
-          setShowSuccessLoader(false);
-          onClose();
         } catch (error) {
           console.error('❌ Error in post-update flow:', error);
           setShowSuccessLoader(false);
@@ -956,6 +953,11 @@ const MPStatusModal = ({
           {isFailed && <Text style={styles.failedText}>(Failed)</Text>}
         </View>
       </View>
+      {isFailed && item.orderStatusMessage && (
+        <Text style={styles.failedReasonText}>
+          {item.orderStatusMessage}
+        </Text>
+      )}
 
         {true && (
           <View style={[styles.editRow, styles.topSpacing]}>
@@ -981,7 +983,7 @@ const MPStatusModal = ({
                     />
                     {isEditing && (
                       <TouchableOpacity
-                        style={styles.ltpButton}
+                        style={[styles.ltpButton, {backgroundColor: gradient2}]}
                         onPress={() => {
                           const ltpValue = getLTPForSymbol(item.symbol);
                           if (ltpValue && ltpValue !== 'N/A') {
@@ -1094,24 +1096,29 @@ const MPStatusModal = ({
                       <View style={styles.titleText1}>
                         <View>
                           <Text style={styles.titleText}>
-                            YOUR PORTFOLIO balance in current {'\n'}
-                            model portfolio (before the update)
+                            {isRetryRebalance
+                              ? `Review your current holdings in ${modelName} Portfolio`
+                              : `YOUR PORTFOLIO balance in current \nmodel portfolio (before the update)`}
                           </Text>
                           <Text style={styles.titleText2}>
-                            (ONLY specific to this portfolio - as recorded before this update{' '}
+                            {isRetryRebalance
+                              ? "These will be used to generate the remaining rebalance instructions. Click 'Continue' to proceed."
+                              : "(ONLY specific to this portfolio - as recorded before this update "}
                           </Text>
                         </View>
 
-                        <TouchableOpacity
-                          onPress={handleSwitchToEdit}
-                          style={[styles.editPortfolioButton, { alignSelf: 'flex-end', paddingVertical: 4, paddingHorizontal: 8 }]}
-                          disabled={isUpdating}
-                        >
-                          <Plus size={8} color={'#fff'} />
-                          <Text style={[styles.editPortfolioButtonText, { fontSize: 10 }]}>
-                            Add or Edit stocks
-                          </Text>
-                        </TouchableOpacity>
+                        {!isRetryRebalance && (
+                          <TouchableOpacity
+                            onPress={handleSwitchToEdit}
+                            style={[styles.editPortfolioButton, { alignSelf: 'flex-end', paddingVertical: 4, paddingHorizontal: 8, backgroundColor: gradient2 }]}
+                            disabled={isUpdating}
+                          >
+                            <Plus size={8} color={'#fff'} />
+                            <Text style={[styles.editPortfolioButtonText, { fontSize: 10 }]}>
+                              Add or Edit stocks
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     )}
                   </View>
@@ -1135,7 +1142,7 @@ const MPStatusModal = ({
 
                   {isEditing && (
                     <View style={styles.headerIconText}>
-                      <Icon name="edit-2" size={20} color="#3b82f6" />
+                      <Icon name="edit-2" size={20} color={gradient2} />
                       <Text style={styles.titleText}>
                         Edit Portfolio Holdings
                       </Text>
@@ -1159,7 +1166,7 @@ const MPStatusModal = ({
                   ]}>
                   {isLoading ? (
                     <View style={styles.centeredMessage}>
-                      <ActivityIndicator size="large" color="#3b82f6" />
+                      <ActivityIndicator size="large" color={gradient2} />
                       <Text style={styles.loadingText}>
                         Loading portfolio data...
                       </Text>
@@ -1214,7 +1221,7 @@ const MPStatusModal = ({
                 <>
                   <TouchableOpacity
                     onPress={handleClose}
-                    style={styles.nextStepButton}
+                    style={[styles.nextStepButton, {backgroundColor: gradient2}]}
                     disabled={isUpdating || showTransitionLoader}>
                     <Text style={styles.nextStepButtonText}>Continue</Text>
                   </TouchableOpacity>
@@ -1227,7 +1234,7 @@ const MPStatusModal = ({
                   )}
                   <TouchableOpacity
                     onPress={handleSwitchToEdit}
-                    style={styles.editButton}
+                    style={[styles.editButton, {backgroundColor: gradient2}]}
                     disabled={isUpdating}>
                     <Icon
                       name="edit-2"
@@ -1267,7 +1274,7 @@ const MPStatusModal = ({
                   <View style={styles.buttonRowContainer}>
                     <TouchableOpacity
                       onPress={handleClose}
-                      style={styles.nextStepButton}
+                      style={[styles.nextStepButton, {backgroundColor: gradient2}]}
                       disabled={isUpdating || showTransitionLoader}>
                       <Text style={styles.nextStepButtonText}>Continue</Text>
                     </TouchableOpacity>
@@ -1296,7 +1303,7 @@ const MPStatusModal = ({
                   <TouchableOpacity
                     onPress={() => setShowAddForm(true)}
                     style={{
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: gradient2,
                       paddingVertical: 12,
                       paddingHorizontal: 18,
                       borderRadius: 8,
@@ -1351,7 +1358,7 @@ const MPStatusModal = ({
             {showSuccessLoader && (
               <View style={styles.transitionLoaderOverlay}>
                 <View style={styles.transitionLoaderContainer}>
-                  <ActivityIndicator size="large" color="#0056B7" />
+                  <ActivityIndicator size="large" color={gradient2} />
                   <Text style={styles.transitionLoaderText}>Processing...</Text>
                 </View>
               </View>
@@ -1473,7 +1480,7 @@ const MPStatusModal = ({
                             returnKeyType="next"
                           />
                           <TouchableOpacity
-                            style={styles.ltpButton}
+                            style={[styles.ltpButton, {backgroundColor: gradient2}]}
                             onPress={() => {
                               const ltpValue = getLTPForSymbol(newSymbol);
                               if (ltpValue && ltpValue !== 'N/A') {
@@ -1508,6 +1515,7 @@ const MPStatusModal = ({
                         onPress={handleAddNewStock}
                         style={[
                           styles.addButton,
+                          {backgroundColor: gradient2},
                           (!newSymbol ||
                             !newExchange ||
                             !newQuantity ||
@@ -1554,7 +1562,7 @@ const MPStatusModal = ({
             {showTransitionLoader && (
               <View style={styles.transitionLoaderOverlay}>
                 <View style={styles.transitionLoaderContainer}>
-                  <ActivityIndicator size="large" color="#0056B7" />
+                  <ActivityIndicator size="large" color={gradient2} />
                   <Text style={styles.transitionLoaderText}>Loading...</Text>
                 </View>
               </View>
@@ -1762,6 +1770,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#dc2626',
     fontWeight: '500',
+  },
+  failedReasonText: {
+    fontSize: 10,
+    color: '#dc2626',
+    marginTop: 2,
+    lineHeight: 14,
   },
   exchangeText: {
     fontSize: 12,

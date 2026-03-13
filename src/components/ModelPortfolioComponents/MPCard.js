@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Animated, Dimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../GradientView';
 import { Gauge, TrendingUp } from 'lucide-react-native';
 import { Item } from 'react-native-paper/lib/typescript/components/Drawer/Drawer';
 import moment from 'moment';
 import ConsentPopup from './ConsentPopUp';
 import { useConfig } from '../../context/ConfigContext';
+import { useTrade } from '../../screens/TradeContext';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 const Alpha100 = require('../../assets/alpha-100.png');
 
@@ -34,6 +37,9 @@ const MPCard = ({
   const gradient1 = config?.gradient1 || '#002651';
   const gradient2 = config?.gradient2 || '#0076fb';
   const mainColor = config?.mainColor || 'rgba(0, 86, 183, 1)';
+  const paymentModalConfig = config?.paymentModal;
+  const { configData } = useTrade();
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   const handleConsentAccept = () => {
     setGlobalConsent(true);
@@ -282,18 +288,18 @@ const MPCard = ({
   };
 
 
-  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
     <View style={styles.container}>
       <View activeOpacity={0.9}>
-        <View
+        <GradientView
+          colors={[gradient1, gradient2]}
+          start={{ x: 0, y: 1 }}
+          end={{ x: 1, y: 1 }}
           style={[
             styles.cardContainer,
             {
               borderBottomLeftRadius: isExpanded ? 0 : 8,
-              borderBottomRightRadius: isExpanded ? 0 : 8,
-              backgroundColor: gradient1,
-              overflow: 'hidden',
+              borderBottomRightRadius: isExpanded ? 0 : 8
             }
           ]}
         >
@@ -312,17 +318,32 @@ const MPCard = ({
           {/* Price Section */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 0 }}>
             <View style={styles.priceSection}>
-              <Text style={styles.currentPrice}>₹ {currentPrice ? (currentPrice?.toFixed(2)) : 0}</Text>
-              {discount > 0 && (
-                <Text style={styles.originalPrice}>₹ {originalPrice?.toFixed(2)}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                <Text style={styles.currentPrice}>₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : 0}</Text>
+                {discount > 0 && (
+                  <Text style={styles.originalPrice}>₹ {originalPrice?.toFixed(2)}</Text>
+                )}
+              </View>
+              {configGst && (
+                <Text style={{
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.8)',
+                  fontFamily: 'Poppins-Regular',
+                  marginTop: -2,
+                }}>
+                  {configGstWithText ? 'including GST' : '+ GST'}
+                </Text>
               )}
             </View>
             {discount > 0 && (
-              <View
-                style={[styles.saveTag, {backgroundColor: '#58a100', overflow: 'hidden'}]}
+              <GradientView
+                colors={[paymentModalConfig?.stepCompletedColor || '#58a100', paymentModalConfig?.stepCompletedColor || '#1f7d00']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.saveTag}
               >
                 <Text style={styles.saveTagText}>Save {discount}%</Text>
-              </View>
+              </GradientView>
             )}
           </View>
 
@@ -436,7 +457,7 @@ const MPCard = ({
                 onPress={handleConsentOpen} // opens consent popup if needed
                 disabled={globalConsent} // optional: disable press if consent is already given
               >
-                <Text style={styles.cagrValue}>
+                <Text style={[styles.cagrValue, {color: mainColor}]}>
                   {!globalConsent
                     ? "View"
                     : false
@@ -458,21 +479,21 @@ const MPCard = ({
               <Text style={styles.viewMoreText}>View More</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={InvestNow} style={[styles.subscribeButton, { backgroundColor: hasActiveSubscription(ele?.name, subscriptionData?.subscriptions) ? '#29A400' : '#fff' }]}>
-              <Text style={[styles.subscribeText, { color: hasActiveSubscription(ele?.name, subscriptionData?.subscriptions) ? '#fff' : '#1e3a8a' }]}>
+            <TouchableOpacity onPress={InvestNow} style={[styles.subscribeButton, { backgroundColor: hasActiveSubscription(ele?.name, subscriptionData?.subscriptions) ? (paymentModalConfig?.stepCompletedColor || '#29A400') : '#fff' }]}>
+              <Text style={[styles.subscribeText, { color: hasActiveSubscription(ele?.name, subscriptionData?.subscriptions) ? '#fff' : mainColor }]}>
                 {hasActiveSubscription(ele?.name, subscriptionData?.subscriptions) ? 'Renew Now' : 'Subscribe'}
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </GradientView>
       </View>
 
       {/* Expanded Section */}
       {isExpanded && (
         <Animated.View style={[styles.animatedSection, { height: animatedHeight }]}>
           <View style={styles.expandedContent}>
-            <Text style={styles.descriptionText}>
-              <Text style={styles.overviewLabel}>• Overview : </Text>
+            <Text style={[styles.descriptionText, {color: mainColor}]}>
+              <Text style={[styles.overviewLabel, {color: mainColor}]}>• Overview : </Text>
               {description || '-'}
             </Text>
           </View>
@@ -531,17 +552,17 @@ const styles = StyleSheet.create({
   statLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 9, fontFamily: 'Poppins-Medium', textAlign: 'center', marginBottom: 4 },
   statValue: { color: '#fff', fontSize: 12, fontFamily: 'Poppins-SemiBold', textAlign: 'flex-start', alignContent: 'flex-start', alignItems: 'flex-start', alignSelf: 'flex-start' },
   volatilityValue: { color: '#22c55e', fontSize: 12, fontFamily: 'Poppins-SemiBold', textAlign: 'center', alignSelf: 'flex-start' },
-  cagrValue: { color: '#60a5fa', fontSize: 12, fontFamily: 'Poppins-SemiBold', textAlign: 'flex-start', alignContent: 'flex-start', alignItems: 'flex-start', alignSelf: 'flex-start' },
+  cagrValue: { fontSize: 12, fontFamily: 'Poppins-SemiBold', textAlign: 'flex-start', alignContent: 'flex-start', alignItems: 'flex-start', alignSelf: 'flex-start' },
   statDivider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 8 },
   actionContainer: { flexDirection: 'row', gap: 12 },
   viewMoreButton: { flex: 1, backgroundColor: 'rgba(232, 232, 232, 0.58)', borderRadius: 3, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
   viewMoreText: { color: '#fff', fontSize: 12, fontFamily: 'Poppins-Medium' },
   subscribeButton: { flex: 1, backgroundColor: '#fff', borderRadius: 3, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
-  subscribeText: { color: '#1e3a8a', fontSize: 12, fontFamily: 'Poppins-SemiBold' },
+  subscribeText: { fontSize: 12, fontFamily: 'Poppins-SemiBold' },
   animatedSection: { backgroundColor: '#ECF3FE', elevation: 4, paddingHorizontal: 20, paddingVertical: 20, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, marginHorizontal: 16, borderWidth: 1, borderTopWidth: 0, borderColor: '#F3F4F6' },
   expandedContent: { alignItems: 'flex-start', justifyContent: 'flex-start' },
-  descriptionText: { color: '#2359DE', fontFamily: 'Poppins-Regular', fontSize: 13, lineHeight: 18, textAlign: 'left' },
-  overviewLabel: { color: '#2359DE', fontFamily: 'Poppins-SemiBold', fontSize: 13 },
+  descriptionText: { fontFamily: 'Poppins-Regular', fontSize: 13, lineHeight: 18, textAlign: 'left' },
+  overviewLabel: { fontFamily: 'Poppins-SemiBold', fontSize: 13 },
   volatilityText: {
     fontSize: 14,
     fontWeight: '600',

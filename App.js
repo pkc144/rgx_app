@@ -1,16 +1,18 @@
 import 'react-native-gesture-handler';
 import React, {useState, useEffect} from 'react';
-import {StatusBar, Text, TextInput, SafeAreaView} from 'react-native';
+import {StatusBar, Text, TextInput, SafeAreaView, Linking, Alert} from 'react-native';
 import Toast from 'react-native-toast-message';
 import axios from 'axios';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {getAuth, onAuthStateChanged} from '@react-native-firebase/auth';
 import notifee, {EventType} from '@notifee/react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from './src/components/GradientView';
 import {
   useSafeAreaInsets,
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
+import { handleOAuthCallback } from './src/services/ZerodhaOAuthService';
+import Config from 'react-native-config';
 
 import Navigation from './src/components/Navigation';
 import {CartProvider} from './src/components/CartContext';
@@ -19,6 +21,7 @@ import {SocialProofProvider} from './src/components/SocialProofProvider';
 import server from './src/utils/serverConfig';
 import {TradeProvider} from './src/screens/TradeContext';
 import {ConfigProvider} from './src/context/ConfigContext';
+import {GstConfigProvider} from './src/context/GstConfigContext';
 import ModalManager from './src/GlobalUIModals/ModalManager';
 import BrokerAlertModal from './src/GlobalUIModals/BrokerAlertModal';
 import UpdateAppModal from './src/UpdateAppModal';
@@ -89,6 +92,40 @@ const App = () => {
         }
       }
     });
+
+    // Deep link listener for Zerodha OAuth callback
+    const handleDeepLink = async (event) => {
+      const url = event.url;
+      console.log('[App] Deep link received:', url);
+
+      // Check if it's a Zerodha OAuth callback
+      const scheme = Config?.REACT_APP_DEEP_LINK_SCHEME || 'rgxapp';
+      if (url && url.startsWith(`${scheme}://zerodha/callback`)) {
+        console.log('[App] Zerodha OAuth callback detected');
+
+        const result = await handleOAuthCallback(url);
+
+        if (result.success) {
+          Alert.alert('Success', result.message || 'Zerodha connected successfully!');
+        } else {
+          Alert.alert('Error', result.error || 'Failed to connect Zerodha');
+        }
+      }
+    };
+
+    // Listen for deep link events
+    const linkingSubscription = Linking.addEventListener('url', handleDeepLink);
+
+    // Handle app launch from deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => {
+      linkingSubscription.remove();
+    };
   }, []);
 
   if (Text.defaultProps) {
@@ -143,7 +180,7 @@ const App = () => {
     const insets = useSafeAreaInsets();
 
     return (
-      <LinearGradient
+      <GradientView
         colors={['rgba(0, 86, 183, 1)', 'rgba(0, 86, 183, 1)']}
         start={{x: 0, y: 0}}
         end={{x: 1, y: 0}}
@@ -154,7 +191,7 @@ const App = () => {
           translucent={true}
           backgroundColor="transparent"
         />
-      </LinearGradient>
+      </GradientView>
     );
   };
 
@@ -167,6 +204,7 @@ const App = () => {
           <CartProvider>
             <ConfigProvider>
               <TradeProvider>
+                <GstConfigProvider>
                 <ModalProvider>
                   <SafeAreaView style={{flex: 1}}>
                     <Navigation
@@ -179,6 +217,7 @@ const App = () => {
                   <ModalManager />
                   <BrokerAlertModal />
                 </ModalProvider>
+                </GstConfigProvider>
               </TradeProvider>
             </ConfigProvider>
           </CartProvider>

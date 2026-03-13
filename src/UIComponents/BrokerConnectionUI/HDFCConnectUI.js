@@ -22,6 +22,7 @@ import {
 } from 'lucide-react-native';
 import {WebView} from 'react-native-webview';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
+import GradientView from '../../components/GradientView';
 import hdfcIcon from '../../assets/hdfc_securities.png';
 import HDFCHelpContent from './HelpUI/HDFCHelpContent';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,9 +69,12 @@ const HDFCConnectUI = ({
   return (
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
-        {/* Header - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-        <View
-          style={[styles.headerRow, {backgroundColor: '#0B3D91', overflow: 'hidden'}]}>
+        {/* Header */}
+        <GradientView
+          colors={['#0B3D91', '#0056B7']}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.headerRow}>
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
             <TouchableOpacity onPress={onClose} style={styles.backButton}>
               <ChevronLeft size={24} color="#000" />
@@ -78,7 +82,7 @@ const HDFCConnectUI = ({
             <Text style={styles.headerTitle}>Connect to HDFC</Text>
           </View>
           <Image source={hdfcIcon} style={styles.headerIcon} />
-        </View>
+        </GradientView>
 
         {/* WebView Full Screen */}
         {showWebView ? (
@@ -231,10 +235,9 @@ const HDFCConnectUI = ({
 
 const styles = StyleSheet.create({
   fullScreen: {
-    flex: 1,
     width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',

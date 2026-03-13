@@ -9,7 +9,7 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
-import SVGGradient from '../../components/SVGGradient';
+import GradientView from '../../components/GradientView';
 import axios from 'axios';
 import { getAuth } from '@react-native-firebase/auth';
 import { useNavigation } from '@react-navigation/native';
@@ -24,7 +24,9 @@ import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import Toast from 'react-native-toast-message';
 import DisconnectBrokerModal from './DisconnectBrokerModal';
+import ManageConnectionsModal from './ManageConnectionsModal';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
+import eventEmitter from '../../components/EventEmitter';
 
 const cross = require('../../assets/cross.png');
 const tick = require('../../assets/checked.png');
@@ -64,10 +66,37 @@ const SubscriptionScreen = () => {
 
   const [showDisconnectBroker, setShowDisconnectBroker] = useState(false);
   const [withoutBrokerLoader, setWithoutBrokerLoader] = useState(false);
+  const [showManageConnections, setShowManageConnections] = useState(false);
 
   const handleContinueWithoutBrokerSave = async () => {
     try {
       setWithoutBrokerLoader(true);
+
+      // Revoke OAuth token for Groww before disconnecting (frees up connection slot)
+      const currentBroker = broker || brokername;
+      if (currentBroker === 'Groww') {
+        console.log('[Disconnect] Revoking Groww OAuth token...');
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}groww/revoke`,
+            { user_email: userEmail },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            }
+          );
+          console.log('[Disconnect] Groww token revoked successfully');
+        } catch (revokeError) {
+          // Continue with disconnect even if revoke fails (token may already be invalid)
+          console.warn('[Disconnect] Groww revoke failed (continuing anyway):', revokeError.message);
+        }
+      }
 
       // First API call
       await axios.put(
@@ -212,13 +241,35 @@ const SubscriptionScreen = () => {
     console.log('🔍 [SUBSCRIPTION SCREEN] isBrokerConnected:', isBrokerConnected);
   }, [brokerStatus, broker, userDetails, isBrokerConnected]);
 
+  // Listen for broker connection events and refresh data
+  useEffect(() => {
+    const handleRefresh = async (data) => {
+      console.log('🔄 [SUBSCRIPTION SCREEN] Refresh event received:', data);
+      // Refresh all data after broker connection
+      try {
+        await getUserDeatils();
+        await fetchBrokerStatusModal();
+        await getAllFunds();
+        console.log('✅ [SUBSCRIPTION SCREEN] Data refreshed successfully after broker connection');
+      } catch (error) {
+        console.error('❌ [SUBSCRIPTION SCREEN] Error refreshing data:', error);
+      }
+    };
+
+    eventEmitter.on('refreshEvent', handleRefresh);
+
+    return () => {
+      eventEmitter.off('refreshEvent', handleRefresh);
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
-      <SVGGradient
+      {/* Header */}
+      <GradientView
         colors={[gradient1, gradient2]}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
         style={styles.headerGradient}>
         <View style={styles.headerRow}>
           <TouchableOpacity
@@ -239,7 +290,7 @@ const SubscriptionScreen = () => {
             </Text>
           </View>
         </View>
-      </SVGGradient>
+      </GradientView>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -265,9 +316,11 @@ const SubscriptionScreen = () => {
             brokerStatus === null ||
             brokerStatus === 'Disconnected'
           ) ? (
-            // View replaces LinearGradient for iOS Fabric compatibility
-            <View
-              style={[styles.brokerStatusCard, {backgroundColor: gradient1, overflow: 'hidden'}]}>
+            <GradientView
+              colors={[gradient1, gradient2]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.brokerStatusCard}>
               <View style={styles.brokerStatusContent}>
                 <View style={styles.brokerStatusLeft}>
                   <Image source={tick} style={styles.statusIcon} />
@@ -285,7 +338,7 @@ const SubscriptionScreen = () => {
                   <Pencil size={14} color="#fff" />
                 </TouchableOpacity>
               </View>
-            </View>
+            </GradientView>
           ) : (
             <View style={styles.errorContainer}>
               <View style={styles.errorMessage}>
@@ -307,9 +360,12 @@ const SubscriptionScreen = () => {
           )}
         </View>
 
-        {/* Broker & Funds Info Card - View replaces LinearGradient for iOS Fabric compatibility */}
-        <View
-          style={[styles.infoCard, {backgroundColor: gradient1, overflow: 'hidden'}]}>
+        {/* Broker & Funds Info Card */}
+        <GradientView
+          colors={[gradient1, gradient2]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.infoCard}>
           <Text style={styles.infoCardTitle}>Your Broker & Funds Info</Text>
 
           <View style={styles.infoRow}>
@@ -359,7 +415,7 @@ const SubscriptionScreen = () => {
                 : 'N/A'}
             </Text>
           </View>
-        </View>
+        </GradientView>
       </ScrollView>
 
       {!(
@@ -367,12 +423,20 @@ const SubscriptionScreen = () => {
         brokerStatus === null ||
         brokerStatus === 'Disconnected'
       ) && (
-          <TouchableOpacity
-            style={[styles.button, styles.disconnectButton]}
-            onPress={() => setShowDisconnectBroker(true)}
-            activeOpacity={0.8}>
-            <Text style={styles.disconnectText}>Disconnect</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[styles.button, styles.manageButton]}
+              onPress={() => setShowManageConnections(true)}
+              activeOpacity={0.8}>
+              <Text style={styles.manageButtonText}>Manage Connections</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, styles.disconnectButton]}
+              onPress={() => setShowDisconnectBroker(true)}
+              activeOpacity={0.8}>
+              <Text style={styles.disconnectText}>Disconnect</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
       {/* Bottom doodle & info section */}
@@ -408,6 +472,22 @@ const SubscriptionScreen = () => {
           withoutBrokerLoader={withoutBrokerLoader}
         />
       )}
+
+      {/* Manage Connections Modal */}
+      <ManageConnectionsModal
+        visible={showManageConnections}
+        onClose={() => setShowManageConnections(false)}
+        onConnectionRemoved={(removedBroker) => {
+          console.log('[ManageConnections] Removed:', removedBroker);
+          fetchBrokerStatusModal();
+        }}
+        onBrokerSwitched={(switchedBroker) => {
+          console.log('[ManageConnections] Switched to:', switchedBroker);
+          setBroker(switchedBroker);
+          fetchBrokerStatusModal();
+          getAllFunds();
+        }}
+      />
     </View>
   );
 };
@@ -416,6 +496,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F0F0F0',
+  },
+  scrollContent: {
+    paddingBottom: 150, // Space for "Did You Know?" section at bottom
+    flexGrow: 1,
   },
   button: {
     width: screenWidth - 100,
@@ -450,7 +534,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 0,
   },
+  buttonRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 12,
+    marginBottom: 20,
+  },
+  manageButton: {
+    flex: 1,
+    backgroundColor: '#0056B7',
+  },
+  manageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
   disconnectButton: {
+    flex: 1,
     backgroundColor: '#dc2626',
   },
   disconnectText: {

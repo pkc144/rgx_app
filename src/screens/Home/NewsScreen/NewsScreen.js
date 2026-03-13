@@ -10,7 +10,7 @@ import {
   Dimensions,
   ScrollView,Image,ActivityIndicator
 } from "react-native";
-import SVGGradient from "../../../components/SVGGradient";
+import GradientView from '../../../components/GradientView';
 import LinkOpeningWeb from "./LinkOpeningWeb";
 import WebView from "react-native-webview";
 import AwesomeAlert from 'react-native-awesome-alerts';
@@ -575,27 +575,31 @@ const renderNewsItem = ({ item }) => (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
 
-            <SVGGradient
-              colors={[gradient1 || mainColor, gradient2 || mainColor]}
-              start={{x: 0, y: 0}}
-              end={{x: 1, y: 1}}
-              style={{
-                paddingHorizontal: 10,
-                paddingBottom:10,
-                borderBottomLeftRadius: 30,
-                borderBottomRightRadius: 30,
-                overflow: 'hidden',
-              }}
+            <GradientView 
+            colors={[mainColor,secondaryColor]} // Adjust gradient colors
+            start={{ x: 1, y: 1 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              paddingHorizontal: 10,
+              paddingBottom:10,
+              borderBottomLeftRadius: 30,
+              borderBottomRightRadius: 30,
+            }}
             >
               <View>
-              {/* iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
               <View style={{ flexDirection: 'row',justifyContent:'center',marginHorizontal:0 }}>
-               <View
-                 style={[styles.borderGradient, {backgroundColor: '#262626', overflow: 'hidden'}]} // Border gradient container
+               <GradientView
+                 colors={['#262626','#262626']} // Border gradient colors
+                 start={{ x: 0, y: 0 }}
+                 end={{ x: 1, y: 1 }}
+                 style={styles.borderGradient} // Border gradient container
                >
-                 {/* Inner Container - iOS Fabric compatibility: LinearGradient replaced with View */}
-                 <View
-                   style={[styles.linearGradient, {backgroundColor: '#262626', overflow: 'hidden'}]} // Apply solid color as background
+                 {/* Inner Container */}
+                 <GradientView
+                   colors={['#262626','#262626']}
+                   start={{ x: 0, y: 0 }}
+                   end={{ x: 1, y: 1 }}
+                   style={styles.linearGradient} // Apply gradient as background
                  >
                  <TouchableOpacity style={styles.searchBarContainer}>
                 <TextInput
@@ -615,8 +619,8 @@ const renderNewsItem = ({ item }) => (
   </TouchableOpacity>
                 <Icon1 name='search' size={12} color={'#fff'}/>
               </TouchableOpacity>
-               </View>
-               </View>
+               </GradientView>
+               </GradientView>
              
       
 
@@ -650,7 +654,7 @@ const renderNewsItem = ({ item }) => (
 
 </View>
               </View>
-            </SVGGradient>
+            </GradientView>
         <View style={{borderBottomWidth:1,borderBottomColor:'#eee',paddingBottom:10,}}>
           <View style={{flexDirection:'row',justifyContent:'space-between',  }}>
           </View>

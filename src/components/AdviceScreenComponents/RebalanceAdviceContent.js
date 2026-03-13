@@ -257,10 +257,6 @@ const RebalanceAdviceContent = React.memo(
         const userExecution = latest?.subscriberExecutions?.find(
           execution => execution?.user_email === userEmail,
         );
-        if (userExecution && userExecution.status === 'executed') {
-          return null;
-        }
-
         const matchingFailedTrades = modelPortfolioRepairTrades?.find(
           trade =>
             trade.modelId === latest?.model_Id &&
@@ -297,11 +293,21 @@ const RebalanceAdviceContent = React.memo(
         const verifyEdis = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/angelone/verify-edis',
+              `${server.ccxtServer.baseUrl}angelone/verify-edis`,
               {
                 apiKey: angelOneApiKey,
                 jwtToken: userDetails.jwtToken,
                 userEmail: userDetails?.email,
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
               },
             );
             setEdisStatus(response.data);
@@ -324,10 +330,20 @@ const RebalanceAdviceContent = React.memo(
         const verifyDhanEdis = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/dhan/edis-status',
+              `${server.ccxtServer.baseUrl}dhan/edis-status`,
               {
                 clientId: clientCode,
                 accessToken: userDetails.jwtToken,
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
               },
             );
             console.log('Dhan Reponse', response.data);
@@ -349,11 +365,21 @@ const RebalanceAdviceContent = React.memo(
         const verifyZerodhaDdpi = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/zerodha/save-ddpi-status',
+              `${server.ccxtServer.baseUrl}zerodha/save-ddpi-status`,
               {
                 apiKey: zerodhaApiKey,
                 accessToken: userDetails.jwtToken,
                 userEmail: userDetails.email,
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
               },
             );
             setZerodhaDdpiStatus(response.data);
@@ -371,10 +397,20 @@ const RebalanceAdviceContent = React.memo(
         const verifyZerodhaEdis = async () => {
           try {
             const response = await axios.post(
-              'https://ccxtprod.alphaquark.in/zerodha/save-edis-status',
+              `${server.ccxtServer.baseUrl}zerodha/save-edis-status`,
               {
                 userEmail: userDetails.email,
                 edis: userDetails.edis,
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
               },
             );
 
@@ -410,12 +446,7 @@ const RebalanceAdviceContent = React.memo(
         <View
           style={[
             styles.cardContainerReb,
-            {
-              width: screenWidth * 0.92,
-              marginVertical: type === 'All' ? 5 : 0,
-              marginHorizontal: screenWidth * 0.04,
-              overflow: 'hidden',
-            },
+            {width: screenWidth * 0.94, marginVertical: type === 'All' ? 5 : 0},
           ]}>
           {item && (
             <RebalanceCard
@@ -488,7 +519,7 @@ const RebalanceAdviceContent = React.memo(
           <View style={styles.tabContainer}></View>
         )}
 
-        <View style={[styles.carouselContainer, {overflow: 'hidden'}]}>
+        <View style={styles.carouselContainer}>
           <FlatList
             data={filteredAndSortedStrategies}
             renderItem={renderPortfolioVerticalList}
@@ -496,9 +527,9 @@ const RebalanceAdviceContent = React.memo(
             horizontal={type === 'home'}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{paddingHorizontal: 0}}
-            initialNumToRender={3}
-            maxToRenderPerBatch={3}
-            windowSize={3}
+            initialNumToRender={10} // Render only 10 items initially
+            maxToRenderPerBatch={10} // Render 10 more in subsequent batches
+            windowSize={5} // Number of screens worth of data to render
             removeClippedSubviews={true}
             ListEmptyComponent={
               isDatafetchinMP ? ( // Show loading animation if still loading
@@ -590,6 +621,10 @@ const RebalanceAdviceContent = React.memo(
             selectNonBroker={selectNonBroker}
             setShowDdpiModal={setShowDdpiModal}
             brokerStatus={userDetails?.connect_broker_status}
+            onModifyInvestment={() => {
+              setOpenRebalanceModal(false);
+              setShowstatusModal(true);
+            }}
           />
         ) : null}
 
@@ -598,6 +633,7 @@ const RebalanceAdviceContent = React.memo(
             openSuccessModal={openSuccessModal}
             setOpenSucessModal={setOpenSucessModal}
             orderPlacementResponse={OrderPlacementResponse}
+            currentBroker={broker}
           />
         )}
 

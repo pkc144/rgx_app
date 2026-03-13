@@ -1,19 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Dimensions } from 'react-native';
-import { getAuth } from '@react-native-firebase/auth';
+import React, {useRef, useState, useEffect} from 'react';
+import {getAuth} from '@react-native-firebase/auth';
 import server from '../../utils/serverConfig';
 import axios from 'axios';
-
 import Config from 'react-native-config';
-import { generateToken } from '../../utils/SecurityTokenManager';
-
+import {generateToken} from '../../utils/SecurityTokenManager';
 import AliceBlueConnectUI from '../../UIComponents/BrokerConnectionUI/AliceBlueConnectUI';
-import { useTrade } from '../../screens/TradeContext';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
+import {useTrade} from '../../screens/TradeContext';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const ALICEBLUE_APPCODE_URL = 'https://ant.aliceblueonline.com/?appcode=7WMf5NotZe';
 
 const AliceBlueConnect = ({
   isVisible,
@@ -22,37 +19,15 @@ const AliceBlueConnect = ({
   setShowBrokerModal,
   fetchBrokerStatusModal,
 }) => {
-  const { configData } = useTrade();
-  const showAlert = useModalStore((state) => state.showAlert);
-  const [apiKey, setApiKey] = useState('');
-  const [clientCode, setclientCode] = useState('');
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [isPasswordVisibleup, setIsPasswordVisibleup] = useState(false);
-  const [showWebView, setShowWebView] = useState(false);
-  const [authUrl, setAuthUrl] = useState('');
+  const {configData} = useTrade();
+  const showAlert = useModalStore(state => state.showAlert);
+  const hasProcessedCallback = useRef(false);
 
   const [loading, setLoading] = useState(false);
-  const [sessionToken, setSessionToken] = useState(null);
-  const [apiSession, setApiSession] = useState(null);
+
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;
-  const [helpVisible, setHelpVisible] = useState(false);
-
-  const sheet = useRef(null);
-  const scrollViewRef = useRef(null);
-  const parseQueryString = queryString => {
-    const params = {};
-    const query = queryString.startsWith('?')
-      ? queryString.substring(1)
-      : queryString;
-    const pairs = query.split('&');
-    pairs.forEach(pair => {
-      const [key, value] = pair.split('=');
-      params[decodeURIComponent(key)] = decodeURIComponent(value);
-    });
-    return params;
-  };
 
   const [userDetails, setUserDetails] = useState();
   const getUserDeatils = () => {
@@ -60,7 +35,8 @@ const AliceBlueConnect = ({
       .get(`${server.server.baseUrl}api/user/getUser/${userEmail}`, {
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain':
+            configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -78,128 +54,159 @@ const AliceBlueConnect = ({
 
   const userId = userDetails && userDetails._id;
 
-  const handleWebViewNavigationStateChange = newNavState => {
-    const { url } = newNavState;
-    console.log('here1', url);
-    if (url.includes('apisession=')) {
-      console.log('here2', url);
-      const queryParams = parseQueryString(url.split('?')[1]);
-      const sessionToken1 = queryParams.apisession;
-      if (sessionToken1) {
-        setApiSession(sessionToken1);
-        console.log('here3', sessionToken1);
-        setShowWebView(false);
-        setShowAliceblueModal(false);
+  // Get common headers for API calls
+  const getHeaders = () => ({
+    'Content-Type': 'application/json',
+    'X-Advisor-Subdomain':
+      configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+    'aq-encrypted-key': generateToken(
+      Config.REACT_APP_AQ_KEYS,
+      Config.REACT_APP_AQ_SECRET,
+    ),
+  });
+
+  // Parse query string from URL
+  const parseQueryString = queryString => {
+    const params = {};
+    if (!queryString) return params;
+    const query = queryString.startsWith('?')
+      ? queryString.substring(1)
+      : queryString;
+    const pairs = query.split('&');
+    pairs.forEach(pair => {
+      const [key, value] = pair.split('=');
+      if (key && value) {
+        params[decodeURIComponent(key)] = decodeURIComponent(value);
+      }
+    });
+    return params;
+  };
+
+  // Handle WebView navigation - detect OAuth callback params
+  // Prod callback returns: user_broker=AliceBlue&status=0&access_token=xxx&client_id=yyy
+  const handleWebViewNavigationStateChange = navState => {
+    const {url} = navState;
+    console.log('[AliceBlue] WebView URL:', url);
+
+    if (hasProcessedCallback.current) return;
+
+    // Detect callback URL with AliceBlue OAuth params
+    if (
+      url.includes('user_broker=AliceBlue') ||
+      (url.includes('access_token=') && url.includes('client_id='))
+    ) {
+      const queryString = url.split('?')[1];
+      if (!queryString) return;
+
+      const queryParams = parseQueryString(queryString);
+      const status = queryParams.status;
+      const accessToken = queryParams.access_token;
+      const clientId = queryParams.client_id;
+
+      if (status === '1') {
+        // AliceBlue connection failed
+        const errorMsg = queryParams.error || 'Connection failed';
+        console.error('[AliceBlue] OAuth failed:', errorMsg);
+        hasProcessedCallback.current = true;
+        showAlert(
+          'error',
+          'Connection Failed',
+          `AliceBlue connection failed: ${errorMsg}`,
+        );
+        onClose();
+        return;
+      }
+
+      if (status === '0' && accessToken && clientId) {
+        hasProcessedCallback.current = true;
+        saveBrokerConnection(accessToken, clientId);
       }
     }
   };
 
-  const connectBrokerDbUpadte = () => {
-    setLoading(true);
-    console.log('heref');
-    // isToastShown.current = true; // Prevent further execution
-    let brokerData = {
-      uid: userId,
-      user_broker: 'AliceBlue',
-      clientCode: clientCode,
-      apiKey: apiKey,
-    };
-    console.log('broker data:', brokerData);
-    let config = {
-      method: 'put',
-      url: `${server.server.baseUrl}api/user/connect-broker`,
-      data: brokerData,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-        'aq-encrypted-key': generateToken(
-          Config.REACT_APP_AQ_KEYS,
-          Config.REACT_APP_AQ_SECRET,
-        ),
-      },
-      // No need for JSON.stringify
-    };
+  // Save broker connection (same as prod connectBroker.js AliceBlue callback)
+  const saveBrokerConnection = async (accessToken, clientId) => {
+    if (!userId) {
+      showAlert('error', 'Error', 'User not found. Please try again.');
+      return;
+    }
 
-    axios
-      .request(config)
-      .then(response => {
-        let newBrokerData = {
-          user_email: userEmail,
-          user_broker: 'AliceBlue',
-        };
-        let A1_broker = {
+    setLoading(true);
+    try {
+      const brokerData = {
+        uid: userId,
+        user_broker: 'AliceBlue',
+        jwtToken: accessToken,
+        clientCode: clientId,
+      };
+
+      await axios.request({
+        method: 'put',
+        url: `${server.server.baseUrl}api/user/connect-broker`,
+        headers: getHeaders(),
+        data: JSON.stringify(brokerData),
+      });
+
+      console.log(
+        '[AliceBlue] Broker connected successfully, updating model portfolio...',
+      );
+
+      // Update model portfolio (non-critical)
+      try {
+        await axios.request({
           method: 'post',
           url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
-          data: JSON.stringify(newBrokerData),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': encryptApiKey(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        };
-        console.log('success brooooohh');
-        fetchBrokerStatusModal();
-        eventEmitter.emit('refreshEvent', { source: 'AliceBlue broker connection' });
-        showAlert('success', 'Connected Successfully', 'Your AliceBlue broker has been connected successfully!');
-        setLoading(false);
-        setShowAliceblueModal(false);
-        setShowBrokerModal(false);
-      })
-      .catch(error => {
-        console.log(
-          'Error:----',
-          error.response ? error.response.data : error.message,
+          data: JSON.stringify({
+            user_email: userEmail,
+            user_broker: 'AliceBlue',
+          }),
+          headers: getHeaders(),
+        });
+        console.log('[AliceBlue] Model portfolio updated successfully');
+      } catch (err) {
+        console.warn(
+          '[AliceBlue] Model portfolio update failed (non-critical):',
+          err,
         );
-        setLoading(false);
-        showAlert('error', 'Connection Error', 'Failed to connect to AliceBlue. Please try again.');
+      }
+
+      setLoading(false);
+      fetchBrokerStatusModal();
+      eventEmitter.emit('refreshEvent', {
+        source: 'AliceBlue broker connection',
       });
+      showAlert(
+        'success',
+        'Connected Successfully',
+        'Your AliceBlue broker has been connected successfully!',
+      );
+      onClose();
+      setShowBrokerModal(false);
+    } catch (error) {
+      console.error('[AliceBlue] Connection error:', error);
+      setLoading(false);
+      showAlert(
+        'error',
+        'Connection Error',
+        'Failed to connect AliceBlue. Please try again.',
+      );
+    }
   };
 
-
-  const [shouldRenderContent, setShouldRenderContent] = React.useState(false);
+  // Reset callback flag when modal opens
   useEffect(() => {
     if (isVisible) {
-      setShouldRenderContent(true);
-      sheet.current?.present();
-    } else {
-      sheet.current?.dismiss();
+      hasProcessedCallback.current = false;
     }
   }, [isVisible]);
-
-  const [activeSections, setActiveSections] = useState([]);
-
-  const OpenHelpModal = () => {
-    // console.log('modal:',helpVisible)
-    setHelpVisible(true);
-  };
 
   return (
     <AliceBlueConnectUI
       isVisible={isVisible}
       onClose={onClose}
-      shouldRenderContent={shouldRenderContent}
-      clientCode={clientCode}
-      apiKey={apiKey}
-      setclientCode={setclientCode}
-      setApiKey={setApiKey}
-      handleConnect={connectBrokerDbUpadte}
-      scrollViewRef={scrollViewRef}
-      setIsPasswordVisible={setIsPasswordVisible}
-      setIsPasswordVisibleup={setIsPasswordVisibleup}
-      isPasswordVisible={isPasswordVisible}
-      isPasswordVisibleup={isPasswordVisibleup}
-      showWebView={showWebView}
-      OpenHelpModal={OpenHelpModal}
-      setShowAliceblueModal={setShowBrokerModal}
-      connectBrokerDbUpadte={connectBrokerDbUpadte}
-      activeSections={activeSections}
-      setActiveSections={setActiveSections}
+      authUrl={ALICEBLUE_APPCODE_URL}
+      handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
       loading={loading}
-      helpVisible={helpVisible}
-      setHelpVisible={setHelpVisible}
     />
   );
 };

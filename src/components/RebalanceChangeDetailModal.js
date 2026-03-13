@@ -19,6 +19,7 @@ import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
 import axios from 'axios';
 import {useTrade} from '../screens/TradeContext';
+import {useConfig} from '../context/ConfigContext';
 
 const {width} = Dimensions.get('window');
 
@@ -52,6 +53,8 @@ const RebalanceChangeDetailModal = ({
   handleAcceptClick,
 }) => {
   const {configData} = useTrade();
+  const config = useConfig();
+  const gradient2 = config?.gradient2 || '#0076FB';
   const [rebalanceData, setRebalanceData] = useState([]);
   const [tableData, setTableData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -179,7 +182,7 @@ const RebalanceChangeDetailModal = ({
           style={[
             styles.previousHoldingsText,
             item.isNewStock
-              ? {color: '#0066FF', fontWeight: '700'}
+              ? {color: gradient2, fontWeight: '700'}
               : {color: '#000'},
           ]}>
           {item.previousHoldings}
@@ -243,12 +246,12 @@ const RebalanceChangeDetailModal = ({
 
           {loading ? (
             <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color="#0056B7" />
+              <ActivityIndicator size="large" color={gradient2} />
             </View>
           ) : (
             <>
               {/* Table Header */}
-              <View style={styles.tableHeaderContainer}>
+              <View style={[styles.tableHeaderContainer, {backgroundColor: gradient2}]}>
                 <View style={styles.tableHeader}>
                   <Text style={[styles.headerCell, styles.headerCellStock]}>
                     Stocks
@@ -274,7 +277,7 @@ const RebalanceChangeDetailModal = ({
 
               {/* Accept Button */}
               <TouchableOpacity
-                style={styles.acceptButton}
+                style={[styles.acceptButton, {backgroundColor: gradient2}]}
                 onPress={handleAcceptClick}>
                 <Text style={styles.acceptButtonText}>View and act</Text>
               </TouchableOpacity>

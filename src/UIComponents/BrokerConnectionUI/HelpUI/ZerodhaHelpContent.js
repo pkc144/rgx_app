@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
-import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const ZerodhaHelpContent = ({ expanded, onExpandChange }) => {
-  const brokerConnectRedirectURL = Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
   useEffect(() => {
     onExpandChange?.(expanded);
   }, [expanded]);
@@ -21,107 +19,151 @@ const ZerodhaHelpContent = ({ expanded, onExpandChange }) => {
             videoId="tqJTYfgkS04"
           />
         </View>
-        <Text style={styles.title}>Steps to Obtain API and Secret key for Zerodha:</Text>
+        <Text style={styles.title}>How to Connect Zerodha</Text>
         <View style={styles.content}>
           <Text style={styles.instruction}>
-            1. Visit{' '}
-            <Text onPress={() => Linking.openURL('https://developers.kite.trade/apps')} style={styles.link}>
-              https://developers.kite.trade/apps
-            </Text>{' '}in your browser and sign up/login with your credentials.
+            1. Click the <Text style={{ fontWeight: 'bold' }}>"Login to Zerodha"</Text> button below.
           </Text>
 
-          {/* STEP 2 */}
           <Text style={styles.instruction}>
-            2. Locate and click on the <Text style={{ fontWeight: 'bold' }}>Create New App</Text> button in the top-right corner of the dashboard.
+            2. You will be redirected to Zerodha's secure login page.
           </Text>
 
-          {/* STEP 3 */}
           <Text style={styles.instruction}>
-            3. Configure your application with these details:
+            3. Enter your <Text style={{ fontWeight: 'bold' }}>Zerodha User ID</Text> and <Text style={{ fontWeight: 'bold' }}>Password</Text>.
           </Text>
-          <Text style={styles.instruction}>- Select <Text style={{ fontWeight: 'bold' }}>Personal</Text> for application type.</Text>
-          <Text style={styles.instruction}>- Enter a descriptive name for your application.</Text>
-          <Text style={styles.instruction}>- Input your <Text style={{ fontWeight: 'bold' }}>Zerodha Client ID</Text>.</Text>
-          <Text style={styles.instruction}>- Set the Redirect URL to:</Text>
 
-          <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://ccxt.alphaquark.in/zerodha/callback")}>
-              <Text style={styles.link}>https://ccxt.alphaquark.in/zerodha/callback</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.instruction}>
+            4. Complete the <Text style={{ fontWeight: 'bold' }}>2-Factor Authentication</Text> (TOTP/PIN) as prompted.
+          </Text>
 
-          <Text style={styles.instruction}>- Set the Postback URL to:</Text>
-
-          <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://ccxt.alphaquark.in/zerodha/postback")}>
-              <Text style={styles.link}>https://ccxt.alphaquark.in/zerodha/postback</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.instruction}>- Provide a brief description (e.g., "Trading advisory application for client portfolio management").</Text>
-
-
+          <Text style={styles.instruction}>
+            5. Review and authorize the app to access your Zerodha account.
+          </Text>
         </View>
         {expanded && (
           <>
-            <Text style={styles.instruction}>- Click <Text style={{ fontWeight: 'bold' }}>Create</Text> to submit your application.</Text>
-
-            {/* STEP 4 */}
             <Text style={styles.instruction}>
-              4. Retrieve and secure your API credentials:
+              6. After successful authorization, you'll be redirected back to the app.
             </Text>
-            <Text style={styles.instruction}>- You will be redirected to the applications dashboard.</Text>
-            <Text style={styles.instruction}>- Click on your newly created application to view its details.</Text>
-            <Text style={styles.instruction}>- Locate your <Text style={{ fontWeight: 'bold' }}>API Key</Text> on this page.</Text>
-            <Text style={styles.instruction}>- Click <Text style={{ fontWeight: 'bold' }}>Show Secret</Text> to reveal your API Secret.</Text>
-            <Text style={styles.instruction}>- Securely copy both your <Text style={{ fontWeight: 'bold' }}>API Key</Text> and <Text style={{ fontWeight: 'bold' }}>API Secret</Text>.</Text>
 
-            {/* STEP 5 */}
             <Text style={styles.instruction}>
-              5. Paste these details in our app to complete your Zerodha API integration.
+              7. Your Zerodha account is now connected! You can now place orders directly from the app.
             </Text>
+
+            <View style={styles.noteContainer}>
+              <Text style={styles.noteTitle}>Important Notes:</Text>
+              <Text style={styles.noteText}>
+                • Your login credentials are never stored in our app - authentication is handled securely by Zerodha.
+              </Text>
+              <Text style={styles.noteText}>
+                • You'll need to reconnect your account daily as Zerodha tokens expire every 24 hours.
+              </Text>
+              <Text style={styles.noteText}>
+                • Make sure you have an active Zerodha trading account before connecting.
+              </Text>
+              <Text style={styles.noteText}>
+                • If you face any issues, try logging out from Zerodha's website first, then reconnect.
+              </Text>
+            </View>
+
+            <View style={styles.supportContainer}>
+              <Text style={styles.supportTitle}>Need Help?</Text>
+              <Text style={styles.supportText}>
+                If you encounter any issues during the connection process, please contact our support team.
+              </Text>
+            </View>
           </>
         )}
-
       </ScrollView>
-
     </View>
-
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 12,
+    flex: 1,
   },
   videoBox: {
+    marginBottom: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#000',
     alignItems: 'center',
-    marginVertical: 12,
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 13,
-    fontFamily: 'Poppins-Medium',
-    color: "#222",
-    marginBottom: 9,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  content: {
+    marginTop: 8,
   },
   instruction: {
     fontSize: 14,
-    color: "#222",
-    marginBottom: 8,
+    color: '#374151',
+    marginBottom: 12,
+    lineHeight: 20,
+    fontFamily: 'Poppins-Regular',
+  },
+  linkContainer: {
+    backgroundColor: '#EBF5FF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#0056B7',
   },
   link: {
-    color: "#1890FF",
-    textDecorationLine: 'underline',
-  },
-  toggleContainer: {
-    marginTop: 6,
-    marginBottom: 10,
-  },
-  toggleText: {
-    fontSize: 14,
+    color: '#0056B7',
     fontWeight: '600',
-    color: '#1890FF',
+    fontSize: 13,
+    fontFamily: 'Poppins-Medium',
+  },
+  noteContainer: {
+    backgroundColor: '#FEF3C7',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  noteTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 8,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  noteText: {
+    fontSize: 13,
+    color: '#78350F',
+    marginBottom: 6,
+    lineHeight: 18,
+    fontFamily: 'Poppins-Regular',
+  },
+  supportContainer: {
+    backgroundColor: '#F3F4F6',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  supportTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 6,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  supportText: {
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 18,
+    fontFamily: 'Poppins-Regular',
   },
 });
 

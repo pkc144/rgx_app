@@ -15,20 +15,16 @@ import {
   Modal,
   Image,
 } from 'react-native';
-// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
-// import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../../components/GradientView';
 import {useNavigation} from '@react-navigation/native';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import {useConfig} from '../../context/ConfigContext';
 import APP_VARIANTS from '../../utils/Config';
 import {Key} from 'lucide-react-native';
 import {getAuth} from '@react-native-firebase/auth';
 
-// Import enhanced storage utilities
 import {
   updateRACodeAndConfig,
-  refreshAllAppData,
-  isUserDataComplete,
 } from '../../utils/storageUtils';
 import {useTrade} from '../TradeContext';
 import {
@@ -40,8 +36,9 @@ const SignUpRADetails = ({route}) => {
   const {reloadConfigData} = useTrade();
   const navigation = useNavigation();
   const config = useConfig();
-  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
-  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[validVariant] || {};
 
   // Get logo and app name from config (S3) or fallback
   const logo = config?.logo || fallbackConfig.logo;
@@ -205,9 +202,11 @@ const SignUpRADetails = ({route}) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        {/* View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background */}
-        <View
-          style={[styles.container, {backgroundColor: gradient1, overflow: 'hidden'}]}>
+        <GradientView
+          colors={[gradient1, gradient2]}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.container}>
           <StatusBar barStyle="light-content" />
 
           {/* Background Circles */}
@@ -304,7 +303,7 @@ const SignUpRADetails = ({route}) => {
               <Text style={styles.signInLink}>Sign In</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </GradientView>
       </TouchableWithoutFeedback>
       <Modal
         transparent

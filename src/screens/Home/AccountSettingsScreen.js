@@ -23,11 +23,10 @@ import {
   LogOut,
   Bell,
   Bookmark,
-  Trash2,
 } from 'lucide-react-native';
-import SVGGradient from '../../components/SVGGradient';
+import GradientView from '../../components/GradientView';
 import {getAuth} from '@react-native-firebase/auth';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import {useTrade} from '../TradeContext';
 
 // inside your component
@@ -35,8 +34,9 @@ import {useTrade} from '../TradeContext';
 const AccountSettingsScreen = ({navigation}) => {
   const {userDetails} = useTrade();
   const config = useConfig();
-  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
-  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[validVariant] || {};
 
   // Get background logo from config (S3) or fallback
   // showBackgroundLogo: true/false - controls visibility (default: true for backwards compatibility)
@@ -66,7 +66,7 @@ const AccountSettingsScreen = ({navigation}) => {
         {
           icon: Crown,
           label: 'My Subscription',
-          onPress: () => handleMenuPress('Model Portfolio'),
+          onPress: () => handleMenuPress('MySubscriptionsScreen'),
         },
 ...((() => {
           const hideChangeManagerCodes = Config?.REACT_APP_HIDE_CHANGE_MANAGER_FOR_CODES
@@ -138,12 +138,6 @@ const AccountSettingsScreen = ({navigation}) => {
           onPress: () => handleMenuPress('Terms & Conditions'),
         },
         {
-          icon: Trash2,
-          label: 'Delete Account',
-          onPress: () => handleMenuPress('DeleteAccount'),
-          isDestructive: true,
-        },
-        {
           icon: LogOut,
           label: 'Log Out',
           onPress: () => handleMenuPress('Logout'),
@@ -175,37 +169,34 @@ const AccountSettingsScreen = ({navigation}) => {
     return name?.length > 0 ? name[0]?.toUpperCase() : '';
   };
 
-  const renderMenuItem = (item, isLast) => {
-    const isDestructiveItem = item.isLogout || item.isDestructive;
-    return (
-      <TouchableOpacity
-        key={item.label}
-        style={[styles.menuItem, isLast && styles.menuItemLast]}
-        onPress={item.onPress}
-        activeOpacity={0.7}>
-        <View style={styles.menuItemLeft}>
-          <View
-            style={[
-              styles.iconContainer,
-              isDestructiveItem && styles.logoutIconContainer,
-            ]}>
-            <item.icon size={18} color={isDestructiveItem ? '#FF4444' : '#FFFFFF'} />
-          </View>
-          <Text style={[styles.menuItemText, item.isDestructive && {color: '#FF4444'}]}>
-            {item.label}
-          </Text>
+  const renderMenuItem = (item, isLast) => (
+    <TouchableOpacity
+      key={item.label}
+      style={[styles.menuItem, isLast && styles.menuItemLast]}
+      onPress={item.onPress}
+      activeOpacity={0.7}>
+      <View style={styles.menuItemLeft}>
+        <View
+          style={[
+            styles.iconContainer,
+            item.isLogout && styles.logoutIconContainer,
+          ]}>
+          <item.icon size={18} color={item.isLogout ? '#FF4444' : '#FFFFFF'} />
         </View>
-        <ChevronRight size={20} color="#FFFFFF" />
-      </TouchableOpacity>
-    );
-  };
+        <Text style={[styles.menuItemText, item.isLogout && styles.logoutText]}>
+          {item.label}
+        </Text>
+      </View>
+      <ChevronRight size={20} color="#FFFFFF" />
+    </TouchableOpacity>
+  );
 
   // Get gradient colors from config
   const gradientStart = config?.gradient1 || '#002651';
   const gradientEnd = config?.gradient2 || '#0056B7';
 
   return (
-    <SVGGradient
+    <GradientView
       colors={[gradientStart, gradientEnd]}
       start={{x: 0, y: 0}}
       end={{x: 0, y: 1}}
@@ -333,7 +324,7 @@ const AccountSettingsScreen = ({navigation}) => {
           })()}
         </ScrollView>
       </SafeAreaView>
-    </SVGGradient>
+    </GradientView>
   );
 };
 

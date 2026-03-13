@@ -170,7 +170,7 @@ const ModifyInvestment = ({
           userEmail
         )}&modelName=${encodeURIComponent(
           modelName
-        )}&user_broker=${encodeURIComponent(userBroker)}`,
+        )}&user_broker=${encodeURIComponent(userBroker || "")}`,
         {
           headers: {
             "Content-Type": "application/json",

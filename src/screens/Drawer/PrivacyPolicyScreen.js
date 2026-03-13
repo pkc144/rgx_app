@@ -10,7 +10,7 @@ import {useNavigation} from '@react-navigation/native';
 import {ChevronLeft} from 'lucide-react-native';
 import WebView from 'react-native-webview';
 import {useTrade} from '../TradeContext';
-// LinearGradient import removed - replaced with View for iOS Fabric compatibility
+import GradientView from '../../components/GradientView';
 import {useConfig} from '../../context/ConfigContext';
 
 const PrivacyPolicyScreen = () => {
@@ -39,9 +39,12 @@ const PrivacyPolicyScreen = () => {
 
   return (
     <View style={{flex: 1}}>
-      {/* Header - iOS Fabric compatibility: LinearGradient replaced with View using solid backgroundColor */}
-      <View
-        style={[styles.headerContainer, {backgroundColor: gradient1, overflow: 'hidden'}]}>
+      {/* Header */}
+      <GradientView
+        colors={[gradient1, gradient2]}
+        start={{x: 0, y: 0}}
+        end={{x: 0, y: 1}}
+        style={styles.headerContainer}>
         <View style={styles.headerRow}>
           <TouchableOpacity
             style={styles.backButton}
@@ -50,7 +53,7 @@ const PrivacyPolicyScreen = () => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Privacy Policy</Text>
         </View>
-      </View>
+      </GradientView>
 
       {/* WebView or fallback */}
       {isValidUrl ? (

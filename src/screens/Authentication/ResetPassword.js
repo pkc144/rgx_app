@@ -12,20 +12,24 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
-  Image,
 } from 'react-native';
 import {ArrowLeft, Mail} from 'lucide-react-native';
 import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
-// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
-// import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../../components/GradientView';
+import {Image} from 'react-native';
 import {useConfig} from '../../context/ConfigContext';
 // --- ASSETS ---
 const AlphaQuarkLogo = require('../../assets/logo.png');
 
 const ResetPasswordScreen = () => {
   const config = useConfig();
-  const {logo: LogoComponent, themeColor} = config || {};
+  const {logo: LogoComponent, themeColor, mainColor} = config || {};
+
+  // Dynamic colors from config with fallbacks
+  const gradient1 = config?.gradient1 || 'rgba(0, 38, 81, 1)';
+  const gradient2 = config?.gradient2 || 'rgba(0, 86, 183, 1)';
+  const iconColor = mainColor || themeColor || 'rgba(100, 199, 59, 1)';
 
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
@@ -35,6 +39,9 @@ const ResetPasswordScreen = () => {
   const [success, setSuccess] = useState(false);
 
   const handleResetPassword = async () => {
+    console.log('🔄 handleResetPassword called');
+    console.log('📧 Email entered:', email);
+
     setLoading(true);
     setErrorShow(false);
     setSuccess(false);
@@ -47,9 +54,13 @@ const ResetPasswordScreen = () => {
     }
 
     try {
-      await auth().sendPasswordResetEmail(email);
+      const trimmedEmail = email.trim();
+      console.log('📤 Sending password reset email to:', trimmedEmail);
+      await auth().sendPasswordResetEmail(trimmedEmail);
+      console.log('✅ Password reset email sent successfully');
       setSuccess(true);
     } catch (error) {
+      console.log('❌ Error sending reset email:', error.code, error.message);
       setError(error.message);
       setErrorShow(true);
     } finally {
@@ -67,9 +78,11 @@ const ResetPasswordScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={dismissError}>
-        {/* View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background */}
-        <View
-          style={[styles.container, {backgroundColor: 'rgba(0, 38, 81, 1)', overflow: 'hidden'}]}>
+        <GradientView
+          colors={[gradient1, gradient2]}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.container}>
           <StatusBar barStyle="light-content" />
 
           {/* Decorative background circles */}
@@ -106,7 +119,7 @@ const ResetPasswordScreen = () => {
 
               <Text style={styles.logoText}>
                 {' '}
-                {Config?.REACT_APP_WHITE_LABEL_TEXT}
+                {config?.REACT_APP_WHITE_LABEL_TEXT}
               </Text>
             </View>
 
@@ -119,7 +132,7 @@ const ResetPasswordScreen = () => {
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Mail
-                color="rgba(100, 199, 59, 1)"
+                color={iconColor}
                 size={16}
                 style={styles.inputIcon}
               />
@@ -157,7 +170,7 @@ const ResetPasswordScreen = () => {
               <Text style={styles.resetButtonText}>Send Link</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </GradientView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );

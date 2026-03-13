@@ -22,7 +22,7 @@ import {
   ArrowRight,
 } from 'lucide-react-native';
 import {useNavigation} from '@react-navigation/native';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../GradientView';
 import Svg, {SvgUri} from 'react-native-svg';
 import LinePattern from '../../assets/Vector.svg';
 import Icon from 'react-native-vector-icons/AntDesign';
@@ -31,6 +31,8 @@ import Icon1 from 'react-native-vector-icons/Feather';
 const { width: ScreenWidth } = Dimensions.get('window');
 import moment from 'moment';
 import { useConfig } from '../../context/ConfigContext';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 
 const MPCardBespoke = ({
   modelName,
@@ -59,6 +61,8 @@ const MPCardBespoke = ({
   const mainColor = config?.mainColor || '#2053DB';
   const gradient1 = config?.gradient1 || '#3B82F6';
   const gradient2 = config?.gradient2 || '#1E3A8A';
+  const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   const animatedHeight = useRef(new Animated.Value(0)).current; // Initialize with height 0
 
@@ -277,11 +281,13 @@ const MPCardBespoke = ({
       setSelectedPricing(pricingOptions[0].period);
     }
   }, [pricingOptions]);
-  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
     <View>
-      <View
-        style={[styles.cardContainer, { borderRadius: isExpanded ? 0.5 : 4, flex:1, backgroundColor: '#fff', overflow: 'hidden' }]}>
+      <GradientView
+        colors={['#fff', '#fff', '#fff']}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={[styles.cardContainer, { borderRadius: isExpanded ? 0.5 : 4,flex:1, }]}>
         <View
           style={{
             position: 'absolute',
@@ -295,14 +301,17 @@ const MPCardBespoke = ({
           <LinePattern />
         </View>
  {discount > 0 && (
-    <View
+    <GradientView
+      colors={[stepCompletedColor, stepCompletedColor]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
       style={{
         position: 'absolute',
-        top: 8,
+        top: 12,
         left: 0,
-        paddingVertical: 3,
-        paddingHorizontal: 10,
-        backgroundColor: '#58a100',
+        paddingVertical: 4,
+        paddingHorizontal: 12,
+
         borderTopRightRadius:12,
         borderBottomRightRadius:12,
         zIndex: 10,
@@ -311,19 +320,18 @@ const MPCardBespoke = ({
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.2,
         shadowRadius: 2,
-        overflow: 'hidden',
       }}
     >
       <Text
         style={{
-          fontSize: 11,
+          fontSize: 10,
           color: '#fff',
           fontFamily: 'Poppins-Medium',
         }}
       >
         Save {discount}%
       </Text>
-    </View>
+    </GradientView>
   )}
 
 
@@ -350,9 +358,9 @@ const MPCardBespoke = ({
               marginLeft: 20,
             }}
           >
-            <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
               {/* 💰 Current + Original Price Section */}
-              <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
                  {discount > 0 && (
                   <Text
                     style={{
@@ -360,7 +368,6 @@ const MPCardBespoke = ({
                       color: '#9CA3AF',
                       fontFamily: 'Poppins-Regular',
                       textDecorationLine: 'line-through',
-                      marginRight: 6,
                     }}
                   >
                     ₹ {originalPrice ? originalPrice.toFixed(2) : '-'}
@@ -371,13 +378,24 @@ const MPCardBespoke = ({
                     fontSize: 14,
                     color: '#1F2937',
                     fontFamily: 'Poppins-SemiBold',
-                    marginRight: 8,
                   }}
                 >
-                  ₹ {currentPrice ? currentPrice.toFixed(2) : displayPrice || '-'}
+                  ₹ {currentPrice ? (configGst && configGstWithText ? withGst(currentPrice)?.toFixed(2) : currentPrice?.toFixed(2)) : displayPrice || '-'}
                 </Text>
+                {configGst && (
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: '#6B7280',
+                      fontFamily: 'Poppins-Regular',
+                      marginTop: -2,
+                    }}
+                  >
+                    {configGstWithText ? 'including GST' : '+ GST'}
+                  </Text>
+                )}
 
-               
+
               </View>
 
               {/* 🎁 Save Tag */}
@@ -474,7 +492,7 @@ const MPCardBespoke = ({
             </TouchableOpacity>
           )}
         </View>
-      </View>
+      </GradientView>
 
       {/* {isExpanded && (
                 <Animated.View style={[styles.animatedSection, { height: animatedHeight }]}>
@@ -512,10 +530,10 @@ cardContainer: {
 
     subscribedBadge: {
     position: 'absolute',
-    top: 10,
-    right: 16,
+    top: -10,
+    right: 8,
     backgroundColor: '#FACC15', // nice yellow
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
     zIndex: 1,
@@ -620,7 +638,6 @@ buttonContainer: {
   },
   investButton: {
     flex: 1,
-    backgroundColor: '#2053DB',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 3,

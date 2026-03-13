@@ -6,11 +6,9 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-// LinearGradient import removed - using View with solid backgroundColor for iOS Fabric compatibility
-// import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../../components/GradientView';
 import {getAuth, signOut} from '@react-native-firebase/auth';
 import {GoogleSignin} from '@react-native-google-signin/google-signin';
-import Config from 'react-native-config';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,14 +29,11 @@ const LogoutScreen = ({navigation}) => {
 
   const auth = getAuth();
 
-  // Configure Google Sign-In with googleWebClientId from backend config (with .env fallback)
+  // Configure Google Sign-In with webClientId from config (matches LoginScreen)
   useEffect(() => {
-    const webClientId = config?.googleWebClientId || Config.GOOGLE_WEB_CLIENT_ID;
-    if (webClientId) {
+    if (config?.googleWebClientId) {
       GoogleSignin.configure({
-        webClientId,
-        iosClientId: Config.GOOGLE_IOS_CLIENT_ID || undefined,
-        offlineAccess: false,
+        webClientId: config.googleWebClientId,
       });
     }
   }, [config?.googleWebClientId]);
@@ -79,14 +74,16 @@ const LogoutScreen = ({navigation}) => {
   }, []);
 
   return (
-    // View replaces LinearGradient for iOS Fabric compatibility - uses first gradient color as solid background
-    <View
-      style={[styles.container, {backgroundColor: gradient1, overflow: 'hidden'}]}>
+    <GradientView
+      colors={[gradient1, gradient2]}
+      start={{x: 0, y: 0}}
+      end={{x: 0, y: 1}}
+      style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.text}>Logging out...</Text>
         <ActivityIndicator size="large" color="#fff" />
       </View>
-    </View>
+    </GradientView>
   );
 };
 

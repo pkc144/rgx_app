@@ -78,13 +78,12 @@ const AngleOneConnectUI = ({ isVisible, onClose, authUrl, handleWebViewNavigatio
 
 const styles = StyleSheet.create({
   fullScreen: {
-    flex: 1,
     width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   header: {
-    minHeight: 56,
+    height: 56,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -106,6 +105,7 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
+    width: SCREEN_WIDTH,
   },
 });
 

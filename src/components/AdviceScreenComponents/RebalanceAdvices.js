@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {View, Text, StyleSheet, ActivityIndicator} from 'react-native';
+import {View, Text, StyleSheet, ActivityIndicator, Alert} from 'react-native';
 import axios from 'axios';
 import server from '../../utils/serverConfig';
 
@@ -163,6 +163,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   }, [modelPortfolioStrategy]);
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
@@ -170,6 +171,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
     }
   };
 
+  const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
   // zerodha start
   const fetchBrokerStatusModal = async () => {
     if (userEmail) {
@@ -229,8 +231,11 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
 
     if (!latest) return null;
 
+    // Find execution for this user AND current broker
     const userExecution = latest?.subscriberExecutions?.find(
-      execution => execution?.user_email === userEmail,
+      execution =>
+        execution?.user_email === userEmail &&
+        (!broker || execution?.user_broker === broker),
     );
 
     return {userExecution, latest, matchingPortfolioItem};
@@ -240,19 +245,17 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const [stockDataForModal, setStockDataForModal] = useState([]);
   // console.log('store Modal Name-------------', storeModalName);
   const handleAcceptRebalanceWithoutBroker = async () => {
-    console.log('\n🚀 ============ CONTINUE WITHOUT BROKER ============');
-    console.log('📧 User Email:', userEmail);
-    console.log('📊 Model Name:', storeModalName);
-
+    console.log('Continue without broker - saving no-broker preference and calling rebalance/calculate');
     setStoreModalName(storeModalName);
 
     try {
-      const apiUrl = `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${userEmail}/${storeModalName}`;
-      console.log('🌐 API URL:', apiUrl);
-      console.log('⏳ Making API call...');
-
-      const response = await axios.get(
-        apiUrl,
+      // Save no-broker preference (matches web version)
+      await axios.put(
+        `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
+        {
+          userEmail: userEmail,
+          noBrokerRequired: true,
+        },
         {
           headers: {
             'Content-Type': 'application/json',
@@ -265,45 +268,69 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
         },
       );
 
-      console.log('✅ API Response received');
-      console.log('📦 Response Status:', response.status);
-      console.log('📦 Response Data:', JSON.stringify(response.data, null, 2));
-
-      const orderResults =
-        response.data?.data?.user_net_pf_model?.order_results || [];
-
-      console.log('📊 Order Results Count:', orderResults.length);
-      console.log('📊 Order Results:', orderResults);
-
-      // setApiResponseData(response.data);
-      setStoreModalName(storeModalName);
-      setStockDataForModal(orderResults);
-
-      console.log('✅ Closing broker modal...');
+      // Close broker modal, set non-broker flag, then call handleAcceptRebalance
       setBrokerModel(false);
+      setSelectNonBroker(true);
 
-      console.log('✅ Opening status modal...');
-      setShowstatusModal(true);
+      // Directly call rebalance/calculate with DummyBroker payload
+      // (matching web version's handleContinueWithoutBroker flow)
+      setLoading(true);
+      let payload = {
+        userEmail: userEmail,
+        userBroker: "DummyBroker",
+        modelName: storeModalName?.trim(),
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+        model_id: modelPortfolioModelId,
+        userFund: "0",
+        flag: 0,
+      };
 
-      console.log('============================================\n');
+      let config = {
+        method: "post",
+        url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
+        data: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "aq-encrypted-key": generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        },
+      };
+
+      console.log("Rebalance Calculate Payload (without broker):", JSON.stringify(payload));
+
+      const response = await axios.request(config);
+      console.log("Rebalance Calculate Response (without broker):", JSON.stringify(response.data));
+
+      const { buy, sell } = response.data;
+      const updatedStockTypeAndSymbol = [
+        ...(buy || []).map((item) => ({
+          Symbol: item.symbol,
+          Type: "BUY",
+          Exchange: item.exchange,
+          Quantity: item.quantity,
+        })),
+        ...(sell || []).map((item) => ({
+          Symbol: item.symbol,
+          Type: "SELL",
+          Exchange: item.exchange,
+          Quantity: item.quantity,
+        })),
+      ];
+
+      setStockTypeAndSymbol(updatedStockTypeAndSymbol);
+      setCalculatedPortfolioData(response.data);
+      setLoading(false);
+      setOpenRebalanceModal(true);
+      setModelObjectId(modelPortfolioModelId);
     } catch (error) {
-      console.error('\n❌ ============ CONTINUE WITHOUT BROKER ERROR ============');
-      console.error('Error Type:', error.name);
-      console.error('Error Message:', error.message);
-
+      console.error('Continue without broker error:', error.message);
       if (error.response) {
-        console.error('📦 Response Status:', error.response.status);
-        console.error('📦 Response Data:', error.response.data);
-        console.error('📦 Response Headers:', error.response.headers);
-      } else if (error.request) {
-        console.error('📦 No response received');
-        console.error('Request:', error.request);
-      } else {
-        console.error('📦 Request setup error');
+        console.error('Response:', error.response.status, error.response.data);
       }
-
-      console.error('Error Stack:', error.stack);
-      console.error('============================================\n');
+      setLoading(false);
     }
   };
 
@@ -320,6 +347,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
               Config.REACT_APP_AQ_SECRET,
             ),
           },
+          timeout: 15000,
         },
       );
       const orderResults =
@@ -327,8 +355,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
       setApiResponseData(response.data);
       setStockDataForModal(orderResults);
     } catch (error) {
-      setShowstatusModal(true);
-      console.error('Error fetching stock data:', error);
+      console.warn('Error fetching stock data:', error?.message);
     }
     setShowstatusModal(true);
   };
@@ -372,9 +399,6 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const handleStockListUpdate = updatedOrderResultsList => {
     setApiResponseData(currentApiResponse => {
       if (!currentApiResponse?.data?.user_net_pf_model) {
-        console.error(
-          'Cannot update state: Current API response data is missing or incomplete.',
-        );
         return currentApiResponse;
       }
       const updatedResponse = JSON.parse(JSON.stringify(currentApiResponse));
@@ -394,23 +418,170 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const [modelObjectId,setModelObjectId]=useState();
 const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
 
-  const handleAcceptRebalance = () => {
+  const handleAcceptRebalance = async () => {
     setStoreModalName(storeModalName);
     setRebalanceExecutionStatus(userExecution?.status);
     setLoading(true);
+
+    // If we're coming from step 2 (MPStatusModal), skip broker validations and proceed to step 3
+    // The user has already gone through broker checks in step 1
+    if (currentStep === 2) {
+      // Proceed directly to calculation for step 3
+      const effectiveBroker = broker ? broker : "DummyBroker";
+      let payload = {
+        userEmail: userEmail,
+        userBroker: effectiveBroker,
+        modelName: storeModalName?.trim(),
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+        model_id: modelPortfolioModelId,
+        userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
+        flag: effectiveBroker === "DummyBroker" ? 0 : (selectedOption === "option1" ? 1 : 0),
+      };
+
+      if (broker === "IIFL Securities") {
+        payload = {
+          ...payload,
+          clientCode: clientCode,
+        };
+      } else if (broker === "ICICI Direct") {
+        payload = {
+          ...payload,
+          apiKey: checkValidApiAnSecret(apiKey),
+          secretKey: checkValidApiAnSecret(secretKey),
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Upstox") {
+        payload = {
+          ...payload,
+          apiKey: checkValidApiAnSecret(apiKey),
+          apiSecret: checkValidApiAnSecret(secretKey),
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Angel One") {
+        payload = {
+          ...payload,
+          apiKey: angelOneApiKey,
+          jwtToken: jwtToken,
+        };
+      } else if (broker === "Zerodha") {
+        payload = {
+          ...payload,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Dhan") {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Groww") {
+        payload = {
+          ...payload,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Hdfc Securities") {
+        payload = {
+          ...payload,
+          apiKey: checkValidApiAnSecret(apiKey),
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Kotak") {
+        payload = {
+          ...payload,
+          consumerKey: checkValidApiAnSecret(apiKey),
+          consumerSecret: checkValidApiAnSecret(secretKey),
+          accessToken: jwtToken,
+          viewToken: viewToken,
+          sid: sid,
+          serverId: serverId,
+        };
+      } else if (broker === "AliceBlue") {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+          apiKey: apiKey,
+        };
+      } else if (broker === "Fyers") {
+        payload = {
+          ...payload,
+          clientId: clientCode,
+          accessToken: jwtToken,
+        };
+      } else if (broker === "Motilal Oswal") {
+        payload = {
+          ...payload,
+          clientCode: clientCode,
+          accessToken: jwtToken,
+          apiKey: checkValidApiAnSecret(apiKey),
+        };
+      }
+
+      let config = {
+        method: "post",
+        url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
+        data: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "aq-encrypted-key": generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET
+          ),
+        },
+      };
+      console.log("Rebalance Calculate Payload (from step 2):", JSON.stringify(payload));
+
+      try {
+        const response = await axios.request(config);
+        console.log("Rebalance Calculate API Response (from step 2):", JSON.stringify(response.data));
+        console.log("[RebalanceAdvices] Calculate response - buy count:", response.data?.buy?.length, "sell count:", response.data?.sell?.length, "status:", response.data?.status, "message:", response.data?.message);
+        const { buy, sell } = response.data;
+
+        const updatedStockTypeAndSymbol = [
+          ...(buy || []).map((item) => ({
+            Symbol: item.symbol,
+            Type: "BUY",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+          ...(sell || []).map((item) => ({
+            Symbol: item.symbol,
+            Type: "SELL",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+        ];
+
+        setStockTypeAndSymbol(updatedStockTypeAndSymbol);
+        setLoading(false);
+        setCalculatedPortfolioData(response.data);
+        console.log("Opening RebalanceModal (step 3) from step 2");
+        setOpenRebalanceModal(true);
+        setStoreModalName(storeModalName);
+        setModelObjectId(modelPortfolioModelId);
+        return;
+      } catch (error) {
+        console.log("Error in step 2 to step 3 transition:", error);
+        console.log("Error response:", error.response);
+        setLoading(false);
+        throw error;
+      }
+    }
 
     // If user already chose to continue without broker, skip broker validation
     // This prevents infinite loop when MPStatusModal calls handleAcceptRebalance on close
     if (selectNonBroker) {
       // User already chose "Continue without broker" - proceed with DummyBroker flow
+      // Always use flag=0 for DummyBroker since there are no brokerage costs to optimize
       let payload = {
         userEmail: userEmail,
         userBroker: "DummyBroker",
         modelName: storeModalName,
-        advisor: configData?.config?.REACT_APP_ADVISOR_TAG,
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: "0",
-        flag: selectedOption === "option1" ? 1 : 0,
+        flag: 0,
       };
 
       let config = {
@@ -427,19 +598,20 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         },
       };
 
-      axios
-        .request(config)
-        .then((response) => {
-          setCalculatedPortfolioData(response.data);
-          setOpenRebalanceModal(true);
-          setStoreModalName(storeModalName);
-          setModelObjectId(modelPortfolioModelId);
-          setLoading(false);
-        })
-        .catch((error) => {
-          console.log(error);
-          setLoading(false);
-        });
+      try {
+        const response = await axios.request(config);
+        console.log("Rebalance Calculate API Response (DummyBroker):", JSON.stringify(response.data));
+
+        setCalculatedPortfolioData(response.data);
+        setOpenRebalanceModal(true);
+        setStoreModalName(storeModalName);
+        setModelObjectId(modelPortfolioModelId);
+        setLoading(false);
+      } catch (error) {
+        console.log(error);
+        setLoading(false);
+        throw error; // Re-throw to let caller know it failed
+      }
       return;
     }
 
@@ -469,14 +641,15 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       setLoading(false);
     } else {
 
+      const effectiveBroker = broker ? broker : "DummyBroker";
       let payload = {
         userEmail: userEmail,
-        userBroker: broker ? broker : "DummyBroker",
-        modelName: storeModalName,
-        advisor: configData?.config?.REACT_APP_ADVISOR_TAG,
+        userBroker: effectiveBroker,
+        modelName: storeModalName?.trim(),
+        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
-        flag: selectedOption === "option1" ? 1 : 0,
+        flag: effectiveBroker === "DummyBroker" ? 0 : (selectedOption === "option1" ? 1 : 0),
       };
       if (broker === "IIFL Securities") {
         payload = {
@@ -506,8 +679,6 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       } else if (broker === "Zerodha") {
         payload = {
           ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          SecretKey: checkValidApiAnSecret(secretKey),
           accessToken: jwtToken,
         };
       } else if (broker === "Dhan") {
@@ -571,39 +742,52 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           ),
         },
       };
-      axios
-        .request(config)
-        .then((response) => {
-          const { buy, sell } = response.data;
+      console.log("Rebalance Calculate Payload:", JSON.stringify(payload));
 
-          const updatedStockTypeAndSymbol = [
-            ...buy.map((item) => ({
-              Symbol: item.symbol,
-              Type: "BUY",
-              Exchange: item.exchange,
-              Quantity: item.quantity,
-            })),
-            ...sell.map((item) => ({
-              Symbol: item.symbol,
-              Type: "SELL",
-              Exchange: item.exchange,
-              Quantity: item.quantity,
-            })),
-          ];
+      try {
+        const response = await axios.request(config);
+        console.log("Rebalance Calculate API Response:", JSON.stringify(response.data));
+        console.log("[RebalanceAdvices] Calculate response (else) - buy count:", response.data?.buy?.length, "sell count:", response.data?.sell?.length, "status:", response.data?.status, "message:", response.data?.message);
+        const { buy, sell } = response.data;
 
-          setStockTypeAndSymbol(updatedStockTypeAndSymbol);
-          setLoading(false);
+        // Empty trades: still open modal so it can show "Portfolio Already Aligned" UI
+        if ((!buy || buy.length === 0) && (!sell || sell.length === 0)) {
           setCalculatedPortfolioData(response.data);
-          console.log("Here response data",response.data);
+          setLoading(false);
           setOpenRebalanceModal(true);
           setStoreModalName(storeModalName);
-          setModelObjectId(modelId);
-        })
-        .catch((error) => {
-          console.log(error);
-          console.log("Here error",error.response);
-          setLoading(false);
-        });
+          setModelObjectId(modelPortfolioModelId);
+          return;
+        }
+
+        const updatedStockTypeAndSymbol = [
+          ...buy.map((item) => ({
+            Symbol: item.symbol,
+            Type: "BUY",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+          ...sell.map((item) => ({
+            Symbol: item.symbol,
+            Type: "SELL",
+            Exchange: item.exchange,
+            Quantity: item.quantity,
+          })),
+        ];
+
+        setStockTypeAndSymbol(updatedStockTypeAndSymbol);
+        setLoading(false);
+        setCalculatedPortfolioData(response.data);
+        console.log("Here response data",response.data);
+        setOpenRebalanceModal(true);
+        setStoreModalName(storeModalName);
+        setModelObjectId(modelPortfolioModelId);
+      } catch (error) {
+        console.log(error);
+        console.log("Here error",error.response);
+        setLoading(false);
+        throw error; // Re-throw to let caller know it failed
+      }
     }
   };
 
@@ -675,6 +859,8 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         setuserExecution={setuserExecution}
         setmatchingFailedTrades={setmatchingFailedTrades}
         setRepairmessageModal={setRepairmessageModal}
+        selectedOption={selectedOption}
+        setSelectedOption={setSelectedOption}
       />
 
       {(brokerModel || OpenTokenExpireModel) && (
@@ -685,7 +871,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           setOpenTokenExpireModel={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
           withoutBroker={false}
-          handleAcceptRebalance={() => console.log('...')}
+          handleAcceptRebalance={handleAcceptRebalance}
           handleAcceptRebalanceWithoutBroker={
             handleAcceptRebalanceWithoutBroker
           }
@@ -734,6 +920,10 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           setShowDdpiModal={setShowDdpiModal}
           rebalanceExecutionStatus={RebalanceExecutionStatus}
           setModelPortfolioModelId={setModelPortfolioModelId}
+          onModifyInvestment={() => {
+            setOpenRebalanceModal(false);
+            setShowstatusModal(true);
+          }}
         />
       ) : null}
 
@@ -742,6 +932,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           openSuccessModal={openSuccessModal}
           setOpenSucessModal={setOpenSucessModal}
           orderPlacementResponse={OrderPlacementResponse}
+          currentBroker={broker}
         />
       )}
 
@@ -863,6 +1054,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           stepsData={stepsData}
           setCurrentStep={setCurrentStep}
           brokerStatus={brokerStatus}
+          isRetryRebalance={!!matchfailed || userExecution?.status === 'partial'}
         />
       ) : null}
 

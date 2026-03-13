@@ -13,26 +13,27 @@ const AliceblueHelpContent = ({expanded, onExpandChange }) => {
   return (
     <View>
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 0 }}>
-      <View style={styles.videoBox}>
+      {/* TODO: Replace with public AliceBlue tutorial video - current video is private */}
+      {/* <View style={styles.videoBox}>
         <YoutubePlayer
           height={screenHeight * 0.24}
           width={screenWidth * 0.86}
           play={false}
           videoId="m906oWzMe0o"
         />
-      </View>
-      <Text style={styles.title}>Steps to Obtain User ID and API Key for AliceBlue:</Text>
+      </View> */}
+      <Text style={styles.title}>Steps to Obtain Client ID and API Key for AliceBlue:</Text>
 <View style={styles.content}>
              <Text
                           style={styles.instruction}
                         >
-                          1. Visit{" "}
+                          1. Login to{" "}
                           <Text onPress={() => Linking.openURL('https://ant.aliceblueonline.com/apps')}  style={styles.link}>ant.aliceblueonline.com/apps</Text>{' '}
-                          with your phone number, password, and TOTP or mobile OTP.
+                          using your phone number, password, and TOTP or mobile OTP.
                         </Text>
-                      
+
                         <Text style={styles.instruction}>
-                          2. If prompted with a Risk Disclosure pop-up, click "Proceed."
+                          2. If prompted with a Risk Disclosure pop-up, click "Proceed".
                         </Text>
                        
                        
@@ -43,10 +44,14 @@ const AliceblueHelpContent = ({expanded, onExpandChange }) => {
       {expanded && (
         <>
           <Text style={styles.instruction}>
-                          3. In the "Apps" tab, select "API Key," click "Copy," and paste it on your platform. Note: This key is valid for 24 hours, so generate a new one daily.
+                          3. In the "Apps" tab, click on "API Key", then click "Copy" and paste it into the API Key field below. {'\n'}
+                          <Text style={styles.note}>Note: API Key is valid for 24 hours only. Generate a new one daily.</Text>
                         </Text>
                         <Text style={styles.instruction}>
-                          4. For your User ID, click the profile icon, go to "Your Profile/Settings," and copy the client ID under your name. Paste it onto your platform.
+                          4. To get your Client ID: Click the profile icon → "Your Profile/Settings" → Copy the Client ID shown under your name → Paste it into the Client ID field below.
+                        </Text>
+                        <Text style={styles.instruction}>
+                          5. After entering both Client ID and API Key, click "Connect AliceBlue" to complete the connection.
                         </Text>
         </>
       )}
@@ -81,6 +86,11 @@ const styles = StyleSheet.create({
   link: {
     color: "#1890FF",
     textDecorationLine: 'underline',
+  },
+  note: {
+    fontSize: 12,
+    color: "#666",
+    fontStyle: 'italic',
   },
   toggleContainer: {
     marginTop: 6,

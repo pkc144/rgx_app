@@ -20,6 +20,8 @@ import Config from 'react-native-config';
 import { getAuth } from '@react-native-firebase/auth';
 import axios from 'axios';
 import { useTrade } from '../../screens/TradeContext';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 import RenderHTML from 'react-native-render-html';
 import { useWindowDimensions } from 'react-native';
 import PlanCard from './PlanCard';
@@ -29,6 +31,7 @@ const CARD_SPACING = 16;
 
 const AllPlanDetails = ({ type }) => {
   const { userDetails, planList,configData } = useTrade();
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
   const [activeIndex, setActiveIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [allStrategy, setAllStrategy] = useState([]);
@@ -374,7 +377,7 @@ const renderPlanItem = ({ item }) => {
                   {selectedPlan.onetimeOptions.map((opt, index) => (
                     <View key={index} style={styles.optionRow}>
                       <Text style={styles.optionLabel}>{opt.label || `${opt.duration} Days`}</Text>
-                      <Text style={styles.optionValue}>₹ {opt.amount}</Text>
+                      <Text style={styles.optionValue}>₹ {configGst && configGstWithText ? withGst(opt.amountWithoutGst || opt.amount) : (opt.amountWithoutGst || opt.amount)}{gstLabel(configGst, configGstWithText)}</Text>
                     </View>
                   ))}
                 </View>
@@ -392,7 +395,7 @@ const renderPlanItem = ({ item }) => {
                           {freq.charAt(0).toUpperCase() + freq.slice(1)}
                         </Text>
                         <Text style={styles.optionValue}>
-                          {price && Number(price) > 0 ? `₹ ${price}` : 'N/A'}
+                          {price && Number(price) > 0 ? `₹ ${configGst && configGstWithText ? withGst(selectedPlan.pricingWithoutGst?.[freq] || price) : (selectedPlan.pricingWithoutGst?.[freq] || price)}${gstLabel(configGst, configGstWithText)}` : 'N/A'}
                         </Text>
                       </View>
                     );

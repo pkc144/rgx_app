@@ -9,10 +9,13 @@ import {
   Dimensions 
 } from "react-native";
 import { X } from "lucide-react-native"; // modern close icon
+import { useConfig } from '../../context/ConfigContext';
 
 const { width } = Dimensions.get("window");
 
 const RebalanceDetailsModal = ({ visible, onClose, data }) => {
+  const config = useConfig();
+  const gradient2 = config?.gradient2 || '#0076FB';
   const latest = data?.latestRebalance;
 
   return (
@@ -29,7 +32,7 @@ const RebalanceDetailsModal = ({ visible, onClose, data }) => {
             <Text style={styles.modalTitle}>
               {latest?.updatedModelName || data?.model_name}
             </Text>
-            <View style={styles.tagWrapper}>
+            <View style={[styles.tagWrapper, {backgroundColor: gradient2}]}>
               <Text style={styles.tagText}>Rebalance</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeIcon}>
@@ -61,7 +64,7 @@ const RebalanceDetailsModal = ({ visible, onClose, data }) => {
           </ScrollView>
 
           {/* Footer Button */}
-          <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+          <TouchableOpacity onPress={onClose} style={[styles.modalCloseButton, {backgroundColor: gradient2}]}>
             <Text style={styles.modalCloseButtonText}>Close</Text>
           </TouchableOpacity>
         </View>

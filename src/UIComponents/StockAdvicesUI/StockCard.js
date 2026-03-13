@@ -7,6 +7,10 @@ import {
   StyleSheet,
   Animated,
   ActivityIndicator,
+  Modal,
+  Linking,
+  Alert,
+  ScrollView,
 } from 'react-native';
 import moment from 'moment';
 import {
@@ -17,11 +21,16 @@ import {
   MoveHorizontal,
   ArrowRight,
   Clock,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
+  Download,
+  X,
 } from 'lucide-react-native';
 import useLTPStore from '../../components/AdviceScreenComponents/DynamicText/useLtpStore';
 
 import BlurredComponent from '../../components/GlassmorphicText';
-import Config from 'react-native-config';
+import Config from '../../utils/safeConfig';
 import {useNavigation} from '@react-navigation/native';
 import { useConfig } from '../../context/ConfigContext';
 import PriceTextAdvice from '../../components/AdviceScreenComponents/DynamicText/PriceTextAdvice';
@@ -67,8 +76,10 @@ const StockCard = React.memo(
     onToggleExpand, // Toggle function
     animatedHeight,
     cancel,
-    edit
+    edit,
+    fileUrls = [] // Attachment URLs
   }) => {
+    const [showAttachmentModal, setShowAttachmentModal] = useState(false);
     const price = useLTPStore(state => state.ltps[symbol]);
     // console.log('price we are getting ---',price,symbol);
     // Calculate advisedRangeCondition at this level using the price from context
@@ -204,18 +215,31 @@ const StockCard = React.memo(
                     )}
                   </View>
 
-                  <View
-                    style={[
-                      styles.actionBadge,
-                      action === 'BUY' ? styles.buyBadge : styles.sellBadge,
-                    ]}>
-                    <Text
+                  <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                    {fileUrls && fileUrls.length > 0 && (
+                      <TouchableOpacity
+                        onPress={() => setShowAttachmentModal(true)}
+                        style={{
+                          padding: 6,
+                          borderRadius: 20,
+                          backgroundColor: '#EBF5FF',
+                        }}>
+                        <Paperclip size={16} color="#0056B7" />
+                      </TouchableOpacity>
+                    )}
+                    <View
                       style={[
-                        styles.actionText,
-                        action === 'BUY' ? styles.buyText : styles.sellText,
+                        styles.actionBadge,
+                        action === 'BUY' ? styles.buyBadge : styles.sellBadge,
                       ]}>
-                      {action}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.actionText,
+                          action === 'BUY' ? styles.buyText : styles.sellText,
+                        ]}>
+                        {action}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -546,6 +570,94 @@ const StockCard = React.memo(
             )}
           </View>
         </View>
+
+        {/* Attachment Modal */}
+        <Modal
+          visible={showAttachmentModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowAttachmentModal(false)}>
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+            activeOpacity={1}
+            onPress={() => setShowAttachmentModal(false)}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              style={{
+                backgroundColor: 'white',
+                borderRadius: 12,
+                padding: 20,
+                width: '85%',
+                maxHeight: '70%',
+              }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 16,
+                }}>
+                <Text style={{fontSize: 18, fontWeight: 'bold', color: '#1F2937'}}>
+                  Attachments ({fileUrls?.length || 0})
+                </Text>
+                <TouchableOpacity onPress={() => setShowAttachmentModal(false)}>
+                  <X size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView>
+                {fileUrls && fileUrls.map((url, idx) => {
+                  const isPdf = url.toLowerCase().endsWith('.pdf');
+                  const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+                  const fileName = url.split('/').pop() || `Attachment ${idx + 1}`;
+
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      onPress={() => {
+                        Linking.openURL(url).catch((err) =>
+                          Alert.alert('Error', 'Could not open attachment')
+                        );
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        padding: 12,
+                        backgroundColor: '#F9FAFB',
+                        borderRadius: 8,
+                        marginBottom: 8,
+                      }}>
+                      {isPdf ? (
+                        <FileText size={20} color="#EF4444" />
+                      ) : isImage ? (
+                        <ImageIcon size={20} color="#10B981" />
+                      ) : (
+                        <Download size={20} color="#6B7280" />
+                      )}
+                      <Text
+                        style={{
+                          flex: 1,
+                          marginLeft: 12,
+                          fontSize: 14,
+                          color: '#374151',
+                        }}
+                        numberOfLines={1}>
+                        {fileName}
+                      </Text>
+                      <Download size={16} color="#0056B7" />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
       </TouchableOpacity>
     );
   },

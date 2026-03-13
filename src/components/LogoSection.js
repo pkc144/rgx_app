@@ -1,15 +1,16 @@
 // src/components/LogoSection.js
 import React from 'react';
 import {View, Text, Image, StyleSheet, Dimensions} from 'react-native';
-import Config from 'react-native-config';
+import Config from '../utils/safeConfig';
 import {useConfig} from '../context/ConfigContext';
 import APP_VARIANTS from '../utils/Config';
 const screenWidth = Dimensions.get('window').width;
 
 const LogoSection = () => {
   const config = useConfig();
-  const selectedVariant = Config.APP_VARIANT || 'alphaquark';
-  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[validVariant] || {};
 
   // Use config from context, fallback to static config if not available
   const logo = config?.logo || fallbackConfig.logo;

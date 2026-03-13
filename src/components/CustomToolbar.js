@@ -29,7 +29,7 @@ import axios from 'axios';
 import Icon from 'react-native-vector-icons/AntDesign';
 import server from '../utils/serverConfig';
 import {useCart} from '../components/CartContext';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from './GradientView';
 import formatCurrency from '../utils/formatcurrency';
 import BrokerSelectionModal from './BrokerSelectionModal';
 import IIFLReviewTradeModal from './IIFLReviewTradeModal';
@@ -49,7 +49,7 @@ import FyersConnect from './BrokerConnectionModal/FyersConnect';
 import {useModal} from './ModalContext';
 import {useTrade} from '../screens/TradeContext';
 
-import Config from 'react-native-config';
+import Config from '../utils/safeConfig';
 import APP_VARIANTS from '../utils/Config';
 import MotilalModal from './BrokerConnectionModal/MotilalModal';
 import MarketIndices from './HomeScreenComponents/MarketIndices';
@@ -60,8 +60,9 @@ const {width, height} = Dimensions.get('window');
 const CustomToolbar = React.memo(({count, currentRoute}) => {
   const {configData, configLoading} = useTrade();
   const config = useConfig();
-  const selectedVariant = Config.APP_VARIANT || 'rgxresearch';
-  const fallbackConfig = APP_VARIANTS[selectedVariant] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+  const fallbackConfig = APP_VARIANTS[validVariant] || {};
 
   // Get toolbarlogo from config (S3) or fallback
   const toolbarLogo = config?.toolbarlogo || fallbackConfig.toolbarlogo || config?.logo || fallbackConfig.logo;
@@ -177,14 +178,14 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
   const getInitials = name => {
     return name?.length > 0 ? name[0]?.toUpperCase() : '';
   };
-  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
-    <View
+    <GradientView
+      colors={[gradient1, gradient2]}
+      start={{x: 0, y: 0}}
+      end={{x: 0, y: 1}}
       style={{
-        backgroundColor: gradient1,
         borderBottomLeftRadius: 15,
         borderBottomRightRadius: 15,
-        overflow: 'hidden',
       }}>
       <View style={styles.toolbar}>
         <View style={{flexDirection: 'row', alignItems: 'center'}}>
@@ -282,7 +283,7 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
       </View>
 
       <MarketIndices />
-    </View>
+    </GradientView>
   );
 });
 

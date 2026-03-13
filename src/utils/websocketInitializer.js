@@ -6,13 +6,15 @@ import { useTrade } from '../screens/TradeContext';
 import WebSocketManager from '../components/AdviceScreenComponents/DynamicText/WebSocketManager';
 
 export const useWebSocketInitializer = () => {
-  const { configData } = useTrade();
-  
+  const tradeContext = useTrade();
+  const configData = tradeContext?.configData;
+
   useEffect(() => {
+    if (!configData) return;
     const auth = getAuth();
     const user = auth.currentUser;
     const userEmail = user?.email;
-    
+
     // Initialize WebSocketManager with config data
     WebSocketManager.initialize(configData, userEmail);
   }, [configData]);

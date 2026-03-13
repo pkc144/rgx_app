@@ -18,7 +18,7 @@ import CryptoJS from 'react-native-crypto-js';
 import Toast from 'react-native-toast-message';
 import IsMarketHours from '../../utils/isMarketHours';
 import eventEmitter from '../../components/EventEmitter';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../../components/GradientView';
 import Config from 'react-native-config';
 import StepProgressBar from './StepProgressBar';
 import Checkbox from '../../components/AdviceScreenComponents/Checkbox';
@@ -34,6 +34,8 @@ import {generateToken} from '../../utils/SecurityTokenManager';
 import RebalancePreferenceModal from './RebalancePreferenceModal';
 import RebalanceDetailsModal from '../../components/AdviceScreenComponents/RebalanceDetailsModal';
 import RebalanceChangeDetailModal from '../../components/RebalanceChangeDetailModal';
+import PendingOrdersModal from '../../components/ModelPortfolioComponents/PendingOrdersModal';
+import {cancelOrder} from '../../services/BrokerOrderBookAPI';
 import {useTrade} from '../../screens/TradeContext';
 
 const RebalanceCard = ({
@@ -79,6 +81,8 @@ const RebalanceCard = ({
   setmatchingFailedTrades,
   userExecutionFinal,
   getUserDetails,
+  selectedOption,
+  setSelectedOption,
 }) => {
   const {configData} = useTrade();
   const angelOneApiKey = configData?.config.REACT_APP_ANGEL_ONE_API_KEY;
@@ -99,6 +103,7 @@ const RebalanceCard = ({
               Config.REACT_APP_AQ_SECRET,
             ),
           },
+          timeout: 10000,
         },
       );
       const freshUserDetails = response.data.User;
@@ -125,6 +130,8 @@ const RebalanceCard = ({
   const config = useConfig();
   const themeColor = config?.themeColor || '#0056B7';
   const mainColor = config?.mainColor || '#4CAAA0';
+  const gradient1 = config?.gradient1 || '#002651';
+  const gradient2 = config?.gradient2 || '#0672edff';
   const CardborderWidth = config?.CardborderWidth || 0;
   const cardElevation = config?.cardElevation || 3;
   const cardverticalmargin = config?.cardverticalmargin || 3;
@@ -154,12 +161,15 @@ const RebalanceCard = ({
     });
   };
 
-  // const [showstatusModal, setShowstatusModal] = useState(false);
+  // Pending orders modal state
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingOrders, setPendingOrders] = useState([]);
+  const [pendingRefreshLoading, setPendingRefreshLoading] = useState(false);
+  const [cancelRetryLoading, setCancelRetryLoading] = useState(false);
 
   const [showCheckboxModal, setShowCheckboxModal] = useState(false);
   const [apiResponseData, setApiResponseData] = useState(null);
   const [latestUpdatedResponse, setLatestUpdatedResponse] = useState(null);
-  const [selectedOption, setSelectedOption] = useState('option1');
   const [currentStep, setCurrentStep] = useState(1);
   const [modalVisibleDetails, setModalVisibleDetails] = useState(false);
   // Define 3 steps data to match web
@@ -195,6 +205,7 @@ const RebalanceCard = ({
               Config.REACT_APP_AQ_SECRET,
             ),
           },
+          timeout: 15000,
         },
       );
       const orderResults =
@@ -206,7 +217,7 @@ const RebalanceCard = ({
         setStockDataForModal(orderResults);
       }
     } catch (error) {
-      console.error('Error fetching stock data:', error);
+      console.warn('Error fetching stock data:', error?.message);
     }
     if (setShowstatusModal) {
       setShowstatusModal(true);
@@ -226,6 +237,7 @@ const RebalanceCard = ({
   };
 
   const checkValidApiAnSecret = data => {
+    if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
     const Key = bytesKey.toString(CryptoJS.enc.Utf8);
     if (Key) {
@@ -241,7 +253,207 @@ const RebalanceCard = ({
     eventEmitter.emit('openBrokerConnect', {isOpen2: true});
   };
 
-  const handleAcceptClick = () => {
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+    'aq-encrypted-key': generateToken(
+      Config.REACT_APP_AQ_KEYS,
+      Config.REACT_APP_AQ_SECRET,
+    ),
+  };
+
+  // Refresh pending order statuses from broker and show modal if still pending
+  const handlePendingRefresh = async () => {
+    setPendingRefreshLoading(true);
+
+    try {
+      // 1. Trigger live order status refresh from broker
+      await axios.post(
+        `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+        {
+          userEmail: userEmail,
+          modelName: modelName,
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+          broker: broker,
+        },
+        {headers: requestHeaders},
+      );
+
+      // 2. Wait for the poller to process
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // 3. Re-fetch strategy data
+      if (getUserDetails) {
+        await getUserDetails();
+      }
+
+      // 4. Re-check execution status after refresh
+      const latestResponse = await axios.get(
+        `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${userEmail}/${modelName}`,
+        {headers: requestHeaders},
+      );
+
+      const userNetPfModel = latestResponse.data?.data?.user_net_pf_model;
+      let latestPortfolio;
+      if (Array.isArray(userNetPfModel)) {
+        latestPortfolio = userNetPfModel.sort(
+          (a, b) => new Date(b.execDate) - new Date(a.execDate),
+        )[0];
+      } else {
+        latestPortfolio = userNetPfModel;
+      }
+
+      const orderResults = latestPortfolio?.order_results || [];
+      const latestStatus = latestResponse.data?.data?.subscriberExecution?.status;
+
+      if (latestStatus === 'executed' || latestStatus === 'partial') {
+        Toast.show({
+          type: 'success',
+          text1: latestStatus === 'executed'
+            ? 'All orders have been executed successfully!'
+            : 'Some orders were partially executed. You can retry the remaining ones.',
+        });
+        setPendingRefreshLoading(false);
+        return;
+      }
+
+      // 5. Still pending — show PendingOrdersModal with order details
+      setPendingOrders(orderResults);
+      setShowPendingModal(true);
+    } catch (error) {
+      console.error('Error refreshing pending orders:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to refresh order status',
+        text2: 'Please try again.',
+      });
+    }
+
+    setPendingRefreshLoading(false);
+  };
+
+  // Cancel open orders via API and re-open rebalance flow
+  const handleCancelAndRetry = async () => {
+    setCancelRetryLoading(true);
+
+    try {
+      const cancellableStatuses = ['OPEN', 'PENDING', 'TRANSIT', 'TRIGGER PENDING', 'AFTER MARKET ORDER REQ RECEIVED'];
+      const ordersToCancelList = pendingOrders.filter(
+        (o) => o.orderId && cancellableStatuses.includes((o.orderStatus || '').toUpperCase()),
+      );
+
+      let cancelSuccess = 0;
+      let cancelFail = 0;
+
+      for (const order of ordersToCancelList) {
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}order/cancel`,
+            {
+              userId: userEmail,
+              brokerName: broker,
+              advisorDb: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+              orderId: order.orderId,
+            },
+            {headers: requestHeaders},
+          );
+          cancelSuccess++;
+        } catch (cancelErr) {
+          console.error(`Failed to cancel order ${order.orderId}:`, cancelErr);
+          cancelFail++;
+        }
+      }
+
+      if (cancelFail > 0) {
+        Toast.show({
+          type: 'error',
+          text1: `Cancelled ${cancelSuccess} orders, ${cancelFail} failed`,
+          text2: 'Proceeding with retry...',
+        });
+      } else if (cancelSuccess > 0) {
+        Toast.show({
+          type: 'success',
+          text1: `Cancelled ${cancelSuccess} pending orders.`,
+        });
+      }
+
+      // Reset execution status to toExecute
+      await axios.put(
+        `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+        {
+          userEmail: userEmail,
+          modelName: modelName,
+          executionStatus: 'toExecute',
+          user_broker: broker,
+        },
+        {headers: requestHeaders},
+      );
+
+      // Refresh data
+      if (getUserDetails) {
+        await getUserDetails();
+      }
+
+      // Close pending modal and open normal rebalance flow
+      setShowPendingModal(false);
+      setCancelRetryLoading(false);
+      handleAcceptClick();
+    } catch (error) {
+      console.error('Error in cancel and retry:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Something went wrong during cancel & retry',
+        text2: 'Please try again.',
+      });
+      setCancelRetryLoading(false);
+    }
+  };
+
+  // Retry without cancelling (for publisher brokers or when no cancellable orders remain)
+  const handleRetryOnly = async () => {
+    setCancelRetryLoading(true);
+
+    try {
+      // Reset execution status to toExecute
+      await axios.put(
+        `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+        {
+          userEmail: userEmail,
+          modelName: modelName,
+          executionStatus: 'toExecute',
+          user_broker: broker,
+        },
+        {headers: requestHeaders},
+      );
+
+      // Refresh data
+      if (getUserDetails) {
+        await getUserDetails();
+      }
+
+      // Close pending modal and open normal rebalance flow
+      setShowPendingModal(false);
+      setCancelRetryLoading(false);
+      handleAcceptClick();
+    } catch (error) {
+      console.error('Error in retry:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Something went wrong during retry',
+        text2: 'Please try again.',
+      });
+      setCancelRetryLoading(false);
+    }
+  };
+
+  // If the user executed with a different broker than the currently connected one,
+  // treat it as not executed so they can re-execute with the new broker
+  const brokerMatchesExecution = !userExecution?.user_broker || userExecution?.user_broker === broker;
+  const isRebalanceExecuted = userExecution?.status === 'executed' && brokerMatchesExecution;
+  const isPartiallyExecuted = userExecution?.status === 'partial' && brokerMatchesExecution;
+  const isPendingVerification = userExecution?.status === 'pending' && brokerMatchesExecution;
+
+  const handleAcceptClick = async () => {
     try {
       setisChangeModal(false);
       if (data?.model_Id) {
@@ -251,13 +463,16 @@ const RebalanceCard = ({
       if (repair && userExecution?.status !== 'toExecute') {
         setStoreModalName(modelName);
         setCurrentStep(2);
-        handleCheckStatus();
+        setLoading(true);
+        await handleCheckStatus();
+        setLoading(false);
       } else {
         setShowCheckboxModal(true);
         setStoreModalName(modelName);
       }
     } catch (error) {
       console.error('Error in handleAcceptClick:', error);
+      setLoading(false);
     }
   };
 
@@ -290,9 +505,9 @@ const RebalanceCard = ({
       specificPlan: modelName,
     });
   };
-  const handleConfirmPreference = () => {
+  const handleConfirmPreference = async () => {
     try {
-      handleCheckBroker();
+      await handleCheckBroker();
     } catch (error) {
       console.error('Error in handleConfirmPreference:', error);
       setLoading(false);
@@ -318,6 +533,7 @@ const RebalanceCard = ({
       } else {
         const isMarketHours = IsMarketHours();
         if (funds?.status === 1 || funds?.status === 2 || funds === null) {
+          setShowCheckboxModal(false);
           if (setOpenTokenExpireModel) {
             setOpenTokenExpireModel(true);
           }
@@ -326,7 +542,7 @@ const RebalanceCard = ({
         } else {
           setShowCheckboxModal(false);
           setCurrentStep(2);
-          handleCheckStatus();
+          await handleCheckStatus();
           setLoading(false);
         }
       }
@@ -336,23 +552,24 @@ const RebalanceCard = ({
     }
   };
 
-  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
-  const cardBackgroundColor = repair && userExecution?.status !== 'toExecute'
-    ? 'rgba(0, 38, 81, 1)'
-    : '#002651';
-
   return (
-    <View style={{overflow: 'hidden', borderRadius: isExpanded ? 0 : 6}}>
-      <View style={{overflow: 'hidden'}}>
-        <View
-          style={[
-            styles.cardContainer,
-            {
-              borderRadius: isExpanded ? 0 : 6,
-              backgroundColor: cardBackgroundColor,
-              overflow: 'hidden',
-            },
-          ]}>
+    <View>
+      <View>
+        <GradientView
+          colors={
+            isRebalanceExecuted
+              ? ['#9CA3AF', '#6B7280']
+              : isPartiallyExecuted
+                ? ['#E8976B', '#DE8846']
+                : isPendingVerification
+                  ? ['#DDB65D', '#D4A843']
+                  : repair && userExecution?.status !== 'toExecute'
+                    ? [gradient1, '#dc4108ff']
+                    : [gradient1, gradient2]
+          }
+          start={{x: 0, y: 1}}
+          end={{x: 1, y: 1}}
+          style={[styles.cardContainer, {borderRadius: isExpanded ? 0 : 6, opacity: (isRebalanceExecuted || isPartiallyExecuted || isPendingVerification) ? 0.85 : 1}]}>
           <View style={styles.cardContent}>
             <View style={styles.textContent}>
               <Text style={styles.titleText}>{modelName}</Text>
@@ -442,6 +659,35 @@ const RebalanceCard = ({
               </Text>
             </View>
           </View>
+          {/* Status badges */}
+          {isRebalanceExecuted && (
+            <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
+              <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
+                <Text style={{color: 'rgba(255,255,255,0.9)', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
+                  No actions required
+                </Text>
+              </View>
+            </View>
+          )}
+          {isPartiallyExecuted && (
+            <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
+              <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
+                <Text style={{color: 'rgba(255,255,255,0.9)', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
+                  Partially Executed
+                </Text>
+              </View>
+            </View>
+          )}
+          {isPendingVerification && (
+            <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
+              <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
+                <Text style={{color: 'rgba(255,255,255,0.9)', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
+                  Verifying Order Status...
+                </Text>
+              </View>
+            </View>
+          )}
+
           <View
             style={{
               flexDirection: 'row',
@@ -460,10 +706,15 @@ const RebalanceCard = ({
               <Text style={styles.viewMoreText}>Detail on portfolio</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => handleChangeCheck()}
-              style={styles.button}>
-              {loading ? (
-                <ActivityIndicator size={14} color="#FFF" />
+              onPress={isPendingVerification ? handlePendingRefresh : handleChangeCheck}
+              disabled={pendingRefreshLoading || isRebalanceExecuted}
+              style={[
+                styles.button,
+                isPendingVerification && {borderWidth: 1, borderColor: '#EAB308'},
+                isRebalanceExecuted && {backgroundColor: '#D1D5DB'},
+              ]}>
+              {loading || pendingRefreshLoading ? (
+                <ActivityIndicator size={14} color={gradient2} />
               ) : (
                 <View
                   style={{
@@ -473,16 +724,22 @@ const RebalanceCard = ({
                     alignItems: 'center',
                     alignSelf: 'center',
                   }}>
-                  <Text style={styles.buttonText}>
-                    {repair && userExecution?.status !== 'toExecute'
-                      ? 'View/action on updates'
-                      : 'View and act'}
+                  <Text style={[styles.buttonText, {color: isRebalanceExecuted ? '#6B7280' : gradient2}]}>
+                    {isRebalanceExecuted
+                      ? 'Rebalance Accepted'
+                      : isPartiallyExecuted
+                        ? 'Retry Rebalance'
+                        : isPendingVerification
+                          ? 'Check Order Status'
+                          : repair && userExecution?.status !== 'toExecute'
+                            ? 'View/action on updates'
+                            : 'View and act'}
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </GradientView>
       </View>
 
       {/* Step 1: Rebalance Preference Modal */}
@@ -528,6 +785,16 @@ const RebalanceCard = ({
           holdingsData={allRebalanceHoldingData}
         />
       )}
+
+      <PendingOrdersModal
+        isOpen={showPendingModal}
+        onClose={() => setShowPendingModal(false)}
+        orders={pendingOrders}
+        broker={broker}
+        onCancelAndRetry={handleCancelAndRetry}
+        onRetryOnly={handleRetryOnly}
+        cancelLoading={cancelRetryLoading}
+      />
     </View>
   );
 };
@@ -614,7 +881,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: {
-    color: 'rgba(0, 86, 183, 1)',
+    color: '#002651',
     fontSize: 12,
     fontFamily: 'Poppins-Medium',
   },

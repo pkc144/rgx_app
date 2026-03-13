@@ -22,6 +22,7 @@ import {
   ChevronLeft,
 } from 'lucide-react-native';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
+import GradientView from '../../components/GradientView';
 import DhanHelpContent from './HelpUI/DhanHelpContent';
 import dhanIcon from '../../assets/dhan.png';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -66,9 +67,12 @@ const DhanConnectUI = ({
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={styles.fullScreen}>
         <View style={{flex: 1, paddingTop: insets.top}}>
-          {/* Header - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-          <View
-            style={[styles.headerRow, {backgroundColor: '#0B3D91', overflow: 'hidden'}]}>
+          {/* Header */}
+          <GradientView
+            colors={['#0B3D91', '#0056B7']}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+            style={styles.headerRow}>
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
               <TouchableOpacity onPress={onClose} style={styles.backButton}>
                 <ChevronLeft size={24} color="#000" />
@@ -76,7 +80,7 @@ const DhanConnectUI = ({
               <Text style={styles.headerTitle}>Connect to Dhan</Text>
             </View>
             <Image source={dhanIcon} style={styles.headerIcon} />
-          </View>
+          </GradientView>
 
           {/* Scrollable Content */}
           {expanded ? (
@@ -207,10 +211,9 @@ const DhanConnectUI = ({
 
 const styles = StyleSheet.create({
   fullScreen: {
-    flex: 1,
     width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   headerIcon: {width: 35, height: 35, borderRadius: 3, backgroundColor: '#fff'},
   backButton: {

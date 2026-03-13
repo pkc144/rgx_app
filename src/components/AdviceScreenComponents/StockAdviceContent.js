@@ -25,8 +25,7 @@ import {useTrade} from '../../screens/TradeContext';
 import eventEmitter from '../EventEmitter';
 import useLTPStore from './DynamicText/useLtpStore';
 import APP_VARIANTS from '../../utils/Config';
-// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
-// Using solid background color with View instead
+import GradientView from '../GradientView';
 import { useConfig } from '../../context/ConfigContext';
 
 const StockAdviceContent = React.memo(
@@ -433,8 +432,8 @@ const StockAdviceContent = React.memo(
             //   </Text>
             // </View>
             type === 'OSrejected' ? (
-              // View with solid background replaces LinearGradient for iOS Fabric compatibility
-              <View
+              <GradientView
+                colors={[gradient1, gradient2]}
                 style={{
                   flex: 1,
                   alignItems: 'center',
@@ -446,7 +445,6 @@ const StockAdviceContent = React.memo(
                   overflow: 'hidden',
                   width: '90%',
                   alignSelf: 'center',
-                  backgroundColor: gradient1,
                 }}>
                 {/* Glow circles */}
                 <View
@@ -472,8 +470,9 @@ const StockAdviceContent = React.memo(
                   }}
                 />
 
-                {/* Icon container - View replaces LinearGradient for iOS Fabric compatibility */}
-                <View
+                {/* Icon container */}
+                <GradientView
+                  colors={[gradient1, gradient2]}
                   style={{
                     width: 90,
                     height: 90,
@@ -486,8 +485,6 @@ const StockAdviceContent = React.memo(
                     shadowOpacity: 0.25,
                     shadowRadius: 8,
                     elevation: 6,
-                    backgroundColor: gradient1,
-                    overflow: 'hidden',
                   }}>
                   <View
                     style={{
@@ -510,7 +507,7 @@ const StockAdviceContent = React.memo(
                       <Text style={{fontSize: 28}}>📋</Text>
                     </View>
                   </View>
-                </View>
+                </GradientView>
 
                 {/* Title */}
                 <Text
@@ -535,7 +532,7 @@ const StockAdviceContent = React.memo(
                     lineHeight: 20,
                     marginBottom: 12,
                   }}>
-                  You don't have any rejected orders at the moment.
+                  You don’t have any rejected orders at the moment.
                 </Text>
 
                 {/* Extra info */}
@@ -552,10 +549,13 @@ const StockAdviceContent = React.memo(
                   All your order status information will appear here when
                   available.
                 </Text>
-              </View>
+              </GradientView>
             ) : (
-              // Original Bespoke Advice Empty State - View replaces LinearGradient for iOS Fabric compatibility
-              <View
+              // Original Bespoke Advice Empty State
+              <GradientView
+                colors={[gradient1, gradient2]}
+                start={{x: 0, y: 1}}
+                end={{x: 1, y: 1}}
                 style={{
                   flex: 1,
                   alignItems: 'center',
@@ -563,8 +563,6 @@ const StockAdviceContent = React.memo(
                   width: screenWidth,
                   padding: 24,
                   borderRadius: 10,
-                  backgroundColor: gradient1,
-                  overflow: 'hidden',
                 }}>
                 {/* Floating sparkles */}
                 <Text
@@ -588,8 +586,9 @@ const StockAdviceContent = React.memo(
                   ✨
                 </Text>
 
-                {/* Icon container - View replaces LinearGradient for iOS Fabric compatibility */}
-                <View
+                {/* Icon container */}
+                <GradientView
+                  colors={[gradient1, gradient2]}
                   style={{
                     width: 80,
                     height: 80,
@@ -602,11 +601,9 @@ const StockAdviceContent = React.memo(
                     shadowOpacity: 0.3,
                     shadowRadius: 8,
                     elevation: 8,
-                    backgroundColor: gradient1,
-                    overflow: 'hidden',
                   }}>
                   <Text style={{fontSize: 36, color: 'white'}}>💫</Text>
-                </View>
+                </GradientView>
 
                 {/* Headings */}
                 <Text
@@ -705,7 +702,7 @@ const StockAdviceContent = React.memo(
                     </View>
                   ))}
                 </View>
-              </View>
+              </GradientView>
             )
           }
           onEndReachedThreshold={0.5}
@@ -749,6 +746,7 @@ const StockAdviceContent = React.memo(
             openSuccessModal={openSuccessModal}
             setOpenSucessModal={setOpenSucessModal}
             orderPlacementResponse={OrderPlacementResponse}
+            currentBroker={broker}
           />
         )}
       </SafeAreaView>

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Modal } from 'react-native';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
-import { Info, Eye, EyeOff } from "lucide-react-native"; // Ensure lucide-react-native is installed and imported correctly
+import { Info, Eye, EyeOff, X } from "lucide-react-native";
 import server from '../utils/serverConfig';
 import { generateToken } from '../utils/SecurityTokenManager';
 import Config from 'react-native-config';
+
+const OAUTH_BROKERS = ['Zerodha', 'Angel One', 'Dhan', 'Fyers', 'Upstox', 'AliceBlue', 'Groww', 'Hdfc Securities', 'Motilal Oswal'];
+
 const TokenExpireBrokerModal = ({
   openTokenExpireModel,
   setOpenTokenExpireModel,
@@ -39,14 +42,19 @@ const TokenExpireBrokerModal = ({
       userId,
     });
 
-    axios.post(`${server.baseUrl}api/iifl/generate-session`, data, {
+    axios.post(`${server.server.baseUrl}api/iifl/generate-session`, data, {
       headers: {
         'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
       },
     })
       .then(response => {
         setLoginLoading(false);
-        getUserDetails();
+        if (getUserDetails) getUserDetails();
         Toast.show({
           type: 'success',
           text1: 'You have been successfully logged in to IIFL Securities',
@@ -62,7 +70,7 @@ const TokenExpireBrokerModal = ({
         const result = error.response?.data?.response || {};
         Toast.show({
           type: 'error',
-          text1: result.message || 'An error occurred',
+          text1: result.message || 'Login failed. Please check your credentials.',
           position: 'bottom',
           visibilityTime: 5000,
           autoHide: true,
@@ -82,16 +90,16 @@ const TokenExpireBrokerModal = ({
       ...(panNumber && { pan: panNumber }),
     };
 
-    axios.post(`${server.server.baseUrl}api/kotak/update-key`, data,   {
-                              headers: {
-                                          "Content-Type": "application/json",
-                                          "X-Advisor-Subdomain": Config.REACT_APP_HEADER_NAME,
-                                          "aq-encrypted-key": generateToken(
-                                            Config.REACT_APP_AQ_KEYS,
-                                            Config.REACT_APP_AQ_SECRET
-                                          ),
-                                        },
-                          })
+    axios.post(`${server.server.baseUrl}api/kotak/update-key`, data, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
+      },
+    })
       .then(response => {
         setLoginLoading(false);
         setStoreResponse(response.data.response);
@@ -125,16 +133,16 @@ const TokenExpireBrokerModal = ({
       ...(mobileNumber && { mobileNumber: mobileNumber }),
     };
 
-    axios.put(`${server.server.baseUrl}api/kotak/connect-broker`, data,   {
-                              headers: {
-                                          "Content-Type": "application/json",
-                                          "X-Advisor-Subdomain": Config.REACT_APP_HEADER_NAME,
-                                          "aq-encrypted-key": generateToken(
-                                            Config.REACT_APP_AQ_KEYS,
-                                            Config.REACT_APP_AQ_SECRET
-                                          ),
-                                        },
-                          })
+    axios.put(`${server.server.baseUrl}api/kotak/connect-broker`, data, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
+      },
+    })
       .then(() => {
         setLoginLoading(false);
         Toast.show({
@@ -160,8 +168,14 @@ const TokenExpireBrokerModal = ({
       });
   };
 
+  const handleOAuthReconnect = () => {
+    setOpenTokenExpireModel(false);
+    if (checkValidApiAnSecret) {
+      checkValidApiAnSecret(broker);
+    }
+  };
+
   useEffect(() => {
-   // console.log("expiremodallll");
     if (showSuccessMsg) {
       const timer = setTimeout(() => {
         setShowSuccessMsg(false);
@@ -170,144 +184,191 @@ const TokenExpireBrokerModal = ({
     }
   }, [showSuccessMsg]);
 
+  const isOAuthBroker = OAUTH_BROKERS.includes(broker);
+
+  if (!openTokenExpireModel) return null;
+
   return (
-    <TokenExpireBrokerModal
-      openTokenExpireModel={openTokenExpireModel}
-      setOpenTokenExpireModel={setOpenTokenExpireModel}
+    <Modal
+      visible={!!openTokenExpireModel}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setOpenTokenExpireModel(false)}
     >
-      <View style={styles.modalContent}>
-        <View style={styles.iconContainer}>
-          <Info size={64} color="#00000080" />
-        </View>
-        <Text style={styles.title}>
-          Please login to your broker to continue investments
-        </Text>
-        <View style={styles.inputContainer}>
-          {broker === 'IIFL Securities' && (
-            <View>
-              <TextInput
-                style={styles.input}
-                value={clientCode}
-                placeholder="Client Code"
-                editable={false}
-              />
-              <Text style={styles.label}>Client Code</Text>
-              <TextInput
-                style={styles.input}
-                value={my2pin}
-                placeholder="My2Pin"
-                editable={false}
-              />
-              <Text style={styles.label}>My2Pin</Text>
-              <View style={styles.passwordContainer}>
+      <View style={styles.overlay}>
+        <View style={styles.modalContent}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setOpenTokenExpireModel(false)}
+          >
+            <X size={20} color="#666" />
+          </TouchableOpacity>
+          <View style={styles.iconContainer}>
+            <Info size={48} color="#00000080" />
+          </View>
+          <Text style={styles.title}>
+            {broker === 'Zerodha'
+              ? 'Your Zerodha session has expired. Please reconnect to Kite to continue.'
+              : isOAuthBroker
+                ? `Your ${broker} session has expired. Please reconnect to continue.`
+                : 'Please login to your broker to continue investments'}
+          </Text>
+          <View style={styles.inputContainer}>
+            {isOAuthBroker && (
+              <TouchableOpacity
+                style={styles.submitButton}
+                onPress={handleOAuthReconnect}
+                disabled={loginLoading}
+              >
+                <Text style={styles.submitButtonText}>Reconnect {broker}</Text>
+              </TouchableOpacity>
+            )}
+            {broker === 'IIFL Securities' && (
+              <View>
                 <TextInput
                   style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Password"
-                  secureTextEntry={!showPassword}
+                  value={clientCode}
+                  placeholder="Client Code"
+                  placeholderTextColor="#999"
+                  editable={false}
                 />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(prev => !prev)}
-                >
-                  {showPassword ? <Eye size={24} color="#00000060" /> : <EyeOff size={24} color="#00000060" />}
-                </TouchableOpacity>
-                <Text style={styles.label}>Password</Text>
-              </View>
-            </View>
-          )}
-          {broker === 'Kotak' && (
-            <View>
-              <TextInput
-                style={styles.input}
-                value={panNumber || mobileNumber}
-                placeholder={panNumber ? 'Pan Number' : 'Mobile Number'}
-                editable={false}
-              />
-              <Text style={styles.label}>{panNumber ? 'Pan Number' : 'Mobile Number'}</Text>
-              <View style={styles.passwordContainer}>
+                <Text style={styles.label}>Client Code</Text>
                 <TextInput
                   style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Password"
-                  secureTextEntry={!showPassword}
+                  value={my2pin}
+                  placeholder="My2Pin"
+                  placeholderTextColor="#999"
+                  editable={false}
                 />
-                <TouchableOpacity
-                  style={styles.eyeIcon}
-                  onPress={() => setShowPassword(prev => !prev)}
-                >
-                  {showPassword ? <Eye size={24} color="#00000060" /> : <EyeOff size={24} color="#00000060" />}
-                </TouchableOpacity>
+                <Text style={styles.label}>My2Pin</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Password"
+                    placeholderTextColor="#999"
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(prev => !prev)}
+                  >
+                    {showPassword ? <Eye size={24} color="#00000060" /> : <EyeOff size={24} color="#00000060" />}
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.label}>Password</Text>
+                <TouchableOpacity
+                  style={[styles.submitButton, loginLoading && styles.submitButtonDisabled]}
+                  onPress={handleIiflLogin}
+                  disabled={loginLoading || !password}
+                >
+                  {loginLoading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>Login</Text>}
+                </TouchableOpacity>
               </View>
-              {openOtpBox && (
-                <>
-                  <View style={styles.passwordContainer}>
+            )}
+            {broker === 'Kotak' && (
+              <View>
+                <TextInput
+                  style={styles.input}
+                  value={panNumber || mobileNumber}
+                  placeholder={panNumber ? 'Pan Number' : 'Mobile Number'}
+                  placeholderTextColor="#999"
+                  editable={false}
+                />
+                <Text style={styles.label}>{panNumber ? 'Pan Number' : 'Mobile Number'}</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Password"
+                    placeholderTextColor="#999"
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(prev => !prev)}
+                  >
+                    {showPassword ? <Eye size={24} color="#00000060" /> : <EyeOff size={24} color="#00000060" />}
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.label}>Password</Text>
+                {openOtpBox && (
+                  <>
+                    <View style={styles.passwordContainer}>
+                      <TextInput
+                        style={[styles.input, { flex: 1 }]}
+                        value={mpin}
+                        onChangeText={setMpin}
+                        placeholder="Mpin"
+                        placeholderTextColor="#999"
+                        keyboardType="numeric"
+                        secureTextEntry={!showMpin}
+                      />
+                      <TouchableOpacity
+                        style={styles.eyeIcon}
+                        onPress={() => setShowMpin(prev => !prev)}
+                      >
+                        {showMpin ? <Eye size={24} color="#00000060" /> : <EyeOff size={24} color="#00000060" />}
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.label}>Mpin</Text>
                     <TextInput
                       style={styles.input}
-                      value={mpin}
-                      onChangeText={setMpin}
-                      placeholder="Mpin"
+                      value={otp}
+                      onChangeText={setOtp}
+                      placeholder="Otp"
+                      placeholderTextColor="#999"
                       keyboardType="numeric"
-                      secureTextEntry={!showMpin}
                     />
+                    <Text style={styles.label}>Otp</Text>
                     <TouchableOpacity
-                      style={styles.eyeIcon}
-                      onPress={() => setShowMpin(prev => !prev)}
+                      style={[styles.submitButton, loginLoading && styles.submitButtonDisabled]}
+                      onPress={handleKotakLogin}
+                      disabled={loginLoading}
                     >
-                      <Info size={64} />
+                      {loginLoading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>Submit</Text>}
                     </TouchableOpacity>
-                    <Text style={styles.label}>Mpin</Text>
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    value={otp}
-                    onChangeText={setOtp}
-                    placeholder="Otp"
-                    keyboardType="numeric"
-                  />
-                  <Text style={styles.label}>Otp</Text>
+                  </>
+                )}
+                {!openOtpBox && (
                   <TouchableOpacity
-                    style={styles.submitButton}
-                    onPress={handleKotakLogin}
-                    disabled={loginLoading}
+                    style={[styles.submitButton, loginLoading && styles.submitButtonDisabled]}
+                    onPress={updateKotakSecretKey}
+                    disabled={loginLoading || !password}
                   >
-                    {loginLoading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>Submit</Text>}
+                    {loginLoading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>Update Key</Text>}
                   </TouchableOpacity>
-                </>
-              )}
-              {!openOtpBox && (
-                <TouchableOpacity
-                  style={styles.submitButton}
-                  onPress={updateKotakSecretKey}
-                  disabled={loginLoading}
-                >
-                  {loginLoading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>Update Key</Text>}
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-          {broker === 'ICICI Direct' && (
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={() => {}}
-              disabled={loginLoading}
-            >
-              {loginLoading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>Submit</Text>}
-            </TouchableOpacity>
+                )}
+              </View>
+            )}
+            {broker === 'ICICI Direct' && (
+              <TouchableOpacity
+                style={styles.submitButton}
+                onPress={handleOAuthReconnect}
+                disabled={loginLoading}
+              >
+                {loginLoading ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.submitButtonText}>Reconnect ICICI Direct</Text>}
+              </TouchableOpacity>
+            )}
+          </View>
+          {showSuccessMsg && (
+            <Text style={styles.successMessage}>Login successful</Text>
           )}
         </View>
-        {showSuccessMsg && (
-          <Text style={styles.successMessage}>Login successful</Text>
-        )}
       </View>
-    </TokenExpireBrokerModal>
+    </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   modalContent: {
     padding: 20,
     backgroundColor: 'white',
@@ -315,14 +376,24 @@ const styles = StyleSheet.create({
     width: '90%',
     alignSelf: 'center',
   },
+  closeButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 1,
+    padding: 5,
+  },
   iconContainer: {
     alignItems: 'center',
     marginBottom: 10,
+    marginTop: 10,
   },
   title: {
     fontSize: 16,
     textAlign: 'center',
     marginBottom: 20,
+    color: '#333',
+    fontFamily: 'Satoshi-Medium',
   },
   inputContainer: {
     marginBottom: 20,
@@ -332,6 +403,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ccc',
     marginBottom: 10,
     padding: 10,
+    color: '#000',
   },
   label: {
     fontSize: 12,
@@ -351,10 +423,15 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 10,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
   submitButtonText: {
     color: 'white',
     fontSize: 16,
+    fontFamily: 'Satoshi-Medium',
   },
   successMessage: {
     color: 'green',

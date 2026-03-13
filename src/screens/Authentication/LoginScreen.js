@@ -13,7 +13,7 @@ import {
   Platform,
   Image,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../../components/GradientView';
 import auth from '@react-native-firebase/auth';
 import Config from 'react-native-config';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
@@ -31,12 +31,11 @@ import APP_VARIANTS from '../../utils/Config';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useConfig} from '../../context/ConfigContext';
 
-// Import enhanced storage utilities
+// Import storage utilities
 import {
+  storeLoginData,
   checkAndFetchAdvisorConfig,
   setUserData,
-  isUserDataComplete,
-  refreshAllAppData,
 } from '../../utils/storageUtils';
 import {
   logLoginAttempt,
@@ -72,90 +71,71 @@ const LoginScreen = () => {
     getModelPortfolioStrategyDetails,
   } = useTrade();
 
-  // Configure Google Sign-In with googleWebClientId from database (with .env fallback)
+  // Configure Google Sign-In with correct Web client ID from google-services.json (client_type: 3)
+  const WEB_CLIENT_ID = '887826618956-83tfceb7n4m4h38qk93ld1emb78uj5rh.apps.googleusercontent.com';
+
   React.useEffect(() => {
-    const webClientId = config?.googleWebClientId || Config.GOOGLE_WEB_CLIENT_ID;
-    if (webClientId) {
-      GoogleSignin.configure({
-        webClientId,
-        iosClientId: Config.GOOGLE_IOS_CLIENT_ID || undefined,
-        offlineAccess: false,
-      });
-      console.log('Google Sign-In configured with Client ID:', webClientId);
-    }
-  }, [config?.googleWebClientId]);
+    GoogleSignin.configure({
+      webClientId: WEB_CLIENT_ID,
+    });
+    console.log('Google Sign-In configured with Web Client ID:', WEB_CLIENT_ID);
+  }, []);
 
   // Navigation handler - store data and navigate
   const handlePostLoginNavigation = async (userDetails, userEmail) => {
     try {
-      console.log('handlePostLoginNavigation called with email:', userEmail);
-      console.log('userDetails response:', JSON.stringify(userDetails?.data));
-
-      const userData = userDetails?.data?.User;
-
-      const hasAdvisorRaCode = Config?.ADVISOR_RA_CODE
-        ? Config?.ADVISOR_RA_CODE
-        : !!userData?.advisor_ra_code;
+      const userData = userDetails.data?.User;
+      const advisorRaCode = Config?.ADVISOR_RA_CODE || userData?.advisor_ra_code;
+      const hasAdvisorRaCode = !!advisorRaCode;
 
       setIsProfileCompleted(hasAdvisorRaCode);
       await storeLoginTime();
 
-      if (hasAdvisorRaCode) {
-        const advisorRaCode = Config?.ADVISOR_RA_CODE
-          ? Config?.ADVISOR_RA_CODE
-          : userData.advisor_ra_code;
+      if (!hasAdvisorRaCode) {
+        await setUserData({
+          email: userEmail,
+          profileCompleted: false,
+          ...userData,
+        });
+        navigation.replace('SignUpRADetails', {userEmail});
+        return;
+      }
 
-        // Store user data
+      // Check if advisorConfig came inline from consolidated endpoint
+      const inlineConfig = userDetails.data?.advisorConfig;
+
+      if (inlineConfig) {
+        // Fast path: config returned inline with getUser response
+        await storeLoginData({
+          raCode: advisorRaCode,
+          userData: {email: userEmail, advisor_ra_code: advisorRaCode, profileCompleted: true, ...userData},
+          advisorConfig: inlineConfig,
+        });
+      } else {
+        // Fallback: old server without consolidated endpoint — fetch config separately
         await setUserData({
           email: userEmail,
           advisor_ra_code: advisorRaCode,
           profileCompleted: true,
           ...userData,
         });
-
-        // Fetch advisor config
         const configResult = await checkAndFetchAdvisorConfig(advisorRaCode);
-
-        if (configResult.success) {
-          // Reload config for UI
-          await reloadConfigData();
-
-          // Load home data in background (don't wait)
-          getAllTrades().catch(err => console.error('Trade load error:', err));
-          getModelPortfolioStrategyDetails().catch(err => console.error('Portfolio load error:', err));
-
-          // Navigate to Home
-          navigation.replace('Home');
-        } else {
-          if (configResult.advisorExists === false) {
-            navigation.replace('SignUpRADetails', {
-              userEmail: userEmail,
-            });
-          } else {
-            navigation.replace('Home');
-          }
+        if (!configResult.success && configResult.advisorExists === false) {
+          navigation.replace('SignUpRADetails', {userEmail});
+          return;
         }
-      } else {
-        await setUserData({
-          email: userEmail,
-          profileCompleted: false,
-          ...userData,
-        });
-        navigation.replace('SignUpRADetails', {
-          userEmail: userEmail,
-        });
       }
+
+      // Reload config for UI
+      await reloadConfigData();
+
+      // Load home data in background (don't wait)
+      getAllTrades().catch(err => console.error('Trade load error:', err));
+      getModelPortfolioStrategyDetails().catch(err => console.error('Portfolio load error:', err));
+
+      navigation.replace('Home');
     } catch (error) {
-      console.error('handlePostLoginNavigation error:', error);
-      // Still store minimal user data so Home screen has something to work with
-      try {
-        await setUserData({
-          email: userEmail,
-          profileCompleted: false,
-        });
-      } catch (e) {
-        console.error('Failed to store minimal user data:', e);
-      }
+      console.error('Login error:', error);
       navigation.replace('Home');
     }
   };
@@ -164,7 +144,9 @@ const LoginScreen = () => {
     setLoading(true);
     setErrorShow(false);
 
-    if (!email || !password) {
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail || !password) {
       setError('Email and password are required');
       setErrorShow(true);
       setLoading(false);
@@ -173,7 +155,7 @@ const LoginScreen = () => {
 
     try {
       // Step 1: Firebase auth
-      const response = await auth().signInWithEmailAndPassword(email, password);
+      const response = await auth().signInWithEmailAndPassword(trimmedEmail, password);
       const user = response.user;
 
       if (user) {
@@ -182,7 +164,7 @@ const LoginScreen = () => {
 
         try {
           const getResponse = await axios.get(
-            `${server.server.baseUrl}api/user/getUser/${email}`,
+            `${server.server.baseUrl}api/user/getUser/${trimmedEmail}?includeAdvisorConfig=true`,
             {
               headers: {
                 'Content-Type': 'application/json',
@@ -235,14 +217,14 @@ const LoginScreen = () => {
         // Try multiple possible locations for the subdomain
         const advisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
         trackAppUser({
-          email: email,
+          email: trimmedEmail,
           firebase_id: user.uid,
           name: user.displayName,
           login_method: 'email',
           advisor_subdomain: advisorSubdomain,
         });
         logLoginAttempt({
-          email: email,
+          email: trimmedEmail,
           firebase_id: user.uid,
           status: 'success',
           login_method: 'email',
@@ -250,15 +232,15 @@ const LoginScreen = () => {
         });
 
         // Navigate with handlePostLoginNavigation
-        await handlePostLoginNavigation(userDetails, email);
+        await handlePostLoginNavigation(userDetails, trimmedEmail);
       }
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Login error:', error.code, error.message);
 
       // Log failed login attempt (fire-and-forget) - use subdomain from config
       const failedAdvisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
       logLoginAttempt({
-        email: email,
+        email: trimmedEmail,
         status: 'failed',
         login_method: 'email',
         failure_reason: error.code?.includes('auth/') ? 'firebase_error' : 'api_error',
@@ -267,7 +249,23 @@ const LoginScreen = () => {
         advisor_subdomain: failedAdvisorSubdomain,
       });
 
-      setError(error.message);
+      // Show user-friendly error messages instead of raw Firebase errors
+      let userMessage = 'Something went wrong. Please try again.';
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        userMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (error.code === 'auth/user-not-found') {
+        userMessage = 'No account found with this email. Please sign up first.';
+      } else if (error.code === 'auth/invalid-email') {
+        userMessage = 'Please enter a valid email address.';
+      } else if (error.code === 'auth/too-many-requests') {
+        userMessage = 'Too many failed attempts. Please try again later.';
+      } else if (error.code === 'auth/user-disabled') {
+        userMessage = 'This account has been disabled. Please contact support.';
+      } else if (error.code === 'auth/network-request-failed') {
+        userMessage = 'Network error. Please check your internet connection.';
+      }
+
+      setError(userMessage);
       setErrorShow(true);
     } finally {
       setLoading(false);
@@ -309,7 +307,7 @@ const LoginScreen = () => {
         );
 
         const userDetails = await axios.get(
-          `${server.server.baseUrl}api/user/getUser/${user.email}`,
+          `${server.server.baseUrl}api/user/getUser/${user.email}?includeAdvisorConfig=true`,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -342,7 +340,7 @@ const LoginScreen = () => {
         await handlePostLoginNavigation(userDetails, user.email);
       }
     } catch (error) {
-      // console.error('❌ Error during Google login:', error);
+      console.error('❌ Google login error:', error.code, error.message, error);
 
       // Log failed Google login attempt (fire-and-forget) - use subdomain from config
       const failedGoogleAdvisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
@@ -461,10 +459,6 @@ const LoginScreen = () => {
     try {
       setLoading(true);
 
-      console.log('Apple Sign-In - userEmail:', userEmail);
-      console.log('Apple Sign-In - firebase user email:', user.email);
-      console.log('Apple Sign-In - fullName:', JSON.stringify(fullName));
-
       // Construct display name from Apple's fullName object
       let displayName = user.displayName;
       if (!displayName && fullName) {
@@ -497,7 +491,7 @@ const LoginScreen = () => {
 
       // Get user details from backend
       const userDetails = await axios.get(
-        `${server.server.baseUrl}api/user/getUser/${userEmail}`,
+        `${server.server.baseUrl}api/user/getUser/${userEmail}?includeAdvisorConfig=true`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -564,9 +558,11 @@ const LoginScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={dismissKeyboard}>
-        {/* Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-        <View
-          style={[styles.container, {backgroundColor: gradient1, overflow: 'hidden'}]}>
+        <GradientView
+          colors={[gradient1, gradient2]}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.container}>
           <View style={styles.container}>
             <StatusBar barStyle="light-content" />
 
@@ -724,7 +720,7 @@ const LoginScreen = () => {
             </View>
             <Toast />
           </View>
-        </View>
+        </GradientView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );

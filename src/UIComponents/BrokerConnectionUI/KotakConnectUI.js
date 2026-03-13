@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronLeft,
 } from 'lucide-react-native';
+import GradientView from '../../components/GradientView';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
 import kotakIcon from '../../assets/kotak_securities.png';
 import KotakHelpContent from './HelpUI/KotakHelpContent';
@@ -79,9 +80,12 @@ const KotakConnectUI = ({
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={styles.fullScreen}>
         <View style={{flex: 1, paddingTop: insets.top}}>
-          {/* Header - Use solid background color instead of LinearGradient for iOS Fabric compatibility */}
-          <View
-            style={[styles.headerRow, {backgroundColor: '#0B3D91', overflow: 'hidden'}]}>
+          {/* Gradient Header */}
+          <GradientView
+            colors={['#0B3D91', '#0056B7']}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+            style={styles.headerRow}>
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
               <TouchableOpacity onPress={onClose} style={styles.backButton}>
                 <ChevronLeft size={24} color="#000" />
@@ -89,7 +93,7 @@ const KotakConnectUI = ({
               <Text style={styles.headerTitle}>Connect to Kotak</Text>
             </View>
             <Image source={kotakIcon} style={styles.headerIcon} />
-          </View>
+          </GradientView>
 
           {/* If expanded → Show HelpContent Fullscreen */}
           {expanded ? (
@@ -187,6 +191,8 @@ const KotakConnectUI = ({
                         label: 'MPIN',
                         value: mpin,
                         setValue: setMpin,
+                        secure: !ismpinVisible,
+                        toggle: () => setIsmpinVisible(!ismpinVisible),
                       },
                       {label: 'UCC', value: ucc, setValue: setucc},
                       {label: 'TOTP', value: totp, setValue: settotp},
@@ -199,10 +205,20 @@ const KotakConnectUI = ({
                             placeholder={`Enter your ${input.label}`}
                             placeholderTextColor="grey"
                             style={[styles.inputStyles, {flex: 1}]}
+                            secureTextEntry={input.secure}
                             autoCapitalize="none"
                             autoCorrect={false}
                             onChangeText={input.setValue}
                           />
+                          {input.toggle && input.value ? (
+                            <TouchableOpacity onPress={input.toggle}>
+                              {input.secure ? (
+                                <EyeOffIcon size={22} color="#000" />
+                              ) : (
+                                <EyeIcon size={22} color="#000" />
+                              )}
+                            </TouchableOpacity>
+                          ) : null}
                         </View>
                       </View>
                     ))}
@@ -243,10 +259,9 @@ const KotakConnectUI = ({
 
 const styles = StyleSheet.create({
   fullScreen: {
-    flex: 1,
     width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',

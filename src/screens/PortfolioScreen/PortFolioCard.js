@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import GradientView from '../../components/GradientView';
 import Svg, {Circle} from 'react-native-svg';
 import {useConfig} from '../../context/ConfigContext';
 
@@ -34,11 +34,13 @@ const PortfolioCard = ({
   const arrowColor = isPositive ? '#23C36A' : '#FF6B6B';
   const percentColor = isPositive ? '#5EEA99' : '#FF6B6B';
 
-  // Use solid background color instead of LinearGradient for iOS Fabric compatibility
   return (
     <View style={portfolioCardStyles.pcWrapper}>
-      <View
-        style={[portfolioCardStyles.pcGradientCard, {backgroundColor: gradient1}]}>
+      <GradientView
+        colors={[gradient1, gradient2]}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 1}}
+        style={portfolioCardStyles.pcGradientCard}>
         {/* Background Circle */}
         <Svg
           width="180"
@@ -87,7 +89,7 @@ const PortfolioCard = ({
             </Text>
           </View>
         </View>
-      </View>
+      </GradientView>
     </View>
   );
 };

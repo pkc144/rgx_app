@@ -5,9 +5,10 @@ import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
 import {useTrade} from '../screens/TradeContext';
 const checkValidApiAnSecret = details => {
+  if (!details) return null;
   try {
     const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8); // Convert to UTF-8 string
+    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
 
     if (Key) {
       return Key;
@@ -74,11 +75,9 @@ export const fetchFunds = async (
     case 'Zerodha':
       if (!jwtToken) return;
       data = JSON.stringify({
-        apiKey: checkValidApiAnSecret(apiKey),
-        secretkey: checkValidApiAnSecret(secretKey),
+        apiKey: configData?.config?.REACT_APP_ZERODHA_API_KEY,
         accessToken: jwtToken,
       });
-      // console.log('data f-:', data);
       url = `${server.ccxtServer.baseUrl}zerodha/funds`;
       break;
     case 'Hdfc Securities':
@@ -120,7 +119,7 @@ export const fetchFunds = async (
         'apiKey:',
         apiKey,
       );
-      if (!clientCode || !jwtToken || !apiKey) return;
+      if (!clientCode || !jwtToken) return;
       data = JSON.stringify({
         clientId: clientCode,
         apiKey: apiKey,
@@ -165,7 +164,7 @@ export const fetchFunds = async (
     const response = await axios.post(url, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || 'common',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,

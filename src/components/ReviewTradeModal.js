@@ -32,8 +32,7 @@ import CheckBox from '@react-native-community/checkbox';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from 'react-native-config';
 import SliderButton from './SliderButton';
-// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
-// Using solid background color with View instead
+import GradientView from './GradientView';
 const {height: screenHeight} = Dimensions.get('window');
 import { useConfig } from '../context/ConfigContext';
 import useLTPStore from './AdviceScreenComponents/DynamicText/useLtpStore';
@@ -706,16 +705,16 @@ const ReviewTradeModal = ({
         animationType="slide">
         <SafeAreaView style={styles.modalOverlay} pointerEvents="box-none">
           <View style={[styles.modalContainer, {width: width * 1}]}>
-            {/* View with solid background replaces LinearGradient for iOS Fabric compatibility */}
-            <View
+            <GradientView
+              colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 1}}
               style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
                 paddingHorizontal: 10,
                 paddingVertical: 20,
                 alignItems: 'center',
-                backgroundColor: 'rgba(0, 38, 81, 1)',
-                overflow: 'hidden',
               }}>
               <View style={styles.iconContainer}>
                 <ShoppingBag
@@ -731,7 +730,7 @@ const ReviewTradeModal = ({
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <XIcon size={24} color="#fff" />
               </TouchableOpacity>
-            </View>
+            </GradientView>
             <View style={styles.tableContainer}>
               <FlatList
                 data={basketData}
@@ -840,22 +839,22 @@ const ReviewTradeModal = ({
         <View style={[styles.modalContainer, {width: width * 1}]}>
           <SafeAreaView style={styles.horizontal} />
           <SafeAreaView>
-            {/* View with solid background replaces LinearGradient for iOS Fabric compatibility */}
-            <View
+            <GradientView
+              colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 1}}
               style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
                 paddingHorizontal: 10,
                 paddingVertical: 20,
                 alignItems: 'center',
-                backgroundColor: 'rgba(0, 38, 81, 1)',
-                overflow: 'hidden',
               }}>
               <Text style={styles.modalHeader1}>Review Trade Details</Text>
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <XIcon size={24} color="#fff" />
               </TouchableOpacity>
-            </View>
+            </GradientView>
           </SafeAreaView>
 
           <View style={{borderWidth: 1, borderColor: '#E8E8E8'}}></View>
@@ -1083,7 +1082,7 @@ const ReviewTradeModal = ({
                 (hasZeroQuantity || !isMarketHours) && styles.buttonDisabled, // disabled styling
                 loading && styles.buttonLoading, // optional: add extra styling when loading
               ]}
-              // disabled={hasZeroQuantity || !isMarketHours || loading} // disable while loading
+              disabled={hasZeroQuantity || !isMarketHours || loading}
               onPress={() => placeOrder(stockDetails)}>
               {loading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />

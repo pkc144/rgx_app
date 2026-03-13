@@ -44,6 +44,8 @@ import RNFS from 'react-native-fs';
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 import { useTrade } from '../../screens/TradeContext';
 import { useConfig } from '../../context/ConfigContext';
+import { useGstConfig } from '../../context/GstConfigContext';
+import { withGst, gstLabel } from '../../utils/gstHelpers';
 import FormatDateTime, { FormatDate } from '../../utils/formatDateTime';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CFPaymentGatewayService } from 'react-native-cashfree-pg-sdk';
@@ -89,8 +91,7 @@ import {
   updatePendingPayment,
 } from '../../FunctionCall/services/PendingPaymentManager';
 import {logPayment} from '../../utils/Logging';
-// LinearGradient from 'react-native-linear-gradient' removed for iOS Fabric compatibility
-// Using solid background color with View instead
+import GradientView from '../GradientView';
 import {
   Digio,
   DigioConfig,
@@ -123,6 +124,8 @@ const CouponCodeInput = React.memo(
     handleApplyCoupon,
     couponMessage,
     appliedCoupon,
+    mainColor,
+    stepCompletedColor,
   }) => {
     // console.log('This input--');
 
@@ -153,6 +156,7 @@ const CouponCodeInput = React.memo(
           <TouchableOpacity
             style={[
               styles.button,
+              mainColor && { backgroundColor: mainColor },
               (!couponCode || isApplyingCoupon) && styles.buttonDisabled,
             ]}
             onPress={handleApplyCoupon}
@@ -169,7 +173,7 @@ const CouponCodeInput = React.memo(
           <Text
             style={[
               styles.message,
-              appliedCoupon ? styles.successMessage : styles.errorMessage,
+              appliedCoupon ? [styles.successMessage, {color: stepCompletedColor}] : styles.errorMessage,
             ]}>
             {couponMessage}
           </Text>
@@ -224,6 +228,8 @@ const StepCard = ({
   onPress,
   children,
   currentAppVariant,
+  mainColor,
+  stepCompletedColor: stepCompletedColorProp,
 }) => {
   const getStepIcon = () => {
     const IconComponent = step.icon;
@@ -243,8 +249,10 @@ const StepCard = ({
     return styles.stepCardInactive;
   };
 
+  const completedColor = stepCompletedColorProp || currentAppVariant?.paymentModal?.stepCompletedColor || '#29A400';
+
   return (
-    <View style={[styles.stepCard, getCardClasses()]}>
+    <View style={[styles.stepCard, getCardClasses(), isCompleted && { borderColor: completedColor }, isActive && mainColor && { borderColor: mainColor }]}>
       <TouchableOpacity style={styles.stepHeader} onPress={onPress}>
         <View style={styles.stepHeaderContent}>
           <View
@@ -252,8 +260,7 @@ const StepCard = ({
               styles.stepIcon,
               isCompleted
                 ? {
-                  backgroundColor:
-                    currentAppVariant?.paymentModal?.stepCompletedColor,
+                  backgroundColor: completedColor,
                 }
                 : isActive
                   ? {
@@ -271,7 +278,7 @@ const StepCard = ({
         </View>
         <View style={styles.stepStatus}>
           {isCompleted && (
-            <View style={styles.completedBadge}>
+            <View style={[styles.completedBadge, { backgroundColor: completedColor }]}>
               <Text style={styles.completedText}>✓ Done</Text>
             </View>
           )}
@@ -329,11 +336,12 @@ const MPInvestNowModal = ({
 }) => {
   const { configData } = useTrade();
 
-  // Get dynamic colors from config
+  // Get dynamic colors from config - use gradient2 as the primary accent color
   const config = useConfig();
-  const mainColor = config?.mainColor || '#0056B7';
   const gradient1 = config?.gradient1 || '#002651';
   const gradient2 = config?.gradient2 || '#0076FB';
+  const mainColor = gradient2;
+  const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
 
   // API configuration from your Postman
   const PDF_API_CONFIG = {
@@ -347,7 +355,7 @@ const MPInvestNowModal = ({
     },
   };
 
-  const [adminpaymentPlatform, setadminpaymentPlatform] = useState('razorpay');
+  const [adminpaymentPlatform, setadminpaymentPlatform] = useState(config?.paymentPlatform || 'cashfree');
 
   const getpaymentPlatform = () => {
     if (specificPlan) {
@@ -363,9 +371,13 @@ const MPInvestNowModal = ({
           },
         })
         .then(res => {
-          setadminpaymentPlatform(res?.data?.paymentPlatform);
+          if (res?.data?.paymentPlatform) {
+            setadminpaymentPlatform(res.data.paymentPlatform);
+          }
         })
-        .catch(err => console.log('here-------->>>>>>>>>>.', err.response));
+        .catch(() => {
+          setadminpaymentPlatform(config?.paymentPlatform || 'cashfree');
+        });
     }
   };
 
@@ -374,7 +386,6 @@ const MPInvestNowModal = ({
   const payu =
     String(adminpaymentPlatform).trim().toLowerCase() === 'payu';
 
-  console.log('Payment Platform-------', adminpaymentPlatform, { cashfree, payu });
 
   // PayU WebView state
   const [showPayUWebView, setShowPayUWebView] = useState(false);
@@ -493,10 +504,24 @@ const MPInvestNowModal = ({
   );
 
   const isIOS = Platform.OS === 'ios';
-  const configGst = configData?.config?.REACT_APP_ADVISOR_GST_CONFIGURE;
+  const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
-  // Get app variant configuration
-  const currentAppVariant = APP_VARIANTS[appVariant] || APP_VARIANTS.arfs;
+  // Get app variant configuration - use dynamic config colors (gradient2) from API
+  const staticVariant = APP_VARIANTS[appVariant] || APP_VARIANTS.arfs;
+  const currentAppVariant = {
+    ...staticVariant,
+    paymentModal: {
+      headerBg: gradient2,
+      stepActiveColor: gradient2,
+      buttonPrimaryBg: gradient2,
+      buttonSecondaryBg: gradient2,
+      accentColor: gradient2,
+      progressBarColor: gradient2,
+      linkColor: gradient2,
+      stepCompletedColor: stepCompletedColor,
+      checkboxActiveColor: stepCompletedColor,
+    },
+  };
   const whiteLabelText =
     configData?.config?.REACT_APP_WHITE_LABEL_TEXT || 'arfs';
 
@@ -993,7 +1018,7 @@ const MPInvestNowModal = ({
   useEffect(() => {
     getpaymentPlatform();
     getAllSubscriptionData();
-  }, []);
+  }, [specificPlan]);
 
   // Sync DOB and PAN when userDetails changes
   useEffect(() => {
@@ -3663,6 +3688,7 @@ const MPInvestNowModal = ({
       console.log('data==', data);
     } catch (err) {
       setAppliedCoupon(null);
+      setAppliedCouponId(null);
       console.log('messa---', err?.response);
       setCouponMessage(
         `❌ ${err?.response?.data?.message || 'Failed to apply coupon'}`,
@@ -3679,8 +3705,19 @@ const MPInvestNowModal = ({
   let durationText = '';
 
   // Common variables
-  const gstText = configGst === 'true' ? ' + GST' : '';
+  const gstText = gstLabel(configGst, configGstWithText);
   const hasDiscount = specificPlan?.discountPercentage > 0;
+
+  // Helper: get display amount (base or GST-inclusive depending on config)
+  const displayAmount = (base) => {
+    const amt = Number(base || 0);
+    return configGst && configGstWithText ? withGst(amt) : amt;
+  };
+  // Helper: get payment amount (always GST-inclusive when configGst is true)
+  const paymentAmount = (base) => {
+    const amt = Number(base || 0);
+    return configGst ? withGst(amt) : amt;
+  };
 
   // Main Logic: Differentiate between 'recurring' and 'oneTime' plan types
   // This IF statement for recurring plans is correct and remains unchanged.
@@ -3689,7 +3726,11 @@ const MPInvestNowModal = ({
     // --- RECURRING PLAN LOGIC ---
     durationText =
       selectedCard?.charAt(0)?.toUpperCase() + selectedCard?.slice(1);
-    const offerDetails = specificPlan?.offer_plans_details?.[0];
+    const offerDetails = appliedCoupon
+      ? specificPlan?.offer_plans_details?.find(
+          (detail) => detail.couponId?.toString() === appliedCouponId?.toString(),
+        )
+      : specificPlan?.offer_plans_details?.[0];
 
     if (appliedCoupon && offerDetails) {
       const originalRecurringAmount =
@@ -3698,27 +3739,27 @@ const MPInvestNowModal = ({
         offerDetails?.pricingWithoutGst?.[selectedCard],
       );
       oldPrice = `₹${originalRecurringAmount}`;
-      price = `₹${discountedRecurringAmount}${gstText}`;
+      price = `₹${displayAmount(discountedRecurringAmount)}${gstText}`;
       saveText = 'Coupon Applied';
       total = price;
-      setOneTimeAmount(discountedRecurringAmount);
+      setOneTimeAmount(paymentAmount(discountedRecurringAmount));
     } else if (hasDiscount) {
       const discountedAmount = specificPlan.pricingWithoutGst?.[selectedCard];
       const mrp = Math.round(
         discountedAmount * (100 / (100 - specificPlan.discountPercentage)),
       );
       oldPrice = `₹${mrp}`;
-      price = `₹${discountedAmount}${gstText}`;
+      price = `₹${displayAmount(discountedAmount)}${gstText}`;
       saveText = `${specificPlan.discountPercentage}% OFF`;
       total = price;
-      setOneTimeAmount(discountedAmount);
+      setOneTimeAmount(paymentAmount(discountedAmount));
     } else {
       const recurringAmount = specificPlan.pricingWithoutGst?.[selectedCard];
       oldPrice = '';
-      price = `₹${recurringAmount}${gstText}`;
+      price = `₹${displayAmount(recurringAmount)}${gstText}`;
       saveText = '';
       total = price;
-      setOneTimeAmount(recurringAmount);
+      setOneTimeAmount(paymentAmount(recurringAmount));
     }
   } else {
     const selectedOnetimeOption = specificPlan.onetimeOptions.find(
@@ -3747,37 +3788,37 @@ const MPInvestNowModal = ({
           originalAmount -
           (originalAmount * appliedCoupon?.discountValue) / 100,
         );
-        oldPrice = `₹${originalAmount}${gstText}`;
-        price = `₹${discounted}${gstText}`;
+        oldPrice = `₹${displayAmount(originalAmount)}${gstText}`;
+        price = `₹${displayAmount(discounted)}${gstText}`;
         saveText = `Coupon ${appliedCoupon?.discountValue}% Off`;
         total = price;
-        setOneTimeAmount(discounted);
+        setOneTimeAmount(paymentAmount(discounted));
       } else {
         const discounted = Math.round(
           originalAmount - appliedCoupon?.discountValue,
         );
-        oldPrice = `₹${originalAmount}${gstText}`;
-        price = `₹${discounted}${gstText}`;
+        oldPrice = `₹${displayAmount(originalAmount)}${gstText}`;
+        price = `₹${displayAmount(discounted)}${gstText}`;
         saveText = `Coupon ₹${appliedCoupon?.discountValue} Off`;
         total = price;
-        setOneTimeAmount(discounted);
+        setOneTimeAmount(paymentAmount(discounted));
       }
     } else if (hasDiscount) {
       // Note: The original price calculation for discount was slightly different. Reverting to your original.
       const mrp = Math.round(
         originalAmount * (1 + specificPlan.discountPercentage / 100),
       );
-      oldPrice = `₹${mrp}${gstText}`;
-      price = `₹${originalAmount}${gstText}`;
+      oldPrice = `₹${displayAmount(mrp)}${gstText}`;
+      price = `₹${displayAmount(originalAmount)}${gstText}`;
       saveText = `${specificPlan.discountPercentage}% OFF`;
       total = price;
-      setOneTimeAmount(originalAmount);
+      setOneTimeAmount(paymentAmount(originalAmount));
     } else {
       oldPrice = '';
-      price = `₹${originalAmount}${gstText}`;
+      price = `₹${displayAmount(originalAmount)}${gstText}`;
       saveText = '';
       total = price;
-      setOneTimeAmount(originalAmount);
+      setOneTimeAmount(paymentAmount(originalAmount));
     }
   }
 
@@ -3948,7 +3989,7 @@ const MPInvestNowModal = ({
                   panError
                     ? styles.errorInput
                     : panNumber && validatePan(panNumber)
-                      ? styles.successInput
+                      ? [styles.successInput, {borderColor: stepCompletedColor}]
                       : null,
                 ]}
                 value={panNumber}
@@ -3964,8 +4005,8 @@ const MPInvestNowModal = ({
                 </Text>
               )}
               {panNumber && validatePan(panNumber) && (
-                <Text style={styles.successText}>
-                  <Check size={12} color="#29A400" /> Valid PAN format
+                <Text style={[styles.successText, {color: stepCompletedColor}]}>
+                  <Check size={12} color={stepCompletedColor} /> Valid PAN format
                 </Text>
               )}
             </View>
@@ -4056,7 +4097,7 @@ const MPInvestNowModal = ({
                                   : styles.cardUnselected,
                               ]}
                               onPress={() => {
-                                setOneTimeAmount(onetimefinal);
+                                setOneTimeAmount(paymentAmount(onetimefinal));
                                 handleCardClick(optionKey);
                                 if (durationText) {
                                   const numberOnly = parseInt(
@@ -4092,7 +4133,7 @@ const MPInvestNowModal = ({
                                         <Text style={[styles.lineThroughBlue, { color: mainColor }]}>
                                           ₹{item.amountWithoutGst}
                                         </Text>
-                                        <Text style={styles.greenPrice}>
+                                        <Text style={[[styles.greenPrice, {color: stepCompletedColor}], {color: stepCompletedColor}]}>
                                           ₹
                                           {appliedCoupon.discountType ===
                                             'percentage'
@@ -4106,7 +4147,7 @@ const MPInvestNowModal = ({
                                               item.amount -
                                               appliedCoupon.discountValue,
                                             )}
-                                          {configGst === 'true' ? ' + GST' : ''}
+                                          {gstText}
                                         </Text>
                                       </View>
                                     </>
@@ -4127,18 +4168,18 @@ const MPInvestNowModal = ({
                                           )}
                                         </Text>
                                         <Text style={[styles.bluePrice, { color: mainColor }]}>
-                                          ₹{item.amountWithoutGst}{' '}
-                                          {configGst === 'true' ? '+ GST' : ''}
+                                          ₹{displayAmount(item.amountWithoutGst)}{' '}
+                                          {gstText}
                                         </Text>
                                       </View>
-                                      <Text style={styles.discountText}>
+                                      <Text style={[styles.discountText, {color: stepCompletedColor}]}>
                                         {discountPercentage}% OFF
                                       </Text>
                                     </>
                                   ) : (
                                     <Text style={[styles.bluePrice, { color: mainColor }]}>
-                                      ₹{item.amountWithoutGst}{' '}
-                                      {configGst === 'true' ? '+ GST' : ''}
+                                      ₹{displayAmount(item.amountWithoutGst)}{' '}
+                                      {gstText}
                                     </Text>
                                   )}
                                 </View>
@@ -4235,25 +4276,24 @@ const MPInvestNowModal = ({
                                             <Text
                                               style={styles.lineThroughGray}>
                                               ₹
-                                              {
+                                              {displayAmount(
                                                 planDetails.pricingWithoutGst?.[
                                                 item
                                                 ]
-                                              }
+                                              )}
+                                              {gstText}
                                             </Text>
-                                            <Text style={styles.greenPrice}>
+                                            <Text style={[styles.greenPrice, {color: stepCompletedColor}]}>
                                               ₹
-                                              {Math.round(
+                                              {displayAmount(Math.round(
                                                 offerDetails
                                                   ?.pricingWithoutGst?.[item],
-                                              )}
-                                              {configGst === 'true'
-                                                ? ' + GST'
-                                                : ''}
+                                              ))}
+                                              {gstText}
                                             </Text>
                                           </View>
 
-                                          <Text style={styles.discountText}>
+                                          <Text style={[styles.discountText, {color: stepCompletedColor}]}>
                                             Coupon Applied
                                           </Text>
                                         </>
@@ -4280,18 +4320,16 @@ const MPInvestNowModal = ({
                                             </Text>
                                             <Text style={[styles.bluePrice, { color: mainColor }]}>
                                               ₹
-                                              {
+                                              {displayAmount(
                                                 planDetails.pricingWithoutGst?.[
                                                 item
                                                 ]
-                                              }{' '}
-                                              {configGst === 'true'
-                                                ? '+ GST'
-                                                : ''}
+                                              )}{' '}
+                                              {gstText}
                                             </Text>
                                           </View>
 
-                                          <Text style={styles.discountText}>
+                                          <Text style={[styles.discountText, {color: stepCompletedColor}]}>
                                             {planDetails.discountPercentage}%
                                             OFF
                                           </Text>
@@ -4299,12 +4337,12 @@ const MPInvestNowModal = ({
                                       ) : (
                                         <Text style={[styles.bluePrice, { color: mainColor }]}>
                                           ₹
-                                          {
+                                          {displayAmount(
                                             planDetails.pricingWithoutGst?.[
                                             item
                                             ]
-                                          }{' '}
-                                          {configGst === 'true' ? '+ GST' : ''}
+                                          )}{' '}
+                                          {gstText}
                                         </Text>
                                       )}
                                     </View>
@@ -4338,6 +4376,8 @@ const MPInvestNowModal = ({
               handleApplyCoupon={handleApplyCoupon}
               couponMessage={couponMessage}
               appliedCoupon={appliedCoupon}
+              mainColor={mainColor}
+              stepCompletedColor={stepCompletedColor}
             />
 
             <View style={styles.consentContainer}>
@@ -4371,6 +4411,29 @@ const MPInvestNowModal = ({
               </TouchableOpacity>
             </View>
 
+            {/* GST Breakdown */}
+            {configGst && onetimeamount > 0 && (() => {
+              const totalAmt = Number(onetimeamount);
+              const baseAmt = Math.round(totalAmt / 1.18);
+              const gstAmt = totalAmt - baseAmt;
+              return (
+                <View style={styles.gstBreakdownContainer}>
+                  <View style={styles.gstBreakdownRow}>
+                    <Text style={styles.gstBreakdownLabel}>Subtotal</Text>
+                    <Text style={styles.gstBreakdownValue}>₹{baseAmt}</Text>
+                  </View>
+                  <View style={styles.gstBreakdownRow}>
+                    <Text style={styles.gstBreakdownLabel}>GST @18%</Text>
+                    <Text style={styles.gstBreakdownValue}>₹{gstAmt}</Text>
+                  </View>
+                  <View style={[styles.gstBreakdownRow, styles.gstBreakdownTotal]}>
+                    <Text style={styles.gstBreakdownTotalLabel}>Total</Text>
+                    <Text style={styles.gstBreakdownTotalValue}>₹{totalAmt}</Text>
+                  </View>
+                </View>
+              );
+            })()}
+
             {/* Apple App Store Compliance Disclaimer */}
             <View style={styles.paymentDisclaimer}>
               <Text style={styles.paymentDisclaimerText}>
@@ -4384,6 +4447,7 @@ const MPInvestNowModal = ({
               style={[
                 styles.stepButton,
                 styles.stepButtonGreen,
+                { backgroundColor: stepCompletedColor },
                 (!selectedCard || loading || !consentChecked) &&
                 styles.stepButtonDisabled,
               ]}>
@@ -4411,9 +4475,11 @@ const MPInvestNowModal = ({
       <Modal visible={visible} animationType="slide" transparent={false}>
         <SafeAreaView style={styles.container}>
           <View style={styles.headerContainer}>
-            {/* View with solid background replaces LinearGradient for iOS Fabric compatibility */}
-            <View
-              style={[styles.alphaQuarkBanner, { backgroundColor: gradient1, overflow: 'hidden' }]}>
+            <GradientView
+              colors={[gradient1, gradient2]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.alphaQuarkBanner}>
               <View style={styles.headerPattern} />
               <View style={styles.headerContent}>
                 <View style={styles.headerTitleContainer}>
@@ -4430,7 +4496,7 @@ const MPInvestNowModal = ({
                   <XIcon size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
-            </View>
+            </GradientView>
           </View>
 
           {/* Progress Bar */}
@@ -4438,7 +4504,7 @@ const MPInvestNowModal = ({
             steps={steps}
             currentStep={currentStep}
             currentAppVariant={currentAppVariant}
-            mainColor={mainColor}
+            mainColor={gradient2}
           />
 
           {/* Content */}
@@ -4453,7 +4519,9 @@ const MPInvestNowModal = ({
                   isActive={currentStep === index}
                   isCompleted={currentStep > index}
                   onPress={() => currentStep > index && setCurrentStep(index)}
-                  currentAppVariant={currentAppVariant}>
+                  currentAppVariant={currentAppVariant}
+                  mainColor={mainColor}
+                  stepCompletedColor={stepCompletedColor}>
                   {renderStepContent(index)}
                 </StepCard>
               ))}
@@ -4953,6 +5021,46 @@ const styles = StyleSheet.create({
   linkText: {
     fontFamily: 'Satoshi-Bold',
     textDecorationLine: 'underline',
+  },
+  gstBreakdownContainer: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  gstBreakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  gstBreakdownLabel: {
+    fontSize: 13,
+    fontFamily: 'Satoshi-Regular',
+    color: '#64748b',
+  },
+  gstBreakdownValue: {
+    fontSize: 13,
+    fontFamily: 'Satoshi-Medium',
+    color: '#334155',
+  },
+  gstBreakdownTotal: {
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    marginTop: 4,
+    paddingTop: 8,
+  },
+  gstBreakdownTotalLabel: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    color: '#1e293b',
+  },
+  gstBreakdownTotalValue: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Bold',
+    color: '#1e293b',
   },
   paymentDisclaimer: {
     backgroundColor: '#f0f9ff',

@@ -84,7 +84,7 @@ const ModalPFCard = ({
         server.server.baseUrl
       }api/model-portfolio-db-update/subscription-raw-amount?email=${encodeURIComponent(
         userEmail,
-      )}&modelName=${encodeURIComponent(strategyDetails?.model_name)}`,
+      )}&modelName=${encodeURIComponent(strategyDetails?.model_name)}&user_broker=${encodeURIComponent("")}`,
 
       headers: {
         'Content-Type': 'application/json',
@@ -116,8 +116,15 @@ const ModalPFCard = ({
     (a, b) => new Date(b.execDate) - new Date(a.execDate),
   )[0];
 
-  const totalInvested = net_portfolio_updated?.order_results
-    ? net_portfolio_updated.order_results.reduce((total, stock) => {
+  // Filter out rejected/failed/cancelled orders from calculations
+  const rejectedStatuses = ["rejected", "failure", "cancelled", "failed", "unplaced"];
+  const validOrderResults = net_portfolio_updated?.order_results?.filter((order) => {
+    const status = (order.orderStatus || "").toLowerCase();
+    return !rejectedStatuses.includes(status) && Number(order.quantity || 0) > 0;
+  });
+
+  const totalInvested = validOrderResults
+    ? validOrderResults.reduce((total, stock) => {
         return (
           total +
           (parseFloat(stock?.averagePrice) || 0) * (stock?.quantity || 0)

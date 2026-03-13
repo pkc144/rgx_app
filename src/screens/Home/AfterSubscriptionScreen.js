@@ -11,7 +11,7 @@ import {
   FlatList,
   Dimensions,
 } from 'react-native';
-import SVGGradient from '../../components/SVGGradient';
+import GradientView from '../../components/GradientView';
 import {ChevronLeft, Bookmark} from 'lucide-react-native';
 import {getAuth} from '@react-native-firebase/auth';
 import {TabView, SceneMap, TabBar} from 'react-native-tab-view';
@@ -36,6 +36,7 @@ import CustomTabBarMPPerformance from '../Drawer/CustomTabbarMPPerformance';
 import EmptyStateInfoMP from '../Drawer/EmptyStateMP';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
 import DistributionGrid from '../Drawer/DistributionRowGrid';
+import SubscribedPFList from '../../components/ModelPortfolioComponents/SubscribedPFList';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
 
@@ -167,7 +168,7 @@ const AfterSubscriptionScreen = ({route}) => {
         )}&modelName=${encodeURIComponent(
           strategyDetails?.model_name,
         )}&user_broker=${encodeURIComponent(
-          userDetails?.user_broker ? userDetails?.user_broker : 'DummyBroker',
+          userDetails?.user_broker || "",
         )}`,
         {
           headers: {
@@ -202,28 +203,35 @@ const AfterSubscriptionScreen = ({route}) => {
     (a, b) => new Date(b.execDate) - new Date(a.execDate),
   )?.[0];
 
+  // Filter out rejected/failed/cancelled orders from calculations
+  const rejectedStatuses = ["rejected", "failure", "cancelled", "failed", "unplaced"];
+  const validOrderResults = net_portfolio_updated?.order_results?.filter((order) => {
+    const status = (order.orderStatus || "").toLowerCase();
+    return !rejectedStatuses.includes(status) && Number(order.quantity || 0) > 0;
+  });
+
   const {getLTPForSymbol} = useWebSocketCurrentPrice(
-    net_portfolio_updated?.order_results,
+    validOrderResults,
   );
 
   const totalUpdatedQty =
-    net_portfolio_updated?.order_results?.reduce(
+    validOrderResults?.reduce(
       (total, ele) => total + (ele?.quantity || 0),
       0,
     ) || 0;
 
   const totalInvested =
-    net_portfolio_updated?.order_results?.reduce((total, stock) => {
+    validOrderResults?.reduce((total, stock) => {
       return total + stock.averagePrice * stock.quantity;
     }, 0) || 0;
 
   const totalCurrent =
-    net_portfolio_updated?.order_results?.reduce((total, stock) => {
+    validOrderResults?.reduce((total, stock) => {
       return total + getLTPForSymbol(stock.symbol) * stock.quantity;
     }, 0) || 0;
 
   const tableData =
-    net_portfolio_updated?.order_results?.map(stock => ({
+    validOrderResults?.map(stock => ({
       symbol: stock.symbol,
       currentPrice: getLTPForSymbol(stock?.symbol)
         ? getLTPForSymbol(stock?.symbol)
@@ -283,19 +291,18 @@ const AfterSubscriptionScreen = ({route}) => {
   }, [fileName]);
 
   return (
-    <SVGGradient
+    <GradientView
       colors={[gradientStart, gradientEnd]}
       start={{x: 0, y: 0}}
-      end={{x: 1, y: 1}}
+      end={{x: 0, y: 1}}
       style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor={gradientStart} />
 
         <ScrollView contentContainerStyle={styles.content}>
-          <SVGGradient
+          {/* Header Card */}
+          <GradientView
             colors={[gradientEnd, gradientStart]}
-            start={{x: 0, y: 0}}
-            end={{x: 1, y: 1}}
             style={styles.headerCard}>
             <View style={styles.headerRow}>
               <TouchableOpacity
@@ -359,7 +366,7 @@ const AfterSubscriptionScreen = ({route}) => {
               />
               <InfoPill title="Rebalance" value={strategyDetails?.frequency} />
             </View>
-          </SVGGradient>
+          </GradientView>
 
           {/* Holdings Distribution */}
           <View style={{}}>
@@ -373,13 +380,20 @@ const AfterSubscriptionScreen = ({route}) => {
                       {latestRebalance?.adviceEntries?.length ? (
                         <DistributionGrid
                           adviceEntries={latestRebalance.adviceEntries}
-                          holdings={net_portfolio_updated?.order_results}
+                          holdings={validOrderResults}
                           getLTPForSymbol={getLTPForSymbol}
                           totalCurrent={totalCurrent}
                         />
                       ) : (
                         <EmptyStateInfoMP />
                       )}
+                      <SubscribedPFList
+                        modelPortfolioStrategy={strategyDetails ? [strategyDetails] : []}
+                        userEmail={userEmail}
+                        broker={userDetails?.user_broker}
+                        userDetails={userDetails}
+                        navigation={navigation}
+                      />
                     </View>
                   ),
 
@@ -518,7 +532,7 @@ const AfterSubscriptionScreen = ({route}) => {
           strategyDetails={strategyDetails}
         />
       )}
-    </SVGGradient>
+    </GradientView>
   );
 };
 
