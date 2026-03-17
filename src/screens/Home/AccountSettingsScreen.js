@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -8,6 +8,8 @@ import {
   Text,
   TouchableOpacity,
   Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {useConfig} from '../../context/ConfigContext';
 import APP_VARIANTS from '../../utils/Config';
@@ -23,17 +25,43 @@ import {
   LogOut,
   Bell,
   Bookmark,
+  Trash2,
 } from 'lucide-react-native';
 import GradientView from '../../components/GradientView';
-import {getAuth} from '@react-native-firebase/auth';
+import {getAuth, signOut} from '@react-native-firebase/auth';
+import {GoogleSignin} from '@react-native-google-signin/google-signin';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from '../../utils/safeConfig';
 import {useTrade} from '../TradeContext';
+import {clearAllAppData} from '../../utils/storageUtils';
+import server from '../../utils/serverConfig';
+import {generateToken} from '../../utils/SecurityTokenManager';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 
 // inside your component
 
 const AccountSettingsScreen = ({navigation}) => {
-  const {userDetails} = useTrade();
+  const {
+    userDetails,
+    setUserDetails,
+    setIsProfileCompleted,
+    setHasFetchedTrades,
+    setFunds,
+    setstockRecoNotExecutedfinal,
+    setModelPortfolioStrategyfinal,
+    setBroker,
+  } = useTrade();
   const config = useConfig();
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (config?.googleWebClientId) {
+      GoogleSignin.configure({
+        webClientId: config.googleWebClientId,
+      });
+    }
+  }, [config?.googleWebClientId]);
   const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
   const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
   const fallbackConfig = APP_VARIANTS[validVariant] || {};
@@ -138,6 +166,12 @@ const AccountSettingsScreen = ({navigation}) => {
           onPress: () => handleMenuPress('Terms & Conditions'),
         },
         {
+          icon: Trash2,
+          label: 'Delete Account',
+          onPress: () => handleDeleteAccount(),
+          isDelete: true,
+        },
+        {
           icon: LogOut,
           label: 'Log Out',
           onPress: () => handleMenuPress('Logout'),
@@ -146,6 +180,102 @@ const AccountSettingsScreen = ({navigation}) => {
       ],
     },
   ];
+
+  const performAccountDeletion = async () => {
+    setIsDeleting(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        Alert.alert('Error', 'Unable to identify your account. Please sign in again.');
+        setIsDeleting(false);
+        return;
+      }
+
+      // Get Firebase ID token for backend verification
+      const idToken = await currentUser.getIdToken(true);
+
+      // Call backend API to delete user account and all associated data
+      await axios.delete(
+        `${server.server.baseUrl}api/account/delete`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`,
+            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+          data: {confirmDeletion: true},
+        },
+      );
+
+      // Sign out from Google if applicable
+      try {
+        await GoogleSignin.signOut();
+      } catch (googleError) {
+        console.log('Google signOut skipped (user may not have used Google)');
+      }
+
+      // Clear all local data
+      await clearAllAppData();
+      await AsyncStorage.removeItem('cartItems');
+
+      // Reset state
+      setUserDetails(null);
+      setHasFetchedTrades(false);
+      setIsProfileCompleted(false);
+      setFunds({});
+      setBroker(null);
+      setstockRecoNotExecutedfinal([]);
+      setModelPortfolioStrategyfinal([]);
+
+      setIsDeleting(false);
+      Alert.alert(
+        'Account Deleted',
+        'Your account and all associated data have been permanently deleted.',
+        [{text: 'OK', onPress: () => navigation.replace('Login')}],
+        {cancelable: false},
+      );
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      setIsDeleting(false);
+      const errorMessage =
+        error.response?.data?.message ||
+        error.response?.data?.msg ||
+        'Failed to delete account. Please try again later.';
+      Alert.alert('Error', errorMessage);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to delete your account? This action is permanent and cannot be undone. All your data, subscriptions, and portfolio history will be removed.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Final Confirmation',
+              `Your account "${userDetails?.email || auth.currentUser?.email}" will be permanently deleted. This cannot be reversed.`,
+              [
+                {text: 'Go Back', style: 'cancel'},
+                {
+                  text: 'Permanently Delete',
+                  style: 'destructive',
+                  onPress: performAccountDeletion,
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
+  };
 
   const handleMenuPress = screenName => {
     if (navigation?.navigate) {
@@ -169,27 +299,26 @@ const AccountSettingsScreen = ({navigation}) => {
     return name?.length > 0 ? name[0]?.toUpperCase() : '';
   };
 
-  const renderMenuItem = (item, isLast) => (
-    <TouchableOpacity
-      key={item.label}
-      style={[styles.menuItem, isLast && styles.menuItemLast]}
-      onPress={item.onPress}
-      activeOpacity={0.7}>
-      <View style={styles.menuItemLeft}>
-        <View
-          style={[
-            styles.iconContainer,
-            item.isLogout && styles.logoutIconContainer,
-          ]}>
-          <item.icon size={18} color={item.isLogout ? '#FF4444' : '#FFFFFF'} />
+  const renderMenuItem = (item, isLast) => {
+    const isDanger = item.isLogout || item.isDelete;
+    return (
+      <TouchableOpacity
+        key={item.label}
+        style={[styles.menuItem, isLast && styles.menuItemLast]}
+        onPress={item.onPress}
+        activeOpacity={0.7}>
+        <View style={styles.menuItemLeft}>
+          <View style={styles.iconContainer}>
+            <item.icon size={18} color={isDanger ? '#FF4444' : '#FFFFFF'} />
+          </View>
+          <Text style={[styles.menuItemText, item.isDelete && styles.deleteText]}>
+            {item.label}
+          </Text>
         </View>
-        <Text style={[styles.menuItemText, item.isLogout && styles.logoutText]}>
-          {item.label}
-        </Text>
-      </View>
-      <ChevronRight size={20} color="#FFFFFF" />
-    </TouchableOpacity>
-  );
+        <ChevronRight size={20} color="#FFFFFF" />
+      </TouchableOpacity>
+    );
+  };
 
   // Get gradient colors from config
   const gradientStart = config?.gradient1 || '#002651';
@@ -284,7 +413,10 @@ const AccountSettingsScreen = ({navigation}) => {
               <View style={styles.menuContainer}>
                 {section.items
                   .filter(
-                    it => it.label !== 'Settings' && it.label !== 'Log Out',
+                    it =>
+                      it.label !== 'Settings' &&
+                      it.label !== 'Log Out' &&
+                      it.label !== 'Delete Account',
                   )
                   .map((item, index, arr) =>
                     renderMenuItem(item, index === arr.length - 1),
@@ -308,21 +440,32 @@ const AccountSettingsScreen = ({navigation}) => {
             );
           })()}
 
-          {/* Separate container for Log Out (no label) */}
+          {/* Separate container for Log Out and Delete Account */}
           {(() => {
-            const logoutItem = menuItems
+            const bottomItems = menuItems
               .flatMap(s => s.items)
-              .find(it => it.label === 'Log Out');
-            if (!logoutItem) return null;
+              .filter(
+                it => it.label === 'Log Out' || it.label === 'Delete Account',
+              );
+            if (bottomItems.length === 0) return null;
             return (
               <View style={styles.menuSection}>
                 <View style={styles.menuContainer}>
-                  {renderMenuItem(logoutItem, true)}
+                  {bottomItems.map((item, index) =>
+                    renderMenuItem(item, index === bottomItems.length - 1),
+                  )}
                 </View>
               </View>
             );
           })()}
         </ScrollView>
+
+        {isDeleting && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#fff" />
+            <Text style={styles.loadingText}>Deleting account...</Text>
+          </View>
+        )}
       </SafeAreaView>
     </GradientView>
   );
@@ -487,6 +630,22 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     color: '#FFFFFF',
+  },
+  deleteText: {
+    color: '#FF4444',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 12,
+    fontFamily: 'Poppins-Medium',
   },
 });
 

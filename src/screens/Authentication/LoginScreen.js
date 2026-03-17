@@ -179,38 +179,45 @@ const LoginScreen = () => {
           );
           userDetails = getResponse;
         } catch (getUserError) {
-          console.log('User does not exist, creating...');
+          // Only create a new user if the backend returned 404 (user not found)
+          // For any other error (network, timeout, server error), rethrow
+          if (getUserError.response?.status === 404) {
+            console.log('User not found (404), creating new user...');
 
-          // Create user
-          await axios.post(
-            `${server.server.baseUrl}api/user/`,
-            {
-              email: user.email,
-              name: user.displayName || 'New User',
-              firebaseId: user.uid,
-            },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Advisor-Subdomain': getAdvisorSubdomain(),
-                'aq-encrypted-key': generateToken(
-                  Config.REACT_APP_AQ_KEYS,
-                  Config.REACT_APP_AQ_SECRET,
-                ),
-              },
-              timeout: 10000,
-            },
-          );
-
-          // Return minimal user data to avoid second API call
-          userDetails = {
-            data: {
-              User: {
+            // Create user
+            await axios.post(
+              `${server.server.baseUrl}api/user/`,
+              {
                 email: user.email,
                 name: user.displayName || 'New User',
+                firebaseId: user.uid,
               },
-            },
-          };
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': getAdvisorSubdomain(),
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
+                timeout: 10000,
+              },
+            );
+
+            // Return minimal user data to avoid second API call
+            userDetails = {
+              data: {
+                User: {
+                  email: user.email,
+                  name: user.displayName || 'New User',
+                },
+              },
+            };
+          } else {
+            console.error('Error fetching user details:', getUserError.message);
+            throw getUserError;
+          }
         }
 
         // Log successful login (fire-and-forget) - use subdomain from config
