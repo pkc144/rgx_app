@@ -4,6 +4,10 @@
 .env
 .env.*
 
+# Firebase / Google Services (contains API keys)
+**/GoogleService-Info.plist
+**/google-services.json
+
 # Xcode
 #
 build/
