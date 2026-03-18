@@ -947,7 +947,7 @@ const getAllTrades = async () => {
         sid,
         viewToken,
         serverId,
-        configData,
+        userEmail,
       );
       console.log("Fetched Funds-----",fetchedFunds);
       if (fetchedFunds) {
@@ -1235,9 +1235,8 @@ const getAllTrades = async () => {
         jwtToken,
         secretKey,
         sid,
-        viewToken,
         serverId,
-        configData,
+        userEmail,
       );
       if (brokerSpecificHolding) {
         setBrokerHoldingsData(brokerSpecificHolding);
@@ -1281,9 +1280,8 @@ const getAllTrades = async () => {
         jwtToken,
         secretKey,
         sid,
-        viewToken,
         serverId,
-        configData,
+        userEmail,
       );
       if (allHoldings) {
         setAllHoldingsData(allHoldings);

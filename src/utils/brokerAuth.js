@@ -144,7 +144,11 @@ export const BROKER_CONFIGS = {
     usesState: true,
     oauthProvider: 'smartapi',
   },
-  // Add other brokers as needed
+  'AliceBlue': {
+    getLoginUrl: () => 'https://ant.aliceblueonline.com/?appcode=7WMf5NotZe',
+    usesState: false,
+    oauthProvider: 'aliceblue',
+  },
 };
 
 /**

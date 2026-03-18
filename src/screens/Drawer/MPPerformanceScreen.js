@@ -503,6 +503,10 @@ const MPPerformanceScreen = ({route}) => {
         userDetails?.apiKey,
         userDetails?.jwtToken,
         userDetails?.secretKey,
+        userDetails?.sid,
+        userDetails?.viewToken,
+        userDetails?.serverId,
+        userEmail,
       );
       setFunds(fetchedFunds || {});
     };
