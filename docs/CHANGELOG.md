@@ -4,6 +4,14 @@ All notable changes to the RGX Research Mobile App (EquityPro) are documented he
 
 ---
 
+## [5.2.2] - 2026-04-01
+
+### Changed
+- **DdpiModal.js synced from AlphaB2B**: Replaced entire file with B2B's more complete version. B2B has additional features including TPIN confirmation modal, DDPI activation flow with YouTube player, and multi-broker DDPI support (Zerodha, ICICI, Groww, Kotak, Dhan, Axis, HDFC). All 7 `X-Advisor-Subdomain` headers use full fallback chain (`configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain()`). Fixed one header that was missing the fallback (rebalance/calculate endpoint).
+- **BrokerSelectionModal.js synced to AlphaB2B**: Copied RGX's BrokerSelectionModal.js to AlphaB2B (`Alphab2bapp/src/components/BrokerSelectionModal.js`). Features ported: `registerCallback()` for Angel One nonce-based OAuth fallback, "Broker Connected" / "Connecting..." / "Continue without connecting broker" tri-state buttons, "Can't Find Your Broker? Let Us Know" flow with broker search and unavailable broker save API, SEBI disclaimer text, and all associated styles.
+
+---
+
 ## [5.2.1] - 2026-03-31
 
 ### Fixed

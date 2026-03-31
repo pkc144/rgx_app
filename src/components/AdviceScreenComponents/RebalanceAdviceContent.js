@@ -255,7 +255,9 @@ const RebalanceAdviceContent = React.memo(
         if (!latest) return null;
 
         const userExecution = latest?.subscriberExecutions?.find(
-          execution => execution?.user_email === userEmail,
+          execution =>
+            execution?.user_email === userEmail &&
+            (!broker || execution?.user_broker === broker),
         );
         const matchingFailedTrades = modelPortfolioRepairTrades?.find(
           trade =>
@@ -439,7 +441,9 @@ const RebalanceAdviceContent = React.memo(
       );
 
         const userExecution = latest?.subscriberExecutions?.find(
-        (execution) => execution?.user_email === userEmail
+        (execution) =>
+          execution?.user_email === userEmail &&
+          (!broker || execution?.user_broker === broker),
       );
 
       return (
@@ -484,7 +488,9 @@ const RebalanceAdviceContent = React.memo(
               setModelPortfolioModelId={setModelPortfolioModelId}
               setStoreModalName={setStoreModalName}
               userExecution={item?.latestRebalance?.subscriberExecutions?.find(
-                execution => execution?.user_email === userEmail,
+                execution =>
+                  execution?.user_email === userEmail &&
+                  (!broker || execution?.user_broker === broker),
               )}
               brokerStatus={userDetails?.connect_broker_status}
               showstatusModal={showstatusModal}

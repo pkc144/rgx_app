@@ -11,7 +11,6 @@ import {
   TextInput,
   Dimensions,
   ActivityIndicator,
-  Clipboard,
 } from 'react-native';
 import DDPI from '../assets/DDPI.png';
 import LinearGradient from 'react-native-linear-gradient';
@@ -19,10 +18,10 @@ import Toast from 'react-native-toast-message';
 import WebView from 'react-native-webview';
 import Config from 'react-native-config';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import axios from 'axios';
 import server from '../utils/serverConfig';
 
 import {generateToken} from '../utils/SecurityTokenManager';
-import {getAdvisorSubdomain} from '../utils/variantHelper';
 import {
   AlertTriangle,
   BadgeAlertIcon,
@@ -30,9 +29,12 @@ import {
   Check,
   ChevronLeft,
   X,
+  ArrowLeft,
+  ClipboardList,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useTrade} from '../screens/TradeContext';
+import {getAdvisorSubdomain} from '../utils/variantHelper';
 const {height: screenHeight, width: screenWidth} = Dimensions.get('window');
 const checkValidApiAnSecret = data => {
   if (!data) return null;
@@ -50,9 +52,6 @@ export default function DdpiModal({
   reopenRebalanceModal,
   getUserDetails,
 }) {
-  const [showTpinConfirmation, setShowTpinConfirmation] = useState(false);
-  const [tpinCompleted, setTpinCompleted] = useState(false);
-
   if (userDetails?.user_broker === 'Upstox') {
     setIsOpen(false);
     return null;
@@ -60,6 +59,9 @@ export default function DdpiModal({
   console.log('opened');
   const [authUrl, setAuthUrl] = useState(null); // Holds the URL for authentication
   const [loading, setLoading] = useState(false); // Loading state for API call
+  const [showTpinConfirmation, setShowTpinConfirmation] = useState(false);
+  const [tpinCompleted, setTpinCompleted] = useState(false);
+  const { configData } = useTrade();
 
   const proceedWithTpin = async () => {
     try {
@@ -85,45 +87,54 @@ export default function DdpiModal({
       }
 
       const data = await response.json();
+      //  console.log("API Response:", data);
 
       if (data.status === 0) {
-        setShowTpinConfirmation(true);
         setAuthUrl(data.auth_url); // Set the authentication URL to open in WebView
+        setShowTpinConfirmation(true);
       } else {
         console.error('Error in response:', data.message);
+        // Alert.alert("Error", data.message || "An error occurred.");
       }
     } catch (error) {
       setLoading(false); // Hide loading indicator
       console.error('Error in API call:', error);
+      //Alert.alert("Error", "Failed to proceed with authentication.");
     }
   };
 
   const handleProceed = async () => {
     try {
-      await fetch(
+      await axios.put(
         `${server.server.baseUrl}api/update-edis-status`,
         {
-          method: 'PUT',
+          uid: userDetails?._id,
+          is_authorized_for_sell: true,
+          user_broker: userDetails?.user_broker,
+        },
+        {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
             ),
           },
-          body: JSON.stringify({
-            uid: userDetails?._id,
-            is_authorized_for_sell: true,
-            user_broker: userDetails?.user_broker,
-          }),
         },
       );
-      getUserDetails?.();
+      if (getUserDetails) getUserDetails();
       setIsOpen(false);
-      reopenRebalanceModal?.();
+      setShowTpinConfirmation(false);
+      setTpinCompleted(false);
+      if (reopenRebalanceModal) reopenRebalanceModal();
     } catch (error) {
-      console.error('Error updating EDIS status', error);
+      console.error('Error updating EDIS status:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update authorization status. Please try again.',
+      });
     }
   };
 
@@ -169,46 +180,13 @@ export default function DdpiModal({
                     until DDPI is active
                   </Text>
                 </View>
-                {showTpinConfirmation && (
-                  <View style={styles.checkboxContainer}>
-                    <TouchableOpacity
-                      onPress={() => setTpinCompleted(!tpinCompleted)}
-                      style={[
-                        styles.checkbox,
-                        tpinCompleted ? styles.checked : styles.unchecked,
-                      ]}>
-                      {tpinCompleted && <Check size={14} color={'#fff'} />}
-                    </TouchableOpacity>
-                    <Text style={styles.label}>
-                      I've authorized the sell of the stocks
-                    </Text>
-                  </View>
-                )}
-                <View style={{flexDirection: 'row', gap: 10, marginTop: 10}}>
-                  <TouchableOpacity
-                    style={styles.proceedButton}
-                    onPress={proceedWithTpin}
-                    disabled={loading}>
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.buttonText}>
-                        Proceed with Authorization to Sell
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                  {showTpinConfirmation && (
-                    <TouchableOpacity
-                      style={[
-                        styles.proceedButton,
-                        !tpinCompleted && {opacity: 0.5},
-                      ]}
-                      disabled={!tpinCompleted}
-                      onPress={handleProceed}>
-                      <Text style={styles.buttonText}>Retry Order</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <TouchableOpacity
+                  style={styles.proceedButton}
+                  onPress={proceedWithTpin}>
+                  <Text style={styles.buttonText}>
+                    Proceed with Authorization to Sell
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -219,26 +197,79 @@ export default function DdpiModal({
       <Modal
         visible={!!authUrl}
         animationType="slide"
-        onRequestClose={() => setAuthUrl(null)}>
+        onRequestClose={() => {
+          setAuthUrl(null);
+          setShowTpinConfirmation(true);
+        }}>
         <WebView
           source={{uri: authUrl}}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
           onLoadStart={() => console.log('WebView loading started')}
           onLoadEnd={() => console.log('WebView loading finished')}
           onNavigationStateChange={event => {
             console.log('url zerodha:', event.url);
             if (event.url.includes('callback_url')) {
-              // Handle callback logic if necessary
-              setAuthUrl(null); // Close WebView
-              //Alert.alert("Success", "Authentication completed.");
+              setAuthUrl(null);
+              setShowTpinConfirmation(true);
             }
+          }}
+          onShouldStartLoadWithRequest={request => {
+            if (request.url.includes('callback_url')) {
+              setAuthUrl(null);
+              setShowTpinConfirmation(true);
+              return false;
+            }
+            return true;
           }}
           renderLoading={() => <ActivityIndicator size="large" color="#000" />}
         />
         <TouchableOpacity
           style={styles.closeButton}
-          onPress={() => setAuthUrl(null)}>
+          onPress={() => {
+            setAuthUrl(null);
+            setShowTpinConfirmation(true);
+          }}>
           <Text style={styles.closeIcon}>✕</Text>
         </TouchableOpacity>
+      </Modal>
+
+      {/* TPIN Confirmation Modal */}
+      <Modal
+        visible={showTpinConfirmation}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowTpinConfirmation(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => {
+                setShowTpinConfirmation(false);
+                setTpinCompleted(false);
+                setIsOpen(false);
+              }}>
+              <Text style={styles.closeIcon}>X</Text>
+            </TouchableOpacity>
+            <View style={styles.textSection}>
+              <Text style={styles.title}>Authorization Complete?</Text>
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => setTpinCompleted(!tpinCompleted)}>
+                <View style={[styles.checkbox, tpinCompleted ? styles.checked : styles.unchecked]}>
+                  {tpinCompleted && <Check size={14} color="#fff" />}
+                </View>
+                <Text style={styles.label}>I've authorized the sell of the stocks</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.proceedButton, !tpinCompleted && { opacity: 0.5 }]}
+                onPress={handleProceed}
+                disabled={!tpinCompleted}>
+                <Text style={styles.buttonText}>Retry Order</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -828,23 +859,21 @@ export function ActivateTopModel(userDetails) {
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   const handleCopy = textToCopy => {
-    Clipboard.setString(textToCopy);
-    Promise.resolve().then(
-      () => {
-        Toast.show({
-          type: 'success',
-          text1: 'success',
-          text2: 'Copied to clipboard!',
-        });
-      },
-      () => {
-        Toast.show({
-          type: 'error',
-          text1: 'error',
-          text2: 'Failed to copy text.',
-        });
-      },
-    );
+    try {
+      const Clipboard = require('@react-native-clipboard/clipboard').default;
+      Clipboard.setString(textToCopy);
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Copied to clipboard!',
+      });
+    } catch (e) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to copy text.',
+      });
+    }
   };
 
   const brokerInstructions = {
@@ -971,47 +1000,120 @@ export function AngleOneTpinModal({
   isOpen,
   setIsOpen,
   userDetails,
-  edisStatus,
+  edisStatus: edisStatusProp,
   tradingSymbol,
+  reopenRebalanceModal,
+  getUserDetails,
 }) {
   const [loading, setLoading] = useState(false);
-  console.log('This ABB:', edisStatus);
+  const [localEdisStatus, setLocalEdisStatus] = useState(null);
   const [isWebViewOpen, setIsWebViewOpen] = useState(false);
-  const [formHtml, setformhtml] = useState(`
+  const [showTpinConfirmation, setShowTpinConfirmation] = useState(false);
+  const [tpinCompleted, setTpinCompleted] = useState(false);
+  const { configData } = useTrade();
+
+  // Use prop if available, otherwise use locally fetched status
+  const edisStatus = edisStatusProp || localEdisStatus;
+
+  // Auto-fetch EDIS status if not provided as prop (matches production behavior)
+  useEffect(() => {
+    if (isOpen && !edisStatusProp && userDetails?.jwtToken) {
+      const fetchEdisStatus = async () => {
+        try {
+          setLoading(true);
+          const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
+          const response = await axios.post(
+            `${server.ccxtServer.baseUrl}angelone/verify-edis`,
+            {
+              apiKey: angelOneApiKey,
+              jwtToken: userDetails.jwtToken,
+              userEmail: userDetails?.email,
+            },
+          );
+          console.log('AngleOne local EDIS fetch:', response.data);
+          setLocalEdisStatus(response.data);
+        } catch (error) {
+          console.error('Error fetching Angel One EDIS status:', error);
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: 'Failed to fetch EDIS status. Please try again.',
+          });
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchEdisStatus();
+    }
+  }, [isOpen, edisStatusProp, userDetails]);
+  const buildFormHtml = (edisData) => `
   <!DOCTYPE html>
   <html>
   <script>window.onload = function() { document.getElementById("submitBtn").click(); }</script>
   <body>
-    <form 
-      name="frmDIS" 
+    <form
+      name="frmDIS"
       method="post"
       action="https://edis.cdslindia.com/eDIS/VerifyDIS/"
       style="display:none;"
     >
-      <input type="hidden" name="DPId" value="${
-        edisStatus?.data?.DPId || ''
-      }" />
-      <input type="hidden" name="ReqId" value="${
-        edisStatus?.data?.ReqId || ''
-      }" />
+      <input type="hidden" name="DPId" value="${edisData?.DPId || ''}" />
+      <input type="hidden" name="ReqId" value="${edisData?.ReqId || ''}" />
       <input type="hidden" name="Version" value="1.1" />
-      <input type="hidden" name="TransDtls" value="${
-        edisStatus?.data?.TransDtls || ''
-      }" />
-      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL}/stock-recommendation" />
+      <input type="hidden" name="TransDtls" value="${edisData?.TransDtls || ''}" />
+      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL || 'https://prod.alphaquark.in'}/stock-recommendation" />
       <input id="submitBtn" type="submit" />
     </form>
   </body>
   </html>
-`);
+`;
+  const [formHtml, setformhtml] = useState('');
   const proceedWithTpin = async () => {
+    // Build form HTML fresh with current edisStatus data
+    const html = buildFormHtml(edisStatus?.data);
+    setformhtml(html);
     setIsWebViewOpen(true); // Open the WebView modal with the form content
     // setIsOpen(false); // Close the DDPI modal
   };
   const closeModal = async () => {
-    setIsWebViewOpen(false); // Open the WebView modal with the form content
+    setIsWebViewOpen(false);
     setformhtml('');
     setIsOpen(false); // Close the DDPI modal
+  };
+
+  const handleProceed = async () => {
+    try {
+      await axios.put(
+        `${server.server.baseUrl}api/update-edis-status`,
+        {
+          uid: userDetails?._id,
+          is_authorized_for_sell: true,
+          user_broker: userDetails?.user_broker,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      if (getUserDetails) getUserDetails();
+      setIsOpen(false);
+      setShowTpinConfirmation(false);
+      setTpinCompleted(false);
+      if (reopenRebalanceModal) reopenRebalanceModal();
+    } catch (error) {
+      console.error('Error updating EDIS status:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update authorization status.',
+      });
+    }
   };
 
   return (
@@ -1047,11 +1149,16 @@ export function AngleOneTpinModal({
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.proceedButton}
-                  onPress={proceedWithTpin}>
-                  <Text style={styles.buttonText}>
-                    Proceed with Dhan Authorization to Sell
-                  </Text>
+                  style={[styles.proceedButton, (loading || !edisStatus?.data) && { opacity: 0.5 }]}
+                  onPress={proceedWithTpin}
+                  disabled={loading || !edisStatus?.data}>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>
+                      Proceed with Angel One Authorization to Sell
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -1061,26 +1168,81 @@ export function AngleOneTpinModal({
 
       {/* WebView Modal */}
       {isWebViewOpen && (
-        <Modal visible={isWebViewOpen} transparent animationType="slide">
+        <Modal visible={isWebViewOpen} transparent animationType="slide"
+          onRequestClose={() => {
+            setIsWebViewOpen(false);
+            setShowTpinConfirmation(true);
+          }}>
           <WebView
             originWhitelist={['*']}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
             source={{html: formHtml}}
             startInLoadingState
-            renderLoading={() => <Text>Loading...</Text>}
+            renderLoading={() => <ActivityIndicator size="large" color="#0000ff" />}
             onNavigationStateChange={navState => {
               if (navState.url.includes('stock-recommendation')) {
-                setIsWebViewOpen(false); // Close WebView when the user is redirected
-                //  window.location.reload(); // Reload the page (can be customized)
+                setIsWebViewOpen(false);
+                setShowTpinConfirmation(true);
               }
+            }}
+            onShouldStartLoadWithRequest={request => {
+              if (request.url.includes('stock-recommendation')) {
+                setIsWebViewOpen(false);
+                setShowTpinConfirmation(true);
+                return false;
+              }
+              return true;
             }}
           />
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={() => setIsWebViewOpen(false)}>
+            onPress={() => {
+              setIsWebViewOpen(false);
+              setShowTpinConfirmation(true);
+            }}>
             <Text style={styles.closeIcon}>X</Text>
           </TouchableOpacity>
         </Modal>
       )}
+
+      {/* TPIN Confirmation Modal */}
+      <Modal
+        visible={showTpinConfirmation}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowTpinConfirmation(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => {
+                setShowTpinConfirmation(false);
+                setTpinCompleted(false);
+                setIsOpen(false);
+              }}>
+              <Text style={styles.closeIcon}>X</Text>
+            </TouchableOpacity>
+            <View style={styles.textSection}>
+              <Text style={styles.title}>Authorization Complete?</Text>
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => setTpinCompleted(!tpinCompleted)}>
+                <View style={[styles.checkbox, tpinCompleted ? styles.checked : styles.unchecked]}>
+                  {tpinCompleted && <Check size={14} color="#fff" />}
+                </View>
+                <Text style={styles.label}>I've authorized the sell of the stocks</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.proceedButton, !tpinCompleted && { opacity: 0.5 }]}
+                onPress={handleProceed}
+                disabled={!tpinCompleted}>
+                <Text style={styles.buttonText}>Retry Order</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -1089,16 +1251,90 @@ export function DhanTpinModal({
   isOpen,
   setIsOpen,
   userDetails,
-  dhanEdisStatus,
+  dhanEdisStatus: dhanEdisStatusProp,
   stockTypeAndSymbol,
   singleStockTypeAndSymbol,
+  reopenRebalanceModal,
+  getUserDetails,
 }) {
   const [loading, setLoading] = useState(false);
-  const [isPopupOpen, setIsPopupOpen] = useState(false); // State for controlling popup visibility
-  const [tpin, setTpin] = useState(''); // State for capturing the TPIN entered by the user
+  const [localDhanEdisStatus, setLocalDhanEdisStatus] = useState(null);
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [tpin, setTpin] = useState('');
   const [matchedData, setMatchedData] = useState(null);
   const [matchedIsin, setMatchedIsin] = useState(null);
   const [showNoHoldingModal, setShowNoHoldingModal] = useState(false);
+  const [showTpinConfirmation, setShowTpinConfirmation] = useState(false);
+  const [tpinCompleted, setTpinCompleted] = useState(false);
+  const { configData } = useTrade();
+
+  // Use prop if available, otherwise use locally fetched status (matches production)
+  const dhanEdisStatus = dhanEdisStatusProp || localDhanEdisStatus;
+
+  // Auto-fetch Dhan EDIS status if not provided as prop
+  useEffect(() => {
+    if (isOpen && !dhanEdisStatusProp && userDetails?.jwtToken && userDetails?.clientCode) {
+      const fetchDhanEdisStatus = async () => {
+        try {
+          setLoading(true);
+          const response = await axios.post(
+            `${server.ccxtServer.baseUrl}dhan/edis-status`,
+            {
+              clientId: userDetails.clientCode,
+              accessToken: userDetails.jwtToken,
+            },
+          );
+          console.log('Dhan local EDIS fetch:', response.data);
+          setLocalDhanEdisStatus(response.data);
+        } catch (error) {
+          console.error('Error fetching Dhan EDIS status:', error);
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: 'Failed to fetch holdings data. Please try again.',
+          });
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchDhanEdisStatus();
+    }
+  }, [isOpen, dhanEdisStatusProp, userDetails]);
+
+  const handleProceed = async () => {
+    try {
+      await axios.put(
+        `${server.server.baseUrl}api/update-edis-status`,
+        {
+          uid: userDetails?._id,
+          is_authorized_for_sell: true,
+          user_broker: userDetails?.user_broker,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      if (getUserDetails) getUserDetails();
+      setIsOpen(false);
+      setShowTpinConfirmation(false);
+      setTpinCompleted(false);
+      if (reopenRebalanceModal) reopenRebalanceModal();
+    } catch (error) {
+      console.error('Error updating EDIS status:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update authorization status.',
+      });
+    }
+  };
 
   useEffect(() => {
     const shouldOpenPopup = AsyncStorage.getItem('openDhanPopup');
@@ -1174,7 +1410,20 @@ export function DhanTpinModal({
             });
             setMatchedIsin(fallbackOrder.isin);
           } else {
-            setShowNoHoldingModal(true);
+            // Fallback: Use any holding with ISIN (all may be EDIS-authorized already)
+            const anyHoldingWithIsin = dhanEdisStatus.data.find(
+              (order) => order.isin,
+            );
+            if (anyHoldingWithIsin) {
+              setMatchedData({
+                isin: anyHoldingWithIsin.isin,
+                symbol: anyHoldingWithIsin.symbol,
+                exchange: anyHoldingWithIsin.exchange,
+              });
+              setMatchedIsin(anyHoldingWithIsin.isin);
+            } else {
+              setShowNoHoldingModal(true);
+            }
           }
         }
       } else {
@@ -1190,7 +1439,20 @@ export function DhanTpinModal({
           });
           setMatchedIsin(fallbackOrder.isin);
         } else {
-          setShowNoHoldingModal(true);
+          // Fallback: Use any holding with ISIN
+          const anyHoldingWithIsin = dhanEdisStatus.data.find(
+            (order) => order.isin,
+          );
+          if (anyHoldingWithIsin) {
+            setMatchedData({
+              isin: anyHoldingWithIsin.isin,
+              symbol: anyHoldingWithIsin.symbol,
+              exchange: anyHoldingWithIsin.exchange,
+            });
+            setMatchedIsin(anyHoldingWithIsin.isin);
+          } else {
+            setShowNoHoldingModal(true);
+          }
         }
       }
     } else {
@@ -1310,7 +1572,7 @@ export function DhanTpinModal({
         text2: 'EDIS Activated Successfully.',
       });
       setIsWebViewOpen(false);
-      setIsOpen(false);
+      setShowTpinConfirmation(true);
     } else if (url.includes('failure')) {
       Toast.show({
         type: 'error',
@@ -1382,11 +1644,16 @@ export function DhanTpinModal({
                     </Text>
                   </View>
                   <TouchableOpacity
-                    style={styles.proceedButton}
-                    onPress={proceedWithDhanTpin}>
-                    <Text style={styles.buttonText}>
-                      Proceed with Dhan Authorization to Sell
-                    </Text>
+                    style={[styles.proceedButton, loading && { opacity: 0.5 }]}
+                    onPress={proceedWithDhanTpin}
+                    disabled={loading}>
+                    {loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.buttonText}>
+                        Proceed with Dhan Authorization to Sell
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1397,11 +1664,30 @@ export function DhanTpinModal({
 
       {/* WebView Modal */}
       {isWebViewOpen && (
-        <Modal visible={isWebViewOpen} animationType="slide">
+        <Modal visible={isWebViewOpen} animationType="slide"
+          onRequestClose={() => {
+            setIsWebViewOpen(false);
+            setShowTpinConfirmation(true);
+          }}>
           <WebView
             originWhitelist={['*']}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
             source={{html: webViewUrl}}
             onNavigationStateChange={handleWebViewNavigation}
+            onShouldStartLoadWithRequest={request => {
+              if (request.url.includes('ReturnUrl')) {
+                Toast.show({
+                  type: 'success',
+                  text1: 'Success',
+                  text2: 'EDIS Activated Successfully.',
+                });
+                setIsWebViewOpen(false);
+                setShowTpinConfirmation(true);
+                return false;
+              }
+              return true;
+            }}
             startInLoadingState
             renderLoading={() => (
               <ActivityIndicator size="large" color="#0000ff" />
@@ -1409,11 +1695,52 @@ export function DhanTpinModal({
           />
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={() => setIsWebViewOpen(false)}>
+            onPress={() => {
+              setIsWebViewOpen(false);
+              setShowTpinConfirmation(true);
+            }}>
             <XIcon size={20} color={'grey'} />
           </TouchableOpacity>
         </Modal>
       )}
+
+      {/* TPIN Confirmation Modal */}
+      <Modal
+        visible={showTpinConfirmation}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowTpinConfirmation(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => {
+                setShowTpinConfirmation(false);
+                setTpinCompleted(false);
+                setIsOpen(false);
+              }}>
+              <Text style={styles.closeIcon}>X</Text>
+            </TouchableOpacity>
+            <View style={styles.textSection}>
+              <Text style={styles.title}>Authorization Complete?</Text>
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => setTpinCompleted(!tpinCompleted)}>
+                <View style={[styles.checkbox, tpinCompleted ? styles.checked : styles.unchecked]}>
+                  {tpinCompleted && <Check size={14} color="#fff" />}
+                </View>
+                <Text style={styles.label}>I've authorized the sell of the stocks</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.proceedButton, !tpinCompleted && { opacity: 0.5 }]}
+                onPress={handleProceed}
+                disabled={!tpinCompleted}>
+                <Text style={styles.buttonText}>Retry Order</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -1443,6 +1770,8 @@ export function OtherBrokerModel({
   funds,
   setStoreModalName,
   storeModalName,
+  getUserDetails,
+  reopenRebalanceModal,
 }) {
   const {configData} = useTrade();
   const [isOpen, setIsOpen] = useState(true);
@@ -1485,7 +1814,7 @@ export function OtherBrokerModel({
         '3.Select Authorize with T-PIN.',
         '4.Click Continue to CDSL.',
         '5.Enter your T-PIN (or generate a new one if needed) and verify it, then enter the OTP for authentication.',
-        '6.Once verified, return to the Alphaquark platform and place your sell order.',
+        `6.Once verified, return to the ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'} platform and place your sell order.`,
       ],
     },
     'Kotak Securities': {
@@ -1504,7 +1833,7 @@ export function OtherBrokerModel({
         '3.Click Raise eDIS Request, select stock(s), and submit for authorization.',
         '4.Accept the Terms and Conditions, click **Authorize Now, and use **Forgotten TPIN if needed.',
         '5.Complete authorization on CDSL by entering your TPIN and OTP. ',
-        '6.After successful authorization, click OK and retry the sell order on Alphaquark.',
+        `6.After successful authorization, click OK and retry the sell order on ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}.`,
       ],
     },
     AliceBlue: {
@@ -1531,7 +1860,30 @@ export function OtherBrokerModel({
 
   const [showOtherBroker, setShowOtherBroker] = useState(false);
   const [loadingRebalance, setLoadingRebalance] = useState(false);
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    try {
+      await axios.put(
+        `${server.server.baseUrl}api/update-edis-status`,
+        {
+          uid: userDetails?._id,
+          is_authorized_for_sell: true,
+          user_broker: userDetails?.user_broker,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      if (getUserDetails) getUserDetails();
+    } catch (error) {
+      console.error('Error updating EDIS status:', error);
+    }
     setIsOpen(false);
     setShowOtherBrokerModel(false);
     openReviewModal();
@@ -1568,7 +1920,30 @@ export function OtherBrokerModel({
 
   const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
   const advisorName = configData?.config?.REACT_APP_ADVISOR_TAG;
-  const handleAcceptRebalance = () => {
+  const handleAcceptRebalance = async () => {
+    try {
+      await axios.put(
+        `${server.server.baseUrl}api/update-edis-status`,
+        {
+          uid: userDetails?._id,
+          is_authorized_for_sell: true,
+          user_broker: userDetails?.user_broker,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      if (getUserDetails) getUserDetails();
+    } catch (error) {
+      console.error('Error updating EDIS status:', error);
+    }
     onContinue();
     setLoadingRebalance(true);
 
@@ -1589,7 +1964,7 @@ export function OtherBrokerModel({
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1758,27 +2133,25 @@ export function OtherBrokerModel({
   );
 }
 
-export function AfterPlaceOrderDdpiModal({onClose, userDetails}) {
+export function AfterPlaceOrderDdpiModal({onClose, userDetails, visible = true}) {
   const [showActivateNowModel, setShowActivateNowModel] = useState(false);
 
   const handleCopy = textToCopy => {
-    Clipboard.setString(textToCopy);
-    Promise.resolve().then(
-      () => {
-        Toast.show({
-          type: 'success',
-          text1: 'success',
-          text2: 'Copied to clipboard!',
-        });
-      },
-      () => {
-        Toast.show({
-          type: 'error',
-          text1: 'error',
-          text2: 'Failed to copy text.',
-        });
-      },
-    );
+    try {
+      const Clipboard = require('@react-native-clipboard/clipboard').default;
+      Clipboard.setString(textToCopy);
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Copied to clipboard!',
+      });
+    } catch (e) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to copy text.',
+      });
+    }
   };
 
   const brokerInstructions = {
@@ -1925,7 +2298,7 @@ export function AfterPlaceOrderDdpiModal({onClose, userDetails}) {
   };
 
   return (
-    <Modal visible={true} transparent={true} animationType="fade">
+    <Modal visible={visible} transparent={true} animationType="fade">
       <View style={styles.overlay}>
         {!showActivateNowModel ? (
           <View style={styles.modalContainer}>
@@ -2020,10 +2393,13 @@ export function AfterPlaceOrderDdpiModal({onClose, userDetails}) {
   );
 }
 
-export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
+export function FyersTpinModal({isOpen, setIsOpen, userDetails, reopenRebalanceModal, getUserDetails}) {
   const [loading, setLoading] = useState(false);
   const [webViewHtml, setWebViewHtml] = useState('');
   const [isWebViewOpen, setIsWebViewOpen] = useState(false);
+  const [showTpinConfirmation, setShowTpinConfirmation] = useState(false);
+  const [tpinCompleted, setTpinCompleted] = useState(false);
+  const { configData } = useTrade();
 
   const proceedWithFyersTpin = async () => {
     setLoading(true);
@@ -2105,10 +2481,46 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
   const handleWebViewNavigation = navState => {
     if (navState.url.includes('success')) {
       setIsWebViewOpen(false);
+      setShowTpinConfirmation(true);
       Toast.show({
         type: 'success',
         text1: 'Success',
         text2: 'CDSL authorization completed successfully.',
+      });
+    }
+  };
+
+  const handleProceed = async () => {
+    try {
+      await axios.put(
+        `${server.server.baseUrl}api/update-edis-status`,
+        {
+          uid: userDetails?._id,
+          is_authorized_for_sell: true,
+          user_broker: userDetails?.user_broker,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      if (getUserDetails) getUserDetails();
+      setIsOpen(false);
+      setShowTpinConfirmation(false);
+      setTpinCompleted(false);
+      if (reopenRebalanceModal) reopenRebalanceModal();
+    } catch (error) {
+      console.error('Error updating EDIS status:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to update authorization status.',
       });
     }
   };
@@ -2164,11 +2576,30 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
 
       {/* WebView Modal */}
       {isWebViewOpen && (
-        <Modal visible={isWebViewOpen} animationType="slide">
+        <Modal visible={isWebViewOpen} animationType="slide"
+          onRequestClose={() => {
+            setIsWebViewOpen(false);
+            setShowTpinConfirmation(true);
+          }}>
           <WebView
             originWhitelist={['*']}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
             source={{html: webViewHtml}}
             onNavigationStateChange={handleWebViewNavigation}
+            onShouldStartLoadWithRequest={request => {
+              if (request.url.includes('success')) {
+                setIsWebViewOpen(false);
+                setShowTpinConfirmation(true);
+                Toast.show({
+                  type: 'success',
+                  text1: 'Success',
+                  text2: 'CDSL authorization completed successfully.',
+                });
+                return false;
+              }
+              return true;
+            }}
             startInLoadingState
             renderLoading={() => (
               <ActivityIndicator size="large" color="#0000ff" />
@@ -2176,11 +2607,52 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails}) {
           />
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={() => setIsWebViewOpen(false)}>
+            onPress={() => {
+              setIsWebViewOpen(false);
+              setShowTpinConfirmation(true);
+            }}>
             <XIcon size={20} color={'grey'} />
           </TouchableOpacity>
         </Modal>
       )}
+
+      {/* TPIN Confirmation Modal */}
+      <Modal
+        visible={showTpinConfirmation}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowTpinConfirmation(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => {
+                setShowTpinConfirmation(false);
+                setTpinCompleted(false);
+                setIsOpen(false);
+              }}>
+              <Text style={styles.closeIcon}>X</Text>
+            </TouchableOpacity>
+            <View style={styles.textSection}>
+              <Text style={styles.title}>Authorization Complete?</Text>
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => setTpinCompleted(!tpinCompleted)}>
+                <View style={[styles.checkbox, tpinCompleted ? styles.checked : styles.unchecked]}>
+                  {tpinCompleted && <Check size={14} color="#fff" />}
+                </View>
+                <Text style={styles.label}>I've authorized the sell of the stocks</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.proceedButton, !tpinCompleted && { opacity: 0.5 }]}
+                onPress={handleProceed}
+                disabled={!tpinCompleted}>
+                <Text style={styles.buttonText}>Retry Order</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
