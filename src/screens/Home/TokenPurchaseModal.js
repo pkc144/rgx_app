@@ -149,7 +149,7 @@ const TokenPurchaseModal = ({setShowFailAlert,setselectedCoin,setModalVisible,se
       currency: "INR",
       key: Config.REACT_APP_RAZORPAY_LIVE_API_KEY, // Replace with your Razorpay Key
       amount: price * 100, // Razorpay uses paise (1 INR = 100 paise)
-      name: "ARFS",
+      name: "RGX Research",
     
       prefill: {
         email: userEmail,

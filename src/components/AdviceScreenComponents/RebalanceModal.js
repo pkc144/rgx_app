@@ -17,13 +17,19 @@ import server from '../../utils/serverConfig';
 import IsMarketHours from '../../utils/isMarketHours';
 import axios from 'axios';
 import DummyBrokerHoldingConfirmation from './DummyBrokerHoldingConfirmation';
-import CryptoJS from 'react-native-crypto-js';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import WebView from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment';
 import eventEmitter from '../../components/EventEmitter';
+import portfolioEvents, {PORTFOLIO_EVENTS} from '../../utils/portfolioEvents';
+import {
+  buildBrokerPayloadFields,
+  defaultDecrypt,
+  isBrokerAuthError,
+} from '../../utils/rebalanceHelpers';
+import useModalStore from '../../GlobalUIModals/modalStore';
 const { height: screenHeight } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
@@ -66,9 +72,9 @@ const RebalanceModal = ({
   edisStatus,
   dhanEdisStatus,
   setShowDdpiModal,
-  onModifyInvestment,
 }) => {
   const { brokerStatus, configData } = useTrade();
+  const openBrokerModal = useModalStore(state => state.openModal);
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
   // Add fallback for API key
   let zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
@@ -154,15 +160,6 @@ const RebalanceModal = ({
   const { width } = useWindowDimensions();
   const [loading, setLoading] = useState();
 
-  const checkValidApiAnSecret = apiKey => {
-    if (!apiKey) return null;
-    const bytesKey = CryptoJS.AES.decrypt(apiKey, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-    if (Key) {
-      return Key;
-    }
-  };
-
   const filteredData = data.filter(item => item.model_name === storeModalName);
 
   // Now, let's find the matching repair trade
@@ -179,7 +176,7 @@ const RebalanceModal = ({
 
   // Check if modelPortfolioRepairTrades exists and has trades
   let dataArray = [];
-  if (repairStatus && rebalanceExecutionStatus !== "toExecute") {
+  if (repairStatus && rebalanceExecutionStatus && rebalanceExecutionStatus !== "toExecute") {
     dataArray =
       matchingRepairTrade?.failedTrades
         ?.filter((trade) => !trade?.advSymbol?.includes("CASH-EQ"))
@@ -204,6 +201,7 @@ const RebalanceModal = ({
               orderType: "BUY",
               exchange: item.exchange,
               zerodhaTradeId: item.zerodhaTradeId,
+              rebalancePrice: item.rebalance_price,
             })) || []),
           ...(calculatedPortfolioData?.sell
             ?.filter((item) => !item?.symbol?.includes("CASH-EQ"))
@@ -214,6 +212,7 @@ const RebalanceModal = ({
               orderType: "SELL",
               exchange: item.exchange,
               zerodhaTradeId: item.zerodhaTradeId,
+              rebalancePrice: item.rebalance_price,
             })) || []),
         ]
         : [];
@@ -280,12 +279,96 @@ const RebalanceModal = ({
     if (
       visible &&
       isBrokerDisconnected &&
-      dataArray.length > 0 &&
-      Object.keys(marketPrices).length > 0
+      dataArray.length > 0
     ) {
-      initializeEditableData();
+      // Initialize as soon as market prices are available, or fallback to rebalance prices
+      if (Object.keys(marketPrices).length > 0) {
+        initializeEditableData();
+      } else if (dataArray.some(item => item.rebalancePrice)) {
+        // Use rebalance prices from API response as fallback
+        initializeEditableData();
+      }
     }
   }, [visible, marketPrices, isBrokerDisconnected, dataArray]);
+
+  // Auto-mark "already aligned" as executed in DB for DummyBroker
+  // Mirrors the same flow as DummyBrokerHoldingConfirmation:
+  // 1. process-trade (empty trades) -> 2. update subscriber-execution -> 3. status-check-queue
+  const alreadyAlignedMarkedRef = useRef(false);
+  useEffect(() => {
+    if (!visible || !isBrokerDisconnected) return;
+
+    // Match prod's "already aligned" detection:
+    // Must have calculated data with buy/sell arrays but both empty after filtering
+    const isAlreadyAligned =
+      dataArray.length === 0 &&
+      calculatedPortfolioData &&
+      !Array.isArray(calculatedPortfolioData) &&
+      Array.isArray(calculatedPortfolioData?.buy) &&
+      Array.isArray(calculatedPortfolioData?.sell);
+
+    if (!isAlreadyAligned || alreadyAlignedMarkedRef.current) return;
+    alreadyAlignedMarkedRef.current = true;
+
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+      'aq-encrypted-key': generateToken(
+        Config.REACT_APP_AQ_KEYS,
+        Config.REACT_APP_AQ_SECRET,
+      ),
+    };
+
+    const markAsExecuted = async () => {
+      try {
+        await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+          {
+            user_broker: 'DummyBroker',
+            user_email: userEmail,
+            trades: [],
+            model_id: modelPortfolioModelId,
+            modelName: storeModalName,
+            advisor: advisorTag,
+            unique_id: calculatedPortfolioData?.uniqueId,
+          },
+          {headers: requestHeaders},
+        );
+
+        await axios.put(
+          `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+          {
+            userEmail: userEmail,
+            modelName: storeModalName,
+            model_id: modelPortfolioModelId,
+            executionStatus: 'executed',
+            user_broker: 'DummyBroker',
+          },
+          {headers: requestHeaders},
+        );
+
+        // NOTE: Prod skips status-check-queue for DummyBroker "already aligned" case
+        // (no background poller needed when no real broker orders exist)
+        // NOTE: Prod emits NO events in already-aligned flow — delayed refresh handles UI update
+
+        // Delayed refresh to allow cross-server DB sync (matching prod: 1.5s, 4s, 8s)
+        setTimeout(() => getModelPortfolioStrategyDetails(), 1500);
+        setTimeout(() => getModelPortfolioStrategyDetails(), 4000);
+        setTimeout(() => getModelPortfolioStrategyDetails(), 8000);
+      } catch (err) {
+        console.error('Error auto-marking already-aligned as executed:', err);
+      }
+    };
+
+    markAsExecuted();
+  }, [visible, isBrokerDisconnected, calculatedPortfolioData, dataArray, userEmail, storeModalName, modelPortfolioModelId, getModelPortfolioStrategyDetails]);
+
+  // Reset already-aligned flag when modal closes
+  useEffect(() => {
+    if (!visible) {
+      alreadyAlignedMarkedRef.current = false;
+    }
+  }, [visible]);
 
   // Clear on modal close
   useEffect(() => {
@@ -298,11 +381,9 @@ const RebalanceModal = ({
   const initializeEditableData = useCallback(() => {
     if (initializedRef.current) return;
 
-    // console.log('Initializing editable data with marketPrices:', marketPrices);
-
     const initialData = dataArray.map(item => ({
       ...item,
-      editablePrice: getLTPForSymbol(item.symbol) || 0,
+      editablePrice: getLTPForSymbol(item.symbol) || item.rebalancePrice || 0,
       editableQty: item.qty,
       id: item.symbol,
     }));
@@ -414,6 +495,9 @@ const RebalanceModal = ({
           orderPrice = ltp && ltp !== '-' ? parseFloat(ltp) : 0;
         }
 
+        // Build tag from zerodhaTradeId for order tracking/reconciliation (matching prod)
+        const tradeTag = (stock.zerodhaTradeId || stock.tradeId || '').substring(0, 20);
+
         let baseOrder = {
           variety: 'regular',
           tradingsymbol: stock.tradingSymbol,
@@ -424,6 +508,7 @@ const RebalanceModal = ({
           product: mapKiteProductType(stock.productType),
           readonly: false,
           price: orderPrice,
+          tag: tradeTag,
         };
 
         if (stock.quantity > 100) {
@@ -448,7 +533,7 @@ const RebalanceModal = ({
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -525,22 +610,20 @@ const RebalanceModal = ({
       zerodhaStockDetails !== null &&
       zerodhaRequestType === 'rebalance'
     ) {
-      setLoading(true);
-      const requestHeaders = {
-        'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
-        'aq-encrypted-key': generateToken(
-          Config.REACT_APP_AQ_KEYS,
-          Config.REACT_APP_AQ_SECRET,
-        ),
-      };
-
-      const modelName = zerodhaAdditionalPayload.modelName || storeModalName;
-      let orderResponse;
-
-      // Inner try: record-orders + db-update + subscriber-execution + record-publisher-results
       try {
-        console.log('[ZerodhaPublisher] Step 1: Recording publisher orders...');
+        // Use publisher/record-orders endpoint - this fetches order book from Zerodha
+        // and matches orders with our trade list
+        const requestHeaders = {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+          'aq-encrypted-key': generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        };
+
+        console.log('[RebalanceModal] Recording publisher orders...');
+
         const recordResponse = await axios.post(
           `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
           {
@@ -549,151 +632,113 @@ const RebalanceModal = ({
             userEmail: userEmail,
             broker: 'Zerodha',
             model_id: zerodhaAdditionalPayload.model_id,
-            modelName: modelName,
+            modelName: zerodhaAdditionalPayload.modelName,
             advisor: zerodhaAdditionalPayload.advisor,
             unique_id: zerodhaAdditionalPayload.unique_id,
           },
           { headers: requestHeaders }
         );
 
-        orderResponse = recordResponse.data?.response || recordResponse.data?.results || [];
+        console.log('[RebalanceModal] Record orders response:', recordResponse.data);
 
-        // model-portfolio-db-update (non-fatal)
-        console.log('[ZerodhaPublisher] Step 2: Updating model portfolio DB...');
-        try {
-          await axios.post(
-            `${server.server.baseUrl}api/model-portfolio-db-update`,
-            {
-              modelId: zerodhaAdditionalPayload.model_id,
-              orderResults: orderResponse,
-              modelName: modelName,
-              userEmail: userEmail,
-              user_broker: 'Zerodha',
-            },
-            { headers: requestHeaders }
-          );
-        } catch (dbErr) {
-          console.warn('[ZerodhaPublisher] model-portfolio-db-update error (non-fatal):', dbErr?.message);
+        const orderResults = recordResponse.data.response || recordResponse.data.results || [];
+
+        // Update subscriber execution status (matching prod)
+        const successStatuses = ['complete', 'executed', 'traded'];
+        const pubSuccessCount = orderResults.filter(r =>
+          successStatuses.includes((r.orderStatus || '').toLowerCase()),
+        ).length;
+        let executionStatus;
+        if (pubSuccessCount === orderResults.length) {
+          executionStatus = 'executed';
+        } else if (pubSuccessCount > 0) {
+          executionStatus = 'partial';
+        } else {
+          executionStatus = 'pending';
         }
 
-        // Update portfolio holdings (non-fatal)
-        console.log('[ZerodhaPublisher] Step 3: Updating portfolio holdings...');
+        try {
+          await axios.put(
+            `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+            {
+              userEmail: userEmail,
+              modelName: zerodhaAdditionalPayload.modelName,
+              model_id: zerodhaAdditionalPayload.model_id || modelPortfolioModelId,
+              executionStatus: executionStatus,
+              user_broker: 'Zerodha',
+            },
+            { headers: requestHeaders },
+          );
+        } catch (err) {
+          console.warn('[ZerodhaPublisher] subscriber-execution update failed:', err);
+        }
+
+        // Record publisher results (matching prod)
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/record-publisher-results`,
+            {
+              modelName: zerodhaAdditionalPayload.modelName,
+              model_id: zerodhaAdditionalPayload.model_id,
+              unique_id: zerodhaAdditionalPayload.unique_id,
+              advisor: zerodhaAdditionalPayload.advisor,
+              order_results: orderResults,
+              user_email: userEmail,
+              user_broker: 'Zerodha',
+            },
+            { headers: requestHeaders },
+          );
+          console.log('[ZerodhaPublisher] Successfully recorded publisher results');
+        } catch (err) {
+          console.warn('[ZerodhaPublisher] record-publisher-results failed:', err);
+        }
+
+        setOrderPlacementResponse(orderResults);
+        setOpenSucessModal(true);
+        setOpenRebalanceModal(false);
+        eventEmitter.emit('OrderPlacedReferesh');
+
+        // Emit structured portfolio events (matching prod)
+        portfolioEvents.emit(PORTFOLIO_EVENTS.HOLDINGS_REFRESH, {
+          userEmail,
+          modelName: zerodhaAdditionalPayload?.modelName || storeModalName,
+        });
+        portfolioEvents.emit(PORTFOLIO_EVENTS.REBALANCE_EXECUTED, {
+          userEmail,
+          modelName: zerodhaAdditionalPayload?.modelName || storeModalName,
+          broker: 'Zerodha',
+        });
+
         try {
           await axios.post(
             `${server.ccxtServer.baseUrl}zerodha/user-portfolio`,
             { user_email: userEmail },
             { headers: requestHeaders }
           );
-        } catch (holdingsErr) {
-          console.warn('[ZerodhaPublisher] portfolio holdings update error (non-fatal):', holdingsErr?.message);
-        }
 
-        // Update subscriber execution status + record publisher results
-        if (orderResponse && orderResponse.length > 0) {
-          const successStatuses = ['complete', 'executed', 'traded'];
-          const pubSuccessCount = orderResponse.filter(r =>
-            successStatuses.includes((r.orderStatus || '').toLowerCase()),
-          ).length;
-          let executionStatus;
-          if (pubSuccessCount === orderResponse.length) {
-            executionStatus = 'executed';
-          } else if (pubSuccessCount > 0) {
-            executionStatus = 'partial';
-          }
-
-          try {
-            await axios.put(
-              `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
-              {
-                userEmail, modelName,
-                executionStatus: executionStatus || 'pending',
-                user_broker: 'Zerodha',
-              },
-              { headers: requestHeaders }
-            );
-          } catch (statusErr) {
-            console.error('[ZerodhaPublisher] Error updating subscriber execution status:', statusErr);
-          }
-
-          try {
-            await axios.post(
-              `${server.ccxtServer.baseUrl}rebalance/record-publisher-results`,
-              {
-                modelName, model_id: zerodhaAdditionalPayload.model_id,
-                unique_id: zerodhaAdditionalPayload.unique_id,
-                advisor: zerodhaAdditionalPayload.advisor,
-                order_results: orderResponse,
-                user_email: userEmail, user_broker: 'Zerodha',
-              },
-              { headers: requestHeaders }
-            );
-            console.log('[ZerodhaPublisher] Successfully recorded order results');
-          } catch (recordErr) {
-            console.error('[ZerodhaPublisher] Error recording publisher results:', recordErr);
-          }
-        }
-      } catch (error) {
-        // record-orders failed — orders may have been placed in Kite, we just can't confirm
-        console.error('[ZerodhaPublisher] Error recording publisher orders:', error);
-        console.error('[ZerodhaPublisher] Error details:', error.response?.data);
-
-        orderResponse = (zerodhaStockDetails || stockDetails || []).map(stock => ({
-          tradingSymbol: stock.tradingSymbol,
-          symbol: stock.tradingSymbol,
-          transactionType: stock.transactionType || 'BUY',
-          quantity: stock.quantity,
-          orderType: stock.orderType || 'MARKET',
-          exchange: stock.exchange || 'NSE',
-          orderStatus: 'Unknown',
-          orderStatusMessage: 'Order sent via Kite. Please check your Kite app for actual status.',
-          message_aq: 'Order sent via Kite. Please check your Kite app for actual status.',
-        }));
-
-        // Mark as pending so async poller knows to check broker order book
-        try {
-          await axios.put(
-            `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
-            { userEmail, modelName, executionStatus: 'pending', user_broker: 'Zerodha' },
-            { headers: requestHeaders }
-          );
-        } catch (statusErr) {
-          console.error('[ZerodhaPublisher] Error updating subscriber execution status:', statusErr);
-        }
-      }
-
-      // ALWAYS runs (outside inner try/catch): status-check-queue + modal + cleanup
-      try {
-        console.log('[ZerodhaPublisher] Adding to status check queue...');
-        await axios.post(
-          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-          {
-            userEmail, modelName,
+          const statusCheckData = {
+            userEmail: userEmail,
+            modelName: zerodhaAdditionalPayload.modelName,
             advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
             broker: 'Zerodha',
-          },
-          { headers: requestHeaders }
-        );
-      } catch (queueErr) {
-        console.error('[ZerodhaPublisher] Error adding to status-check-queue:', queueErr);
+          };
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+            statusCheckData,
+            { headers: requestHeaders }
+          );
+        } catch (error) {
+          console.error('Error updating Zerodha portfolio:', error);
+        }
+
+        AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+        AsyncStorage.removeItem('zerodhaAdditionalPayload');
+        getRebalanceRepair();
+        getModelPortfolioStrategyDetails();
+      } catch (error) {
+        console.log('Error in checkZerodhaStatus:', error);
+        console.log('Error response:', error.response?.data);
       }
-
-      // Always show results modal
-      setOrderPlacementResponse(orderResponse);
-      setOpenSucessModal(true);
-      setOpenRebalanceModal(false);
-      setLoading(false);
-
-      // Clean up AsyncStorage
-      await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
-      await AsyncStorage.removeItem('zerodhaAdditionalPayload');
-
-      // Reset state
-      setZerodhaStatus(null);
-      setZerodhaRequestType(null);
-
-      // Refresh data
-      getRebalanceRepair();
-      getModelPortfolioStrategyDetails();
     }
   };
 
@@ -725,7 +770,11 @@ const RebalanceModal = ({
 
   const handleFyersRedirect = async () => {
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
-    if (!sessionValid) return;
+    if (!sessionValid) {
+      setOpenRebalanceModal(false);
+      setTimeout(() => openBrokerModal(broker), 500);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -734,41 +783,42 @@ const RebalanceModal = ({
 
       const requestHeaders = {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
         ),
       };
 
-      const modelName = filteredData[0]?.['model_name'] || storeModalName;
+      // Store stock details for post-processing
+      await AsyncStorage.removeItem('stockDetailsFyersOrder');
+      await AsyncStorage.setItem(
+        'stockDetailsFyersOrder',
+        JSON.stringify(stockDetails),
+      );
 
-      // Record trade intent (non-critical)
-      try {
-        await axios.post(
-          `${server.server.baseUrl}api/zerodha/model-portfolio/update-reco-with-zerodha-model-pf`,
-          {
-            stockDetails: stockDetails,
-            leaving_datetime: currentISTDateTime,
-            email: userEmail,
-            trade_given_by: advisorTag,
-          },
-          { headers: requestHeaders },
-        );
-      } catch (recoErr) {
-        console.warn('[FyersPublisher] update-reco failed (non-critical):', recoErr);
-      }
+      // Record trade intent
+      await axios.post(
+        `${server.server.baseUrl}api/zerodha/model-portfolio/update-reco-with-zerodha-model-pf`,
+        {
+          stockDetails: stockDetails,
+          leaving_datetime: currentISTDateTime,
+          email: userEmail,
+          trade_given_by: advisorTag,
+        },
+        { headers: requestHeaders },
+      );
 
-      // Place orders via Fyers API
+      // Place orders via Fyers API through process-trade
       const payload = {
         clientId: clientCode,
         accessToken: jwtToken,
         user_email: userEmail,
         user_broker: 'Fyers',
-        modelName: modelName,
-        advisor: advisorTag,
-        model_id: additionalPayload?.model_id || modelPortfolioModelId,
-        unique_id: additionalPayload?.unique_id || calculatedPortfolioData?.uniqueId,
+        modelName: additionalPayload.modelName,
+        advisor: additionalPayload.advisor,
+        model_id: additionalPayload.model_id || modelPortfolioModelId,
+        unique_id: additionalPayload.unique_id,
         returnDateTime: istDatetime,
         trades: stockDetails,
       };
@@ -780,57 +830,58 @@ const RebalanceModal = ({
       );
 
       const checkData = response?.data?.results;
-
-      // 1. Handle empty/invalid response
-      if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
-        Toast.show({
-          type: 'error',
-          text1: 'Order Processing Issue',
-          text2: response?.data?.message || 'No orders were processed. Please check your broker app and try again.',
-          visibilityTime: 5000,
-        });
-        setOpenRebalanceModal(false);
-        try {
-          await axios.post(
-            `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-            { userEmail, modelName, advisor: advisorTag, broker: 'Fyers' },
-            { headers: requestHeaders },
-          );
-        } catch (queueErr) {
-          console.warn('[FyersPublisher] status-check-queue failed:', queueErr);
-        }
-        setLoading(false);
-        return;
-      }
-
-      // 2. Store results
       setOrderPlacementResponse(checkData);
 
-      // 3. Always call model-portfolio-db-update BEFORE EDIS checks (non-fatal)
-      try {
-        await axios.post(
-          `${server.server.baseUrl}api/model-portfolio-db-update`,
-          {
-            modelId: modelPortfolioModelId,
-            orderResults: checkData,
-            modelName: modelName,
-            userEmail: userEmail,
-            user_broker: 'Fyers',
-          },
-          { headers: requestHeaders },
-        );
-      } catch (dbErr) {
-        console.warn('[FyersPublisher] model-portfolio-db-update error (non-fatal):', dbErr?.message);
+      // Handle TPIN rejection for Fyers sell orders
+      if (checkData && checkData.length > 0) {
+        const allSell = checkData.every(s => s.transactionType === 'SELL');
+        const isMixed =
+          checkData.some(s => s.transactionType === 'BUY') &&
+          checkData.some(s => s.transactionType === 'SELL');
+        const rejectedSellCount = checkData.reduce((count, order) => {
+          return isOrderRejected(order?.orderStatus) &&
+            order.transactionType === 'SELL'
+            ? count + 1
+            : count;
+        }, 0);
+        const successCount = checkData.reduce((count, order) => {
+          return isOrderSuccess(order?.orderStatus) &&
+            (order.transactionType === 'SELL' || isMixed)
+            ? count + 1
+            : count;
+        }, 0);
+
+        if (
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          successCount === 0
+        ) {
+          setShowFyersTpinModal(true);
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          return;
+        }
       }
 
-      // 4. Check if ALL orders failed
-      const allOrdersFailed = checkData.every((order) => {
-        const s = (order?.orderStatus || '').toUpperCase();
-        return s === 'REJECTED' || s === 'CANCELLED' || s === 'FAILURE' || s === 'FAILED';
-      });
+      setOpenSucessModal(true);
+      setOpenRebalanceModal(false);
+      eventEmitter.emit('OrderPlacedReferesh');
 
-      // 5. Update subscriber execution + record publisher results
-      if (checkData.length > 0) {
+      // Update model portfolio DB
+      const updateData = {
+        modelId: modelPortfolioModelId,
+        orderResults: checkData,
+        userEmail: userEmail,
+        modelName: filteredData[0]['model_name'],
+      };
+      await axios.post(
+        `${server.server.baseUrl}api/model-portfolio-db-update`,
+        updateData,
+        { headers: requestHeaders },
+      );
+
+      // Update subscriber execution status
+      if (checkData && checkData.length > 0) {
         const successStatuses = ['complete', 'executed', 'traded'];
         const pubSuccessCount = checkData.filter(r =>
           successStatuses.includes((r.orderStatus || '').toLowerCase()),
@@ -847,126 +898,96 @@ const RebalanceModal = ({
         try {
           await axios.put(
             `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
-            { userEmail, modelName, executionStatus, user_broker: 'Fyers' },
+            {
+              userEmail: userEmail,
+              modelName: filteredData[0]['model_name'],
+              model_id: modelPortfolioModelId,
+              executionStatus: executionStatus,
+              user_broker: 'Fyers',
+            },
             { headers: requestHeaders },
           );
         } catch (err) {
           console.warn('[FyersPublisher] subscriber-execution update failed:', err);
         }
 
+        // Record publisher results
         try {
           await axios.post(
             `${server.ccxtServer.baseUrl}rebalance/record-publisher-results`,
             {
-              modelName, model_id: modelPortfolioModelId,
-              unique_id: additionalPayload?.unique_id || calculatedPortfolioData?.uniqueId,
-              advisor: advisorTag, order_results: checkData,
-              user_email: userEmail, user_broker: 'Fyers',
+              modelName: filteredData[0]['model_name'],
+              model_id: modelPortfolioModelId,
+              unique_id: additionalPayload.unique_id,
+              advisor: advisorTag,
+              order_results: checkData,
+              user_email: userEmail,
+              user_broker: 'Fyers',
             },
             { headers: requestHeaders },
           );
+          console.log('[FyersPublisher] Successfully recorded publisher results');
         } catch (err) {
           console.warn('[FyersPublisher] record-publisher-results failed:', err);
         }
       }
 
-      // 6. EDIS/TPIN check (only if not all orders failed)
-      let edisTriggered = false;
-      if (!allOrdersFailed && checkData.length > 0) {
-        const allSell = checkData.every(s => s.transactionType === 'SELL');
-        const isMixed = checkData.some(s => s.transactionType === 'BUY') &&
-          checkData.some(s => s.transactionType === 'SELL');
-        const rejectedSellCount = checkData.reduce((count, order) => {
-          return isOrderRejected(order?.orderStatus) && order.transactionType === 'SELL'
-            ? count + 1 : count;
-        }, 0);
-        const successCount = checkData.reduce((count, order) => {
-          return isOrderSuccess(order?.orderStatus) &&
-            (order.transactionType === 'SELL' || isMixed)
-            ? count + 1 : count;
-        }, 0);
+      // Enroll in status-check-queue
+      await axios.post(
+        `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+        {
+          userEmail: userEmail,
+          modelName: filteredData[0]['model_name'],
+          advisor: advisorTag,
+          broker: 'Fyers',
+        },
+        { headers: requestHeaders },
+      );
 
-        if ((allSell || isMixed) && rejectedSellCount >= 1 && successCount === 0 && setShowFyersTpinModal) {
-          setShowFyersTpinModal(true);
-          setOpenRebalanceModal(false);
-          edisTriggered = true;
-        }
-      }
-
-      // 7. Always enroll in status-check-queue
-      try {
-        await axios.post(
-          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-          { userEmail, modelName, advisor: advisorTag, broker: 'Fyers' },
-          { headers: requestHeaders },
-        );
-      } catch (queueErr) {
-        console.warn('[FyersPublisher] status-check-queue failed:', queueErr);
-      }
-
-      // 8. Only show success modal if no EDIS modal was triggered
-      if (!edisTriggered) {
-        setOpenSucessModal(true);
-        setOpenRebalanceModal(false);
-      }
-      setLoading(false);
-
-      // 9. Refresh data
       await AsyncStorage.removeItem('stockDetailsFyersOrder');
+
+      // Emit structured portfolio events (matching prod)
+      portfolioEvents.emit(PORTFOLIO_EVENTS.HOLDINGS_REFRESH, {
+        userEmail,
+        modelName: filteredData[0]?.['model_name'] || storeModalName,
+      });
+      portfolioEvents.emit(PORTFOLIO_EVENTS.REBALANCE_EXECUTED, {
+        userEmail,
+        modelName: filteredData[0]?.['model_name'] || storeModalName,
+        broker: 'Fyers',
+      });
+
       getRebalanceRepair();
       getModelPortfolioStrategyDetails();
+      setLoading(false);
     } catch (error) {
       setLoading(false);
-      console.error('[FyersPublisher] Error:', error?.response?.data || error.message);
-
-      const responseData = error?.response?.data;
-      const orderErrors = responseData?.orderErrors || [];
+      console.error('[FyersPublisher] Error:', error);
 
       let errorMessage;
       if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
-        errorMessage = 'Unable to connect to Fyers trading server. Please reconnect your broker and try again.';
-      } else if (error?.response?.status === 401 || error?.response?.status === 403) {
-        errorMessage = 'Fyers session has expired. Please reconnect your broker and try again.';
+        errorMessage =
+          'Unable to connect to Fyers trading server. Please reconnect your broker and try again.';
+      } else if (
+        error?.response?.status === 401 ||
+        error?.response?.status === 403
+      ) {
+        errorMessage =
+          'Fyers session has expired. Please reconnect your broker and try again.';
       } else {
-        errorMessage = responseData?.error || responseData?.message || error?.message || 'Order placement failed';
+        errorMessage =
+          error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error?.message ||
+          'Order placement failed';
       }
 
-      // If backend returned per-order error details, build response from those
-      if (orderErrors.length > 0) {
-        const errorResponse = orderErrors.map(err => ({
-          symbol: err.symbol || err.tradingSymbol,
-          tradingSymbol: err.tradingSymbol || err.symbol,
-          transactionType: err.transactionType || 'BUY',
-          quantity: err.quantity,
-          orderType: err.orderType || 'MARKET',
-          exchange: err.exchange || 'NSE',
-          orderStatus: err.orderStatus || 'rejected',
-          orderPlacement: 'failed',
-          orderStatusMessage: err.reason || err.message || errorMessage,
-          message_aq: err.reason || err.message || errorMessage,
-        }));
-        setOrderPlacementResponse(errorResponse);
-        setOpenSucessModal(true);
-        setOpenRebalanceModal(false);
-        return;
-      }
-
-      // Fallback: Build synthetic rejected response for the modal
-      const syntheticResponse = stockDetails.map(stock => ({
-        symbol: stock.tradingSymbol,
-        tradingSymbol: stock.tradingSymbol,
-        transactionType: stock.transactionType || 'BUY',
-        quantity: stock.quantity,
-        orderType: stock.orderType || 'MARKET',
-        exchange: stock.exchange || 'NSE',
-        orderStatus: 'rejected',
-        orderPlacement: 'failed',
-        orderStatusMessage: errorMessage,
-        message_aq: errorMessage,
-      }));
-      setOrderPlacementResponse(syntheticResponse);
-      setOpenSucessModal(true);
-      setOpenRebalanceModal(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Order Failed',
+        text2: errorMessage,
+      });
+      getModelPortfolioStrategyDetails();
     }
   };
 
@@ -981,7 +1002,12 @@ const RebalanceModal = ({
     console.log('[RebalanceModal] calculatedPortfolioData sell:', JSON.stringify(calculatedPortfolioData?.sell));
 
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
-    if (!sessionValid) return;
+    if (!sessionValid) {
+      // Open broker connection modal so user can re-authenticate
+      setOpenRebalanceModal(false);
+      setTimeout(() => openBrokerModal(broker), 500);
+      return;
+    }
 
     setLoading(true);
 
@@ -991,7 +1017,7 @@ const RebalanceModal = ({
       stockDetails?.some(s => s.transactionType === 'SELL');
 
     if (broker === 'Dhan' && (allSellPre || isMixedPre) &&
-      dhanEdisStatus?.data?.some((h) => h.edis === false)) {
+      (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))) {
       setShowDhanTpinModel(true);
       setOpenRebalanceModal(false);
       setLoading(false);
@@ -1009,8 +1035,28 @@ const RebalanceModal = ({
     }
 
     if (broker === 'Angel One' && (allSellPre || isMixedPre) &&
-      edisStatus && edisStatus.edis === false) {
+      !userDetails?.ddpi_enabled &&
+      !userDetails?.is_authorized_for_sell) {
       setShowAngleOneTpinModel(true);
+      setOpenRebalanceModal(false);
+      setLoading(false);
+      return;
+    }
+
+    // Pre-order EDIS check for Fyers broker
+    if (broker === 'Fyers' && (allSellPre || isMixedPre) &&
+      !userDetails?.is_authorized_for_sell) {
+      setShowFyersTpinModal(true);
+      setOpenRebalanceModal(false);
+      setLoading(false);
+      return;
+    }
+
+    // AliceBlue / other brokers: check DB flag before placing sell orders
+    // (AliceBlue has no EDIS API — relies on user authorizing at broker portal)
+    if (['AliceBlue', 'IIFL Securities', 'ICICI Direct', 'Upstox', 'Kotak', 'Hdfc Securities', 'Motilal Oswal', 'Groww'].includes(broker) &&
+      (allSellPre || isMixedPre) && !userDetails?.is_authorized_for_sell) {
+      setShowOtherBrokerModel(true);
       setOpenRebalanceModal(false);
       setLoading(false);
       return;
@@ -1033,7 +1079,7 @@ const RebalanceModal = ({
       if (broker === 'AliceBlue') {
         return { clientId: clientCode, accessToken: jwtToken, apiKey: apiKey };
       } else if (broker === 'Upstox') {
-        return { apiKey: checkValidApiAnSecret(apiKey), apiSecret: checkValidApiAnSecret(secretKey), accessToken: jwtToken };
+        return { apiKey: defaultDecrypt(apiKey), apiSecret: defaultDecrypt(secretKey), accessToken: jwtToken };
       } else if (broker === 'Dhan') {
         return { clientId: clientCode, accessToken: jwtToken };
       } else if (broker === 'Angel One') {
@@ -1041,15 +1087,15 @@ const RebalanceModal = ({
       } else if (broker === 'IIFL Securities') {
         return { clientCode: clientCode };
       } else if (broker === 'ICICI Direct') {
-        return { apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), accessToken: jwtToken };
+        return { apiKey: defaultDecrypt(apiKey), secretKey: defaultDecrypt(secretKey), accessToken: jwtToken };
       } else if (broker === 'Hdfc Securities') {
-        return { apiKey: checkValidApiAnSecret(apiKey), accessToken: jwtToken };
+        return { apiKey: defaultDecrypt(apiKey), accessToken: jwtToken };
       } else if (broker === 'Kotak') {
-        return { consumerKey: checkValidApiAnSecret(apiKey), consumerSecret: checkValidApiAnSecret(secretKey), accessToken: jwtToken, viewToken, sid, serverId };
+        return { consumerKey: defaultDecrypt(apiKey), consumerSecret: defaultDecrypt(secretKey), accessToken: jwtToken, viewToken, sid, serverId };
       } else if (broker === 'Fyers') {
         return { clientId: clientCode, accessToken: jwtToken };
       } else if (broker === 'Motilal Oswal') {
-        return { clientCode: clientCode, accessToken: jwtToken, apiKey: checkValidApiAnSecret(apiKey) };
+        return { clientCode: clientCode, accessToken: jwtToken, apiKey: defaultDecrypt(apiKey) };
       } else if (broker === 'Groww') {
         return { accessToken: jwtToken };
       } else {
@@ -1120,7 +1166,7 @@ const RebalanceModal = ({
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1130,54 +1176,171 @@ const RebalanceModal = ({
       data: JSON.stringify(payload),
     };
 
-    // Common headers for all subsequent API calls
-    const statusCheckHeaders = {
-      'Content-Type': 'application/json',
-      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
-      'aq-encrypted-key': generateToken(
-        Config.REACT_APP_AQ_KEYS,
-        Config.REACT_APP_AQ_SECRET,
-      ),
-    };
+    await axios
+      .request(config)
+      .then(async response => {
+        const checkData = response?.data?.results;
+        console.log('[RebalanceModal] process-trade response:', JSON.stringify({
+          resultsCount: checkData?.length,
+          status: response?.data?.status,
+          message: response?.data?.message,
+          error: response?.data?.error,
+        }));
+        setOrderPlacementResponse(response?.data?.results);
 
-    const modelName = filteredData[0]?.['model_name'] || storeModalName;
+        // Handle session expired - broker needs reconnection
+        if (response?.data?.sessionExpired) {
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          Toast.show({
+            type: 'error',
+            text1: 'Session Expired',
+            text2: `Your ${broker} session has expired. Please reconnect your broker.`,
+            visibilityTime: 5000,
+          });
+          // Open broker connection modal so user can re-authenticate
+          setTimeout(() => {
+            openBrokerModal(broker);
+          }, 500);
+          return;
+        }
 
-    // Helper: enroll user in status-check-queue (non-fatal)
-    const enrollStatusCheckQueue = async () => {
-      try {
-        await axios.post(
-          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-          {
-            userEmail: userEmail,
-            modelName: modelName,
-            advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
-            broker: broker,
-          },
-          { headers: statusCheckHeaders },
+        // Guard: If backend returned empty results, check for cautionary listing or show error
+        if (!checkData || checkData.length === 0) {
+          const errorMsg = response?.data?.message || response?.data?.error || '';
+          const isCautionaryError = errorMsg.toLowerCase().includes('cautionary') && errorMsg.toLowerCase().includes('listing');
+          console.warn('[RebalanceModal] Empty results from process-trade:', errorMsg, 'isCautionary:', isCautionaryError);
+
+          if (isCautionaryError) {
+            const syntheticResults = (payload.trades || []).map(trade => ({
+              symbol: trade.tradingSymbol || trade.symbol || trade.Trading_Symbol || '',
+              searchSymbol: trade.tradingSymbol || trade.symbol || '',
+              transactionType: trade.transactionType || trade.transaction_type || 'BUY',
+              quantity: trade.quantity || trade.qty || 0,
+              orderType: trade.orderType || trade.order_type || 'MARKET',
+              exchange: trade.exchange || 'NSE',
+              orderStatus: 'REJECTED',
+              orderStatusMessage: errorMsg,
+              message_aq: errorMsg,
+            }));
+            setOrderPlacementResponse(syntheticResults);
+            setOpenRebalanceModal(false);
+            setLoading(false);
+            setOpenSucessModal(true);
+            getModelPortfolioStrategyDetails();
+            return;
+          }
+
+          // Show TPIN modal for all brokers when sell orders return empty response
+          if (allSellPre || isMixedPre) {
+            if (broker === 'Dhan') {
+              setShowDhanTpinModel(true);
+            } else if (broker === 'Angel One') {
+              setShowAngleOneTpinModel(true);
+            } else if (broker === 'Zerodha') {
+              setShowDdpiModal && setShowDdpiModal(true);
+            } else if (broker === 'Fyers') {
+              setShowFyersTpinModal(true);
+            } else {
+              setShowOtherBrokerModel(true);
+            }
+            setOpenRebalanceModal(false);
+            setLoading(false);
+            return;
+          }
+
+          // Non-sell empty results: show error toast
+          Toast.show({
+            type: 'error',
+            text1: 'Order Processing Failed',
+            text2: errorMsg || 'No orders were processed by the broker. Please try again.',
+            visibilityTime: 5000,
+          });
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          getModelPortfolioStrategyDetails();
+          return;
+        }
+
+        const isMixed =
+          checkData?.some(stock => stock.transactionType === 'BUY') &&
+          checkData?.some(stock => stock.transactionType === 'SELL');
+        const allBuy = checkData?.every(
+          stock => stock.transactionType === 'BUY',
         );
-      } catch (queueErr) {
-        console.log('[RebalanceModal] status-check-queue enrollment failed (non-fatal):', queueErr?.message);
-      }
-    };
+        const allSell = checkData?.every(
+          stock => stock.transactionType === 'SELL',
+        );
 
-    try {
-      const response = await axios.request(config);
-      const checkData = response?.data?.results;
-      console.log('[RebalanceModal] process-trade response:', JSON.stringify({
-        resultsCount: checkData?.length,
-        status: response?.data?.status,
-        message: response?.data?.message,
-      }));
+        const rejectedSellCount = (checkData || []).reduce(
+          (count, order) => {
+            return isOrderRejected(order?.orderStatus) &&
+              order.transactionType === 'SELL'
+              ? count + 1
+              : count;
+          },
+          0,
+        );
 
-      // 1. Handle empty/invalid response
-      if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
-        const responseMsg = (response?.data?.message || response?.data?.error || '').toLowerCase();
+        const successCount = (checkData || []).reduce((count, order) => {
+          return isOrderSuccess(order?.orderStatus) &&
+            (order.transactionType === 'SELL' || isMixed)
+            ? count + 1
+            : count;
+        }, 0);
 
-        // Dhan CDSL/EDIS/TPIN in empty response
+        // Check for CDSL/EDIS/TPIN error messages in rejected orders
+        const hasCdslError = (checkData || []).some((order) => {
+          const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
+          return msg.includes("cdsl") || msg.includes("edis") || msg.includes("tpin") || msg.includes("validate qty");
+        });
+
+        // Check for cautionary listing rejections - these should bypass TPIN/EDIS modals
+        const hasCautionaryRejection = (checkData || []).some((order) => {
+          const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
+          return msg.includes("cautionary") && msg.includes("listing");
+        });
+
+        // If cautionary listing rejection, go directly to success modal to show the alert
+        if (hasCautionaryRejection) {
+          setOpenSucessModal(true);
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          // Still do db update and status check
+          try {
+            await axios.post(
+              `${server.server.baseUrl}api/model-portfolio-db-update`,
+              {
+                modelId: modelPortfolioModelId,
+                orderResults: checkData,
+                userEmail: userEmail,
+                modelName: filteredData[0]['model_name'],
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+                  'aq-encrypted-key': generateToken(
+                    Config.REACT_APP_AQ_KEYS,
+                    Config.REACT_APP_AQ_SECRET,
+                  ),
+                },
+              },
+            );
+          } catch (dbErr) {
+            console.warn('Error updating db after cautionary rejection:', dbErr);
+          }
+          getRebalanceRepair();
+          getModelPortfolioStrategyDetails();
+          return;
+        }
+
+        // Dhan: Check CDSL error messages first
         if (
           broker === 'Dhan' &&
-          (responseMsg.includes('cdsl') || responseMsg.includes('edis') ||
-            responseMsg.includes('tpin') || responseMsg.includes('validate qty'))
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1 &&
+          hasCdslError
         ) {
           setShowDhanTpinModel(true);
           setOpenRebalanceModal(false);
@@ -1185,228 +1348,159 @@ const RebalanceModal = ({
           return;
         }
 
-        // Cautionary listing in empty response — build synthetic response and show modal
-        if (responseMsg.includes('cautionary') && responseMsg.includes('listing')) {
-          const syntheticResults = (payload.trades || []).map(trade => ({
-            symbol: trade.tradingSymbol || trade.symbol || '',
-            tradingSymbol: trade.tradingSymbol || trade.symbol || '',
-            transactionType: trade.transactionType || 'BUY',
-            quantity: trade.quantity || trade.qty || 0,
-            orderType: trade.orderType || 'MARKET',
-            exchange: trade.exchange || 'NSE',
-            orderStatus: 'REJECTED',
-            orderStatusMessage: response?.data?.message || 'Cautionary listing restriction',
-            message_aq: response?.data?.message || 'Cautionary listing restriction',
-          }));
-          setOrderPlacementResponse(syntheticResults);
-          await enrollStatusCheckQueue();
+        if (
+          !isReturningFromOtherBrokerModal &&
+          specialBrokers.includes(broker)
+        ) {
+          if (allBuy) {
+            setOpenSucessModal(true);
+            setOpenRebalanceModal(false);
+          } else if (
+            (allSell || isMixed) &&
+            rejectedSellCount >= 1 &&
+            successCount === 0
+          ) {
+            setShowOtherBrokerModel(true);
+            setOpenRebalanceModal(false);
+            setLoading(false);
+            return;
+          } else {
+            setOpenSucessModal(true);
+            setOpenRebalanceModal(false);
+          }
+        } else if (
+          (allSell || isMixed) &&
+          rejectedSellCount >= 1
+        ) {
+          // Always show broker-specific TPIN modal for rejected sell orders
+          // Don't rely on CDSL keyword detection - error message formats can change
+          setOpenSucessModal(false);
+          setLoading(false);
+          setOpenRebalanceModal(false);
+
+          if (broker === 'Dhan') {
+            setShowDhanTpinModel(true);
+          } else if (broker === 'Angel One') {
+            setShowAngleOneTpinModel(true);
+          } else if (broker === 'Zerodha') {
+            setShowDdpiModal && setShowDdpiModal(true);
+          } else if (broker === 'Fyers') {
+            setShowFyersTpinModal(true);
+          } else {
+            setShowOtherBrokerModel(true);
+          }
+          return;
+        } else {
           setOpenSucessModal(true);
           setOpenRebalanceModal(false);
-          setLoading(false);
+        }
+
+        getRebalanceRepair();
+        const updateData = {
+          modelId: modelPortfolioModelId,
+          orderResults: checkData,
+          userEmail: userEmail,
+          modelName: filteredData[0]['model_name'],
+        };
+
+        return axios.post(
+          `${server.server.baseUrl}api/model-portfolio-db-update`,
+          updateData,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        );
+      })
+      .then(() => {
+        // Add user to status check queue for async order status polling (matching web frontend)
+        const statusCheckData = {
+          userEmail: userEmail,
+          modelName: filteredData[0]['model_name'],
+          advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+          broker: broker,
+        };
+        return axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          statusCheckData,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        );
+      })
+      .then(() => {
+        setLoading(false);
+        setOpenRebalanceModal(false);
+
+        // Emit structured portfolio events (matching prod)
+        portfolioEvents.emit(PORTFOLIO_EVENTS.HOLDINGS_REFRESH, {
+          userEmail,
+          modelName: filteredData[0]?.['model_name'] || storeModalName,
+        });
+        portfolioEvents.emit(PORTFOLIO_EVENTS.REBALANCE_EXECUTED, {
+          userEmail,
+          modelName: filteredData[0]?.['model_name'] || storeModalName,
+          broker,
+        });
+
+        getModelPortfolioStrategyDetails();
+      })
+      .catch(error => {
+        setLoading(false);
+
+        // Determine a user-friendly error message
+        let errorMessage;
+        if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
+          errorMessage = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
+        } else if (error?.response?.status === 401 || error?.response?.status === 403) {
+          errorMessage = `${broker} session has expired. Please reconnect your broker.`;
+          // Open broker connection modal so user can re-authenticate
+          setOpenRebalanceModal(false);
+          setTimeout(() => {
+            openBrokerModal(broker);
+          }, 500);
+        } else {
+          errorMessage = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Order placement failed';
+        }
+
+        // Show TPIN modal for all brokers when sell orders fail
+        // Don't rely on CDSL keyword detection - error message formats can change
+        if (allSellPre || isMixedPre) {
+          if (broker === 'Dhan') {
+            setShowDhanTpinModel(true);
+          } else if (broker === 'Angel One') {
+            setShowAngleOneTpinModel(true);
+          } else if (broker === 'Zerodha') {
+            setShowDdpiModal && setShowDdpiModal(true);
+          } else if (broker === 'Fyers') {
+            setShowFyersTpinModal(true);
+          } else {
+            setShowOtherBrokerModel(true);
+          }
+          setOpenRebalanceModal(false);
           return;
         }
 
-        // Generic empty response
         Toast.show({
           type: 'error',
-          text1: 'Order Processing Issue',
-          text2: response?.data?.message || 'No orders were processed. Please check your broker app and try again.',
-          visibilityTime: 5000,
+          text1: 'Order Failed',
+          text2: errorMessage,
         });
-        setOpenRebalanceModal(false);
-        await enrollStatusCheckQueue();
-        setLoading(false);
-        return;
-      }
-
-      // 2. Store results
-      const results = checkData;
-      setOrderPlacementResponse(results);
-
-      // 3. Always call model-portfolio-db-update BEFORE EDIS checks (non-fatal)
-      try {
-        await axios.post(
-          `${server.server.baseUrl}api/model-portfolio-db-update`,
-          {
-            modelId: modelPortfolioModelId,
-            orderResults: results,
-            userEmail: userEmail,
-            modelName: modelName,
-            user_broker: broker,
-          },
-          { headers: statusCheckHeaders },
-        );
-      } catch (dbErr) {
-        console.warn('[RebalanceModal] model-portfolio-db-update error (non-fatal):', dbErr?.message);
-      }
-
-      // 4. Check if ALL orders failed — show results modal directly, skip EDIS checks
-      const allOrdersFailed = checkData.every((order) => {
-        const s = (order?.orderStatus || '').toUpperCase();
-        return s === 'REJECTED' || s === 'CANCELLED' || s === 'FAILURE' || s === 'FAILED';
-      });
-
-      if (allOrdersFailed) {
-        await enrollStatusCheckQueue();
-        setOpenSucessModal(true);
-        setOpenRebalanceModal(false);
-        setLoading(false);
         getModelPortfolioStrategyDetails();
-        return;
-      }
-
-      // 5. Post-order EDIS rejection handling — set flag instead of returning
-      let edisTriggered = false;
-      if (checkData.length > 0) {
-        const isMixed =
-          checkData.some(s => s.transactionType === 'BUY') &&
-          checkData.some(s => s.transactionType === 'SELL');
-        const allSell = checkData.every(s => s.transactionType === 'SELL');
-
-        const rejectedSellCount = checkData.reduce((count, order) => {
-          return isOrderRejected(order?.orderStatus) && order.transactionType === 'SELL'
-            ? count + 1 : count;
-        }, 0);
-
-        const successCount = checkData.reduce((count, order) => {
-          return isOrderSuccess(order?.orderStatus) &&
-            (order.transactionType === 'SELL' || isMixed)
-            ? count + 1 : count;
-        }, 0);
-
-        const hasCdslError = checkData.some((order) => {
-          const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || '').toLowerCase();
-          return msg.includes('cdsl') || msg.includes('edis') || msg.includes('tpin') || msg.includes('validate qty');
-        });
-
-        // Dhan CDSL error check
-        if (broker === 'Dhan' && (allSell || isMixed) && rejectedSellCount >= 1 && hasCdslError && setShowDhanTpinModel) {
-          setShowDhanTpinModel(true);
-          setOpenRebalanceModal(false);
-          edisTriggered = true;
-        }
-
-        // Special brokers
-        if (!edisTriggered && !isReturningFromOtherBrokerModal && specialBrokers.includes(broker)) {
-          if ((allSell || isMixed) && rejectedSellCount >= 1 && successCount === 0 && setShowOtherBrokerModel) {
-            setShowOtherBrokerModel(true);
-            setOpenRebalanceModal(false);
-            setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-            edisTriggered = true;
-          }
-        }
-
-        // Angel One
-        if (!edisTriggered && broker === 'Angel One' && edisStatus && edisStatus.edis === false &&
-          (allSell || isMixed) && rejectedSellCount >= 1 && successCount === 0 && setShowAngleOneTpinModel) {
-          setShowAngleOneTpinModel(true);
-          setOpenRebalanceModal(false);
-          edisTriggered = true;
-        }
-
-        // Dhan live status fallback
-        if (!edisTriggered && broker === 'Dhan' && (allSell || isMixed) &&
-          dhanEdisStatus?.data?.some((h) => h.edis === false) &&
-          rejectedSellCount >= 1 && successCount === 0 && setShowDhanTpinModel) {
-          setShowDhanTpinModel(true);
-          setOpenRebalanceModal(false);
-          edisTriggered = true;
-        }
-
-        // Fyers
-        if (!edisTriggered && broker === 'Fyers' && (allSell || isMixed) &&
-          rejectedSellCount >= 1 && successCount === 0 && setShowFyersTpinModal) {
-          setShowFyersTpinModal(true);
-          setOpenRebalanceModal(false);
-          edisTriggered = true;
-        }
-
-        // Zerodha DDPI
-        if (!edisTriggered && broker === 'Zerodha' && (allSell || isMixed) &&
-          !userDetails?.is_authorized_for_sell &&
-          !['physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
-          rejectedSellCount >= 1 && successCount === 0 && setShowDdpiModal) {
-          setShowDdpiModal(true);
-          setOpenRebalanceModal(false);
-          edisTriggered = true;
-        }
-      }
-
-      // 6. Always call status-check-queue
-      await enrollStatusCheckQueue();
-
-      // 7. Only show success modal if no EDIS modal was triggered
-      if (!edisTriggered) {
-        setOpenSucessModal(true);
-        setOpenRebalanceModal(false);
-      }
-      setLoading(false);
-
-      // 8. Refresh data
-      getRebalanceRepair();
-      getModelPortfolioStrategyDetails();
-    } catch (error) {
-      console.log('[RebalanceModal] Order placement error:', error?.response?.data || error.message);
-      setLoading(false);
-
-      const responseData = error?.response?.data;
-      const orderErrors = responseData?.orderErrors || [];
-
-      // Determine user-friendly error message
-      let errorMessage;
-      if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
-        errorMessage = `Unable to connect to ${broker} trading server. This could be due to broker session expiry or a temporary server issue. Please reconnect your broker and try again.`;
-      } else if (error?.response?.status === 401 || error?.response?.status === 403) {
-        errorMessage = `${broker} session has expired. Please reconnect your broker and try again.`;
-      } else {
-        errorMessage = responseData?.error || responseData?.message || error?.message || 'Order placement failed';
-      }
-
-      // Dhan CDSL/EDIS/TPIN check in catch
-      const errMsg = (errorMessage || '').toLowerCase();
-      if (broker === 'Dhan' && (errMsg.includes('cdsl') || errMsg.includes('edis') || errMsg.includes('tpin')) && setShowDhanTpinModel) {
-        setShowDhanTpinModel(true);
-        setOpenRebalanceModal(false);
-        return;
-      }
-
-      // If backend returned per-order error details, build response from those
-      if (orderErrors.length > 0) {
-        const errorResponse = orderErrors.map(err => ({
-          symbol: err.symbol || err.tradingSymbol,
-          tradingSymbol: err.tradingSymbol || err.symbol,
-          transactionType: err.transactionType || 'BUY',
-          quantity: err.quantity,
-          orderType: err.orderType || 'MARKET',
-          exchange: err.exchange || 'NSE',
-          orderStatus: err.orderStatus || 'rejected',
-          orderPlacement: 'failed',
-          orderStatusMessage: err.reason || err.message || errorMessage,
-          message_aq: err.reason || err.message || errorMessage,
-        }));
-        setOrderPlacementResponse(errorResponse);
-        setOpenSucessModal(true);
-        setOpenRebalanceModal(false);
-        return;
-      }
-
-      // Fallback: Build synthetic rejected response for the modal
-      const syntheticResponse = stockDetails.map(stock => ({
-        symbol: stock.tradingSymbol,
-        tradingSymbol: stock.tradingSymbol,
-        transactionType: stock.transactionType || 'BUY',
-        quantity: stock.quantity,
-        orderType: stock.orderType || 'MARKET',
-        exchange: stock.exchange || 'NSE',
-        orderStatus: 'rejected',
-        orderPlacement: 'failed',
-        orderStatusMessage: errorMessage,
-        message_aq: errorMessage,
-      }));
-      setOrderPlacementResponse(syntheticResponse);
-      setOpenSucessModal(true);
-      setOpenRebalanceModal(false);
-    }
+      });
     setIsReturningFromOtherBrokerModal(false);
   };
 
@@ -1674,184 +1768,141 @@ const RebalanceModal = ({
                   )}
                 </>
               }
-              // Empty state — varies based on whether stocks were skipped
+              // Empty state — Portfolio Already Aligned or API error message
               ListEmptyComponent={
-                hasSkippedStocks || calculatedPortfolioData?.status === 0 ? (
-                  // Stocks skipped due to low balance — show "Increase Investment" message
-                  <View
-                    style={{
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginTop: 20,
-                      paddingHorizontal: 24,
-                    }}>
-                    {/* Warning icon */}
-                    <View
-                      style={{
-                        width: 72,
-                        height: 72,
-                        borderRadius: 36,
-                        backgroundColor: '#FEF3C7',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginBottom: 20,
-                      }}>
-                      <AlertOctagon size={36} color="#D97706" />
-                    </View>
-                    <Text
-                      style={{
-                        fontFamily: 'Poppins-SemiBold',
-                        color: '#92400E',
-                        fontSize: 20,
-                        textAlign: 'center',
-                        marginBottom: 12,
-                      }}>
-                      Increase Your Investment Amount
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: 'Poppins-Regular',
-                        color: 'rgba(0,0,0,0.6)',
-                        textAlign: 'center',
-                        marginBottom: 10,
-                        fontSize: 14,
-                        lineHeight: 22,
-                        paddingHorizontal: 10,
-                      }}>
-                      The investment amount you entered is lower than the minimum required.
-                      We cannot calculate the correct number of shares for each stock because
-                      your amount is too low to buy even one share of every stock in this portfolio.
-                    </Text>
-
-                    {/* Amount comparison */}
-                    {(calculatedPortfolioData?.totalValue || minInvestment) && (
+                <View
+                  style={{
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: 40,
+                    paddingHorizontal: 24,
+                  }}>
+                  {calculatedPortfolioData?.status === 1 && calculatedPortfolioData?.message ? (
+                    <>
+                      {/* Error/warning icon */}
                       <View
                         style={{
-                          width: '100%',
-                          borderRadius: 12,
-                          borderWidth: 1,
-                          borderColor: '#E5E7EB',
-                          overflow: 'hidden',
-                          marginBottom: 16,
+                          width: 72,
+                          height: 72,
+                          borderRadius: 36,
+                          backgroundColor: '#FEF3C7',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 20,
                         }}>
-                        {calculatedPortfolioData?.totalValue != null && (
-                          <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' }}>
-                            <Text style={{ fontFamily: 'Poppins-Regular', fontSize: 11, color: '#6B7280', textTransform: 'uppercase' }}>
-                              Your Entered Amount
-                            </Text>
-                            <Text style={{ fontFamily: 'Poppins-SemiBold', fontSize: 20, color: '#DC2626', marginTop: 2 }}>
-                              {'\u20B9'}{parseFloat(calculatedPortfolioData.totalValue).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                            </Text>
-                          </View>
-                        )}
-                        {minInvestment && (
-                          <View style={{ padding: 14, backgroundColor: '#F0FDF4' }}>
-                            <Text style={{ fontFamily: 'Poppins-Regular', fontSize: 11, color: '#6B7280', textTransform: 'uppercase' }}>
-                              Minimum Required Amount
-                            </Text>
-                            <Text style={{ fontFamily: 'Poppins-SemiBold', fontSize: 20, color: '#16A34A', marginTop: 2 }}>
-                              {'\u20B9'}{parseFloat(minInvestment).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                            </Text>
-                          </View>
-                        )}
+                        <AlertOctagon size={36} color="#D97706" />
                       </View>
-                    )}
-
-                    <TouchableOpacity
-                      onPress={onModifyInvestment || handleClose}
-                      style={{
-                        backgroundColor: '#000',
-                        paddingHorizontal: 24,
-                        paddingVertical: 12,
-                        borderRadius: 8,
-                      }}>
                       <Text
                         style={{
-                          color: '#fff',
-                          fontFamily: 'Poppins-Medium',
-                          fontSize: 14,
+                          fontFamily: 'Poppins-SemiBold',
+                          color: '#D97706',
+                          fontSize: 18,
+                          textAlign: 'center',
+                          marginBottom: 12,
                         }}>
-                        Modify Investment Amount
+                        Unable to Rebalance
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  // Truly no trades needed — Portfolio Already Aligned
-                  <View
-                    style={{
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginTop: 40,
-                      paddingHorizontal: 24,
-                    }}>
-                    {/* Green checkmark circle */}
-                    <View
-                      style={{
-                        width: 72,
-                        height: 72,
-                        borderRadius: 36,
-                        backgroundColor: '#DEF7EC',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginBottom: 20,
-                      }}>
-                      <CheckIcon size={36} color="#15803D" />
-                    </View>
-                    <Text
-                      style={{
-                        fontFamily: 'Poppins-SemiBold',
-                        color: '#15803D',
-                        fontSize: 20,
-                        textAlign: 'center',
-                        marginBottom: 12,
-                      }}>
-                      Your Portfolio is Already Aligned!
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: 'Poppins-Regular',
-                        color: 'rgba(0,0,0,0.6)',
-                        textAlign: 'center',
-                        marginBottom: 10,
-                        fontSize: 14,
-                        lineHeight: 22,
-                        paddingHorizontal: 10,
-                      }}>
-                      Great news! Based on your current holdings and the latest model
-                      portfolio recommendations, no trades are needed right now. Your
-                      investments are already in sync with your advisor's strategy.
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: 'Poppins-Regular',
-                        color: 'rgba(0,0,0,0.4)',
-                        textAlign: 'center',
-                        marginBottom: 24,
-                        fontSize: 13,
-                        lineHeight: 20,
-                      }}>
-                      Want to increase your investment or make changes? Go back and
-                      modify your investment amount.
-                    </Text>
-                    <TouchableOpacity
-                      onPress={handleClose}
-                      style={{
-                        backgroundColor: '#000',
-                        paddingHorizontal: 24,
-                        paddingVertical: 12,
-                        borderRadius: 8,
-                      }}>
                       <Text
                         style={{
-                          color: '#fff',
-                          fontFamily: 'Poppins-Medium',
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.6)',
+                          textAlign: 'center',
+                          marginBottom: 24,
                           fontSize: 14,
+                          lineHeight: 22,
+                          paddingHorizontal: 10,
                         }}>
-                        Go Back
+                        {calculatedPortfolioData.message}
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-                )
+                      <TouchableOpacity
+                        onPress={handleClose}
+                        style={{
+                          backgroundColor: '#000',
+                          paddingHorizontal: 24,
+                          paddingVertical: 12,
+                          borderRadius: 8,
+                        }}>
+                        <Text
+                          style={{
+                            color: '#fff',
+                            fontFamily: 'Poppins-Medium',
+                            fontSize: 14,
+                          }}>
+                          Go Back
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      {/* Green checkmark circle */}
+                      <View
+                        style={{
+                          width: 72,
+                          height: 72,
+                          borderRadius: 36,
+                          backgroundColor: '#DEF7EC',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 20,
+                        }}>
+                        <CheckIcon size={36} color="#15803D" />
+                      </View>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-SemiBold',
+                          color: '#15803D',
+                          fontSize: 20,
+                          textAlign: 'center',
+                          marginBottom: 12,
+                        }}>
+                        Your Portfolio is Already Aligned!
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.6)',
+                          textAlign: 'center',
+                          marginBottom: 10,
+                          fontSize: 14,
+                          lineHeight: 22,
+                          paddingHorizontal: 10,
+                        }}>
+                        Great news! Based on your current holdings and the latest model
+                        portfolio recommendations, no trades are needed right now. Your
+                        investments are already in sync with your advisor's strategy.
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: 'Poppins-Regular',
+                          color: 'rgba(0,0,0,0.4)',
+                          textAlign: 'center',
+                          marginBottom: 24,
+                          fontSize: 13,
+                          lineHeight: 20,
+                        }}>
+                        Want to increase your investment or make changes? Go back and
+                        modify your investment amount.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={handleClose}
+                        style={{
+                          backgroundColor: '#000',
+                          paddingHorizontal: 24,
+                          paddingVertical: 12,
+                          borderRadius: 8,
+                        }}>
+                        <Text
+                          style={{
+                            color: '#fff',
+                            fontFamily: 'Poppins-Medium',
+                            fontSize: 14,
+                          }}>
+                          Go Back
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               }
             />
             {dataArray.length > 0 && (

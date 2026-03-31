@@ -1,29 +1,37 @@
 /**
- * Pure helper functions extracted from RebalanceCard for testability.
- * (React Native adaptation of web version)
+ * rebalanceHelpers.js
+ *
+ * Pure helper functions for rebalancing logic, error detection, and
+ * broker-specific payload construction.
+ * Ported from prod-alphaquark-github web app for consistency.
  */
+
+import CryptoJS from 'react-native-crypto-js';
 
 /**
  * Check if funds data indicates an error or is missing.
- * Covers: null funds, undefined funds, status 1 (token error), status 2 (backend error).
- *
- * @param {Object|null|undefined} currentFunds - Funds response object
- * @param {string} brokerStatus - Broker connection status
- * @returns {boolean} True if funds are in an error state while broker is connected
+ * @param {object} currentFunds - { status: 0|1|2, data: { availablecash } }
+ * @param {string} brokerStatus - "connected" | "expired" | etc.
+ * @returns {{ isError: boolean, reason: string|null }}
  */
 export function isFundsErrorOrMissing(currentFunds, brokerStatus) {
-  return (
-    (currentFunds?.status === 1 || currentFunds?.status === 2 || !currentFunds) &&
-    brokerStatus === 'connected'
-  );
+  if (!currentFunds) {
+    if (brokerStatus === 'connected') {
+      return {isError: true, reason: 'funds_fetch_failed'};
+    }
+    return {isError: true, reason: 'not_connected'};
+  }
+  if (currentFunds.status === 1) {
+    return {isError: true, reason: 'token_expired'};
+  }
+  if (currentFunds.status === 2) {
+    return {isError: true, reason: 'backend_error'};
+  }
+  return {isError: false, reason: null};
 }
 
 /**
- * Check if a rebalance API response indicates a backend error.
- * Status 1 = error, Status 2 = backend error.
- *
- * @param {Object|null|undefined} responseData - The response.data from rebalance/calculate
- * @returns {boolean} True if the response indicates an error
+ * Check if rebalance API response is an error.
  */
 export function isRebalanceErrorResponse(responseData) {
   if (!responseData) return false;
@@ -31,94 +39,201 @@ export function isRebalanceErrorResponse(responseData) {
 }
 
 /**
- * Check if an error message relates to a missing subscription amount.
- *
- * @param {string|null|undefined} message - Error message string
- * @returns {boolean} True if the message indicates a subscription amount issue
+ * Check if error is related to subscription amount.
  */
 export function isSubscriptionAmountError(message) {
-  if (!message) return false;
+  if (!message || typeof message !== 'string') return false;
+  const lower = message.toLowerCase();
   return (
-    message.includes('subscription_amount_raw') ||
-    message.includes('subscription amount') ||
-    message.includes('not set or has been cleared')
+    lower.includes('subscription amount') ||
+    lower.includes('minimum investment') ||
+    lower.includes('subscription_amount')
   );
 }
 
 /**
- * Build broker-specific payload fields for the rebalance/calculate API.
- * Returns only the broker-specific fields to spread into the base payload.
+ * Check if error indicates insufficient balance.
+ */
+export function isLowAllowedBalanceError(message) {
+  if (!message || typeof message !== 'string') return false;
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('low allowed balance') ||
+    lower.includes('insufficient') ||
+    lower.includes('not enough funds')
+  );
+}
+
+/**
+ * Detect portfolio shortfall from rebalance response.
+ */
+export function checkPortfolioShortfall(responseData) {
+  if (!responseData) {
+    return {isShortfall: false, hasTrades: false};
+  }
+
+  const hasBuy = Array.isArray(responseData.buy) && responseData.buy.length > 0;
+  const hasSell =
+    Array.isArray(responseData.sell) && responseData.sell.length > 0;
+  const hasTrades = hasBuy || hasSell;
+
+  const isShortfall =
+    responseData.totalValue &&
+    responseData.minInvestmentValue &&
+    responseData.totalValue < responseData.minInvestmentValue;
+
+  return {
+    isShortfall: !!isShortfall,
+    hasTrades,
+    currentValue: responseData.totalValue || 0,
+    requiredAmount: responseData.minInvestmentValue || 0,
+  };
+}
+
+/**
+ * Detect broker authentication errors in response messages.
+ */
+export function isBrokerAuthError(message) {
+  if (!message || typeof message !== 'string') return false;
+  const lower = message.toLowerCase();
+  const authKeywords = [
+    'invalid api key',
+    'token expired',
+    'session expired',
+    'access token',
+    'invalid token',
+    'unauthorized',
+    'authentication failed',
+    'login required',
+    'invalid credentials',
+    'api key not found',
+  ];
+  return authKeywords.some(keyword => lower.includes(keyword));
+}
+
+/**
+ * Build broker-specific payload fields for rebalance API calls.
+ * Maps each broker's credentials to the format expected by the Python backend.
  *
  * @param {string} broker - Broker name
- * @param {Object} credentials - Object containing clientCode, apiKey, secretKey, jwtToken, viewToken, sid, serverId
- * @param {Function} decryptFn - Function to decrypt api keys (checkValidApiAnSecret)
- * @param {string} angelOneApiKey - Angel One API key from env
- * @returns {Object} Broker-specific payload fields
+ * @param {object} credentials - User's broker credentials
+ * @param {function} decryptFn - AES decryption function (optional)
+ * @param {string} angelOneApiKey - Angel One API key from config
+ * @returns {object} Broker-specific fields for API payload
  */
-export function buildBrokerPayloadFields(broker, credentials, decryptFn, angelOneApiKey) {
-  const {clientCode, apiKey, secretKey, jwtToken, viewToken, sid, serverId} = credentials;
+export function buildBrokerPayloadFields(
+  broker,
+  credentials,
+  decryptFn,
+  angelOneApiKey,
+) {
+  const decrypt = decryptFn || defaultDecrypt;
 
   switch (broker) {
-    case 'IIFL Securities':
-      return {clientCode};
-    case 'ICICI Direct':
+    case 'Zerodha':
       return {
-        apiKey: decryptFn(apiKey),
-        secretKey: decryptFn(secretKey),
-        accessToken: jwtToken,
+        accessToken: credentials.jwtToken,
       };
-    case 'Upstox':
-      return {
-        apiKey: decryptFn(apiKey),
-        apiSecret: decryptFn(secretKey),
-        accessToken: jwtToken,
-      };
+
     case 'Angel One':
       return {
-        apiKey: angelOneApiKey,
-        jwtToken: jwtToken,
+        apiKey: angelOneApiKey || credentials.apiKey,
+        jwtToken: credentials.jwtToken,
       };
-    case 'Zerodha':
-      return {accessToken: jwtToken};
+
+    case 'Upstox':
+      return {
+        apiKey: decrypt(credentials.apiKey),
+        apiSecret: decrypt(credentials.secretKey),
+        accessToken: credentials.jwtToken,
+      };
+
+    case 'ICICI Direct':
+      return {
+        apiKey: decrypt(credentials.apiKey),
+        secretKey: decrypt(credentials.secretKey),
+        accessToken: credentials.jwtToken,
+      };
+
     case 'Dhan':
       return {
-        clientId: clientCode,
-        accessToken: jwtToken,
+        clientId: credentials.clientCode,
+        accessToken: credentials.jwtToken,
       };
+
     case 'Groww':
-      return {accessToken: jwtToken};
-    case 'Hdfc Securities':
       return {
-        apiKey: decryptFn(apiKey),
-        accessToken: jwtToken,
+        accessToken: credentials.jwtToken,
       };
+
+    case 'IIFL Securities':
+      return {
+        clientCode: credentials.clientCode,
+      };
+
     case 'Kotak':
       return {
-        consumerKey: decryptFn(apiKey),
-        consumerSecret: decryptFn(secretKey),
-        accessToken: jwtToken,
-        viewToken,
-        sid,
-        serverId,
+        consumerKey: decrypt(credentials.apiKey),
+        consumerSecret: decrypt(credentials.secretKey),
+        accessToken: credentials.jwtToken,
+        sid: credentials.sid,
+        serverId: credentials.serverId,
+        viewToken: credentials.viewToken,
       };
+
+    case 'Hdfc Securities':
+      return {
+        apiKey: decrypt(credentials.apiKey),
+        accessToken: credentials.jwtToken,
+      };
+
     case 'AliceBlue':
       return {
-        clientId: clientCode,
-        accessToken: jwtToken,
-        apiKey: apiKey,
+        clientId: credentials.clientCode,
+        accessToken: credentials.jwtToken,
+        apiKey: credentials.apiKey,
       };
+
     case 'Fyers':
       return {
-        clientId: clientCode,
-        accessToken: jwtToken,
+        clientId: credentials.clientCode,
+        accessToken: credentials.jwtToken,
       };
+
     case 'Motilal Oswal':
       return {
-        clientCode,
-        accessToken: jwtToken,
-        apiKey: decryptFn(apiKey),
+        clientCode: credentials.clientCode,
+        accessToken: credentials.jwtToken,
+        apiKey: decrypt(credentials.apiKey),
       };
-    default:
+
+    case 'Axis Securities':
+      return {
+        accessToken: credentials.jwtToken,
+      };
+
+    case 'DummyBroker':
       return {};
+
+    default:
+      console.warn(
+        `[rebalanceHelpers] Unknown broker: ${broker}, sending minimal payload`,
+      );
+      return {
+        accessToken: credentials.jwtToken,
+      };
+  }
+}
+
+// --- Internal helpers ---
+
+export function defaultDecrypt(value) {
+  if (!value) return value;
+  try {
+    const bytes = CryptoJS.AES.decrypt(value, 'ApiKeySecret');
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    return decrypted || value;
+  } catch {
+    return value;
   }
 }

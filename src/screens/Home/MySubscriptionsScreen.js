@@ -110,7 +110,7 @@ const MySubscriptionsScreen = () => {
   const fetchAllPlans = async () => {
     try {
       const response = await axios.get(
-        `${server.server.baseUrl}api/admin/plan/ARFS/model portfolio/${userEmail}`,
+        `${server.server.baseUrl}api/admin/plan/${configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG}/model portfolio/${userEmail}`,
         {
           headers: {
             'Content-Type': 'application/json',

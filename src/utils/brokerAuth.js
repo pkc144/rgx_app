@@ -14,11 +14,15 @@ import { Linking } from 'react-native';
 import axios from 'axios';
 import Config from './safeConfig';
 import { getAdvisorSubdomain } from './variantHelper';
+import server from './serverConfig';
 
-const BROKER_CALLBACK_URL = 'https://alphaquark.in/api/deploy/broker/callback';
-const BROKER_REGISTER_URL = 'https://alphaquark.in/api/deploy/broker/register';
+const BROKER_CALLBACK_URL = server.brokerAuth.callbackUrl;
+const BROKER_REGISTER_URL = server.brokerAuth.registerUrl;
 
 const DEEP_LINK_SCHEME = 'rgxapp://';
+// Backend validates origin as a URL — use the subdomain's web URL for registration,
+// but keep deep link scheme for actual app redirects
+const BROKER_REGISTER_ORIGIN = `https://${getAdvisorSubdomain()}.alphaquark.in`;
 
 /**
  * Generate a unique nonce for callback tracking
@@ -38,7 +42,7 @@ const generateNonce = () => {
  */
 export const generateState = (broker, returnPath = '/stock-recommendation') => {
   const stateData = {
-    origin: DEEP_LINK_SCHEME,
+    origin: BROKER_REGISTER_ORIGIN,
     broker: broker,
     returnPath: returnPath,
     subdomain: getAdvisorSubdomain(),
@@ -61,7 +65,7 @@ export const registerCallback = async (
 
   try {
     const response = await axios.post(BROKER_REGISTER_URL, {
-      origin: DEEP_LINK_SCHEME,
+      origin: BROKER_REGISTER_ORIGIN,
       broker,
       returnPath,
       subdomain: getAdvisorSubdomain(),

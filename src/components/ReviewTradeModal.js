@@ -31,6 +31,7 @@ import CheckBox from '@react-native-community/checkbox';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from 'react-native-config';
+import { getAdvisorSubdomain } from '../utils/variantHelper';
 import SliderButton from './SliderButton';
 import LinearGradient from 'react-native-linear-gradient';
 const {height: screenHeight} = Dimensions.get('window');
@@ -94,7 +95,7 @@ const ReviewTradeModal = ({
         data: symbols,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': Config.REACT_APP_URL,
+          'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,

@@ -114,7 +114,7 @@ const ReviewZerodhaTradeModal = ({
   let dataArray = [];
   // WebSocket connection for market data
   useEffect(() => {
-    socketRef.current = io("wss://ccxtprod.alphaquark.in", {
+    socketRef.current = io(server.ccxtWs.baseUrl, {
       transports: ["websocket"],
       query: { EIO: "4" },
     });
@@ -177,7 +177,7 @@ const ReviewZerodhaTradeModal = ({
       const data = { symbol: trade.symbol, exchange: trade.exchange };
 
       axios
-        .post("https://ccxtprod.alphaquark.in/websocket/subscribe", data)
+        .post(`${server.ccxtWs.httpUrl}/websocket/subscribe`, data)
         .then(() => {
           subscribedSymbolsRef.current.add(trade.symbol);
           delete failedSubscriptionsRef.current[trade.symbol];
@@ -307,7 +307,7 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
 
 
   const getUpdatedBasket = async (stockDetails) => {
-    const apiUrl = "https://ccxt.alphaquark.in/zerodha/fno/symbol-lotsize";
+    const apiUrl = `${server.ccxtServer.baseUrl}zerodha/fno/symbol-lotsize`;
 
   
     // Filter relevant symbols

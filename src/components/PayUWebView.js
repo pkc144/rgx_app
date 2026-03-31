@@ -37,7 +37,9 @@ import {
 import { WebView } from 'react-native-webview';
 import { XIcon, AlertCircle, RefreshCw } from 'lucide-react-native';
 import { buildPayUFormHTML, parsePayUCallback, getPayUFormUrl } from '../FunctionCall/services/PayUService';
+import Config from 'react-native-config';
 
+const APP_SCHEME = Config.REACT_APP_DEEP_LINK_SCHEME || 'rgxapp';
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 
 /**
@@ -189,7 +191,7 @@ const PayUWebView = ({
     }
 
     // Check for deep link schemes (React Native return)
-    if (url && url.startsWith('alphab2b://')) {
+    if (url && url.startsWith(`${APP_SCHEME}://`)) {
       const callbackData = parsePayUCallback(url);
 
       if (url.includes('/return') || url.includes('/success')) {
@@ -225,7 +227,7 @@ const PayUWebView = ({
     if (
       url.includes(successUrlPattern) ||
       url.includes(failureUrlPattern) ||
-      url.startsWith('alphab2b://')
+      url.startsWith(`${APP_SCHEME}://`)
     ) {
       handleNavigationStateChange({ url });
       return false;

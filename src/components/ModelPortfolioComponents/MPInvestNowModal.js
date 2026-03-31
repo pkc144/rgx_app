@@ -330,7 +330,7 @@ const MPInvestNowModal = ({
   onetimeamount,
   oneTimeDurationPlan,
   setOneTimeDurationPlan,
-  appVariant = 'magnus',
+  appVariant = 'rgxresearch',
   setSelectedPlanType,
   getAllBespoke
 }) => {
@@ -507,7 +507,7 @@ const MPInvestNowModal = ({
   const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   // Get app variant configuration - use dynamic config colors (gradient2) from API
-  const staticVariant = APP_VARIANTS[appVariant] || APP_VARIANTS.arfs;
+  const staticVariant = APP_VARIANTS[appVariant] || APP_VARIANTS.rgxresearch;
   const currentAppVariant = {
     ...staticVariant,
     paymentModal: {
@@ -523,7 +523,7 @@ const MPInvestNowModal = ({
     },
   };
   const whiteLabelText =
-    configData?.config?.REACT_APP_WHITE_LABEL_TEXT || 'arfs';
+    configData?.config?.REACT_APP_WHITE_LABEL_TEXT || 'rgxresearch';
 
   const steps = [
     {

@@ -2,6 +2,7 @@
 import {useState, useEffect, useRef} from 'react';
 import axios from 'axios';
 import {io} from 'socket.io-client';
+import server from '../../../utils/serverConfig';
 
 const WebSocketManager = (() => {
   let instance = null;
@@ -18,7 +19,7 @@ const WebSocketManager = (() => {
           connect() {
             if (socket) return;
 
-            socket = io('wss://ccxt.alphaquark.in/ltp', {
+            socket = io(`${server.ccxtWs.baseUrl}/ltp`, {
               transports: ['websocket'],
               query: {EIO: '4'},
             });
@@ -53,7 +54,7 @@ const WebSocketManager = (() => {
           async fetchInitialPrice(symbol) {
             try {
               const response = await axios.get(
-                `https://ccxt.alphaquark.in/api/price/${symbol}`,
+                `${server.ccxtWs.httpUrl}/api/price/${symbol}`,
               );
               const price = response.data.last_traded_price;
               lastPrices.set(symbol, price);
@@ -88,7 +89,7 @@ const WebSocketManager = (() => {
           async subscribeToAPI(symbol) {
             try {
               await axios.post(
-                'https://ccxt.alphaquark.in/websocket/subscribe',
+                `${server.ccxtWs.httpUrl}/websocket/subscribe`,
                 {
                   symbol,
                   exchange: 'NSE',

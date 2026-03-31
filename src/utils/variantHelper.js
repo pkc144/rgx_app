@@ -2,16 +2,16 @@ import Config from './safeConfig';
 import APP_VARIANTS from './Config';
 
 export const getAdvisorSubdomain = () => {
-  const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
-  const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['rgxresearch'] || {};
 
-  // Return subdomain if exists, otherwise default to 'common'
-  return variantConfig?.subdomain || 'common';
+  // Return subdomain if exists, otherwise default to variant subdomain
+  return variantConfig?.subdomain || 'rgxresearch';
 };
 
 export const getGoogleWebClientId = () => {
-  const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
-  const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
+  const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
+  const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['rgxresearch'] || {};
 
   // Return googleWebClientId if exists, otherwise return a default/fallback
   return (

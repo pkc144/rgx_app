@@ -555,7 +555,7 @@ const AddToCartModal = ({
     AliceBlue: 'aliceblue',
     Dhan: 'dhan',
     Groww: 'groww',
-    'Motilal Oswal': 'motilal-oswal',
+    'Motilal Oswal': 'motilal',
   };
 
   const updatePortfolioData = async (brokerName, userEmail) => {
@@ -803,40 +803,28 @@ const AddToCartModal = ({
           setOpenSucessModal(true);
         }
       } else if (
-        broker === 'Angel One' &&
-        edisStatus &&
-        edisStatus.edis === false &&
         (allSell || isMixed) &&
         rejectedSellCount >= 1 &&
         successCount === 0
       ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setOpenSucessModal(false);
-        setShowAngleOneTpinModel(true);
-        setOpenReviewTrade(false);
-        return;
-      } else if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        dhanEdisStatus?.data?.some((h) => h.edis === false) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
-      ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setShowDhanTpinModel(true);
+        // Don't gate on is_authorized_for_sell or edisStatus flags —
+        // they can be stale. Always show broker-specific TPIN modal on rejection.
+        console.log('Setting TPIN modal to true for', broker);
         setOpenSucessModal(false);
         setOpenReviewTrade(false);
-        return;
-      } else if (
-        broker === 'Fyers' &&
-        (allSell || isMixed) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
-      ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setOpenSucessModal(false);
-        setShowFyersTpinModal(true);
-        setOpenReviewTrade(false);
+
+        if (broker === 'Angel One') {
+          setShowAngleOneTpinModel(true);
+        } else if (broker === 'Dhan') {
+          setShowDhanTpinModel(true);
+        } else if (broker === 'Fyers') {
+          setShowFyersTpinModal(true);
+        } else if (broker === 'Zerodha') {
+          setShowDdpiModal && setShowDdpiModal(true);
+        } else {
+          setOrderPlacementResponse(response.data.response);
+          setOpenSucessModal(true);
+        }
         return;
       } else {
         console.log('Setting openSuccessModal to true');
@@ -883,21 +871,30 @@ const AddToCartModal = ({
           'There was an issue in placing the trade, please try again after sometime or contact your advisor';
       }
 
-      // Check for CDSL/EDIS errors in catch handler for Dhan
-      const errMsg = (
-        error?.response?.data?.details?.[0]?.message_aq ||
-        error?.response?.data?.details?.[0]?.message ||
-        error?.message ||
-        ""
-      ).toLowerCase();
-      if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        (errMsg.includes("cdsl") || errMsg.includes("edis") || errMsg.includes("tpin"))
-      ) {
-        setShowDhanTpinModel(true);
-        setOpenReviewTrade(false);
-        return;
+      // Trigger broker-specific TPIN modals for sell order failures
+      // Don't gate on is_authorized_for_sell — EDIS expires per-session
+      if (allSell || isMixed) {
+        if (broker === 'Dhan') {
+          setShowDhanTpinModel(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Angel One') {
+          setShowAngleOneTpinModel(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Fyers') {
+          setShowFyersTpinModal(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Zerodha') {
+          setShowDdpiModal && setShowDdpiModal(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (specialBrokers.includes(broker)) {
+          setShowOtherBrokerModel(true);
+          setOpenReviewTrade(false);
+          return;
+        }
       }
 
       Toast.show({
@@ -967,6 +964,9 @@ const AddToCartModal = ({
         orderPrice = ltp !== '-' ? parseFloat(ltp) : 0;
       }
 
+      // Build tag from zerodhaTradeId for order tracking/reconciliation (matching prod)
+      const tradeTag = (stock.zerodhaTradeId || stock.tradeId || '').substring(0, 20);
+
       let baseOrder = {
         variety: 'regular',
         tradingsymbol: stock.tradingSymbol,
@@ -977,6 +977,7 @@ const AddToCartModal = ({
         product: mapKiteProductType(stock.productType),
         readonly: false,
         price: orderPrice,
+        tag: tradeTag,
       };
 
       // Set readonly for large quantities (over 100 shares)
@@ -996,6 +997,10 @@ const AddToCartModal = ({
       await axios.put(
         `${server.server.baseUrl}api/zerodha/update-trade-reco`,
         {
+          stockDetails: stockDetails,
+          leaving_datetime: currentISTDateTime,
+        },
+        {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
@@ -1004,10 +1009,6 @@ const AddToCartModal = ({
               Config.REACT_APP_AQ_SECRET,
             ),
           },
-        },
-        {
-          stockDetails: stockDetails,
-          leaving_datetime: currentISTDateTime,
         },
       );
 
@@ -1340,6 +1341,8 @@ const AddToCartModal = ({
           proceedWithTpin={handleProceedWithTpin}
           userDetails={userDetails && userDetails}
           setOpenReviewTrade={setOpenReviewTrade}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -1359,6 +1362,8 @@ const AddToCartModal = ({
           userDetails={userDetails}
           edisStatus={edisStatus}
           tradingSymbol={stockDetails.map(stock => stock.tradingSymbol)}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -1367,6 +1372,8 @@ const AddToCartModal = ({
           isOpen={showFyersTpinModal}
           setIsOpen={setShowFyersTpinModal}
           userDetails={userDetails}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -1378,6 +1385,8 @@ const AddToCartModal = ({
           dhanEdisStatus={dhanEdisStatus}
           stockTypeAndSymbol={stockTypeAndSymbol}
           singleStockTypeAndSymbol={singleStockTypeAndSymbol}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -1408,6 +1417,8 @@ const AddToCartModal = ({
           setStoreModalName={setStoreModalName}
           storeModalName={storeModalName}
           funds={funds}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 

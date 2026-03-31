@@ -7,7 +7,6 @@ import RebalanceAdviceContent from '../AdviceScreenComponents/RebalanceAdviceCon
 
 import {getAuth} from '@react-native-firebase/auth';
 
-import CryptoJS from 'react-native-crypto-js';
 import IIFLReviewTradeModal from '../IIFLReviewTradeModal';
 
 import moment from 'moment';
@@ -15,6 +14,17 @@ import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
 
 import eventEmitter from '../EventEmitter';
+import portfolioEvents, {PORTFOLIO_EVENTS} from '../../utils/portfolioEvents';
+import {
+  buildBrokerPayloadFields,
+  defaultDecrypt,
+  isFundsErrorOrMissing,
+  isRebalanceErrorResponse,
+  isBrokerAuthError,
+  isSubscriptionAmountError,
+  isLowAllowedBalanceError,
+  checkPortfolioShortfall,
+} from '../../utils/rebalanceHelpers';
 import BrokerSelectionModal from '../BrokerSelectionModal';
 
 import ICICIUPModal from '../BrokerConnectionModal/icicimodal';
@@ -97,11 +107,24 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
       getModelPortfolioStrategyDetails();
     };
 
-    // Subscribe to the refresh event
+    // Subscribe to the refresh event (legacy)
     eventEmitter.on('refreshEvent', handleRefresh);
-    // Cleanup subscription on unmount
+
+    // Subscribe to structured portfolio events (matching prod)
+    const unsubHoldings = portfolioEvents.on(
+      PORTFOLIO_EVENTS.HOLDINGS_REFRESH,
+      () => getModelPortfolioStrategyDetails(),
+    );
+    const unsubRebalance = portfolioEvents.on(
+      PORTFOLIO_EVENTS.REBALANCE_EXECUTED,
+      () => getModelPortfolioStrategyDetails(),
+    );
+
+    // Cleanup subscriptions on unmount
     return () => {
       eventEmitter.removeListener('refreshEvent', handleRefresh);
+      unsubHoldings();
+      unsubRebalance();
     };
   }, []);
 
@@ -161,15 +184,6 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
       getRebalanceRepair();
     }
   }, [modelPortfolioStrategy]);
-
-  const checkValidApiAnSecret = data => {
-    if (!data) return null;
-    const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
-    if (Key) {
-      return Key;
-    }
-  };
 
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
   // zerodha start
@@ -282,7 +296,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
         advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: "0",
-        flag: 0,
+        flag: selectedOption === "option1" ? 1 : 0,
       };
 
       let config = {
@@ -350,8 +364,17 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
           timeout: 15000,
         },
       );
-      const orderResults =
-        response.data?.data?.user_net_pf_model?.order_results || [];
+      // Handle user_net_pf_model as array (matching prod) — sort by date, take latest
+      const userNetPfModel = response.data?.data?.user_net_pf_model;
+      let orderResults = [];
+      if (Array.isArray(userNetPfModel) && userNetPfModel.length > 0) {
+        const latestPortfolio = [...userNetPfModel].sort(
+          (a, b) => new Date(b.execDate) - new Date(a.execDate),
+        )[0];
+        orderResults = latestPortfolio?.order_results || [];
+      } else if (userNetPfModel?.order_results) {
+        orderResults = userNetPfModel.order_results;
+      }
       setApiResponseData(response.data);
       setStockDataForModal(orderResults);
     } catch (error) {
@@ -428,6 +451,11 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     if (currentStep === 2) {
       // Proceed directly to calculation for step 3
       const effectiveBroker = broker ? broker : "DummyBroker";
+      const credentials = {jwtToken, apiKey, secretKey, clientCode, viewToken, sid, serverId};
+      const brokerFields = effectiveBroker !== "DummyBroker"
+        ? buildBrokerPayloadFields(effectiveBroker, credentials, defaultDecrypt, angelOneApiKey)
+        : {};
+
       let payload = {
         userEmail: userEmail,
         userBroker: effectiveBroker,
@@ -436,86 +464,8 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         model_id: modelPortfolioModelId,
         userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
         flag: effectiveBroker === "DummyBroker" ? 0 : (selectedOption === "option1" ? 1 : 0),
+        ...brokerFields,
       };
-
-      if (broker === "IIFL Securities") {
-        payload = {
-          ...payload,
-          clientCode: clientCode,
-        };
-      } else if (broker === "ICICI Direct") {
-        payload = {
-          ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          secretKey: checkValidApiAnSecret(secretKey),
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Upstox") {
-        payload = {
-          ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          apiSecret: checkValidApiAnSecret(secretKey),
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Angel One") {
-        payload = {
-          ...payload,
-          apiKey: angelOneApiKey,
-          jwtToken: jwtToken,
-        };
-      } else if (broker === "Zerodha") {
-        payload = {
-          ...payload,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Dhan") {
-        payload = {
-          ...payload,
-          clientId: clientCode,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Groww") {
-        payload = {
-          ...payload,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Hdfc Securities") {
-        payload = {
-          ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Kotak") {
-        payload = {
-          ...payload,
-          consumerKey: checkValidApiAnSecret(apiKey),
-          consumerSecret: checkValidApiAnSecret(secretKey),
-          accessToken: jwtToken,
-          viewToken: viewToken,
-          sid: sid,
-          serverId: serverId,
-        };
-      } else if (broker === "AliceBlue") {
-        payload = {
-          ...payload,
-          clientId: clientCode,
-          accessToken: jwtToken,
-          apiKey: apiKey,
-        };
-      } else if (broker === "Fyers") {
-        payload = {
-          ...payload,
-          clientId: clientCode,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Motilal Oswal") {
-        payload = {
-          ...payload,
-          clientCode: clientCode,
-          accessToken: jwtToken,
-          apiKey: checkValidApiAnSecret(apiKey),
-        };
-      }
 
       let config = {
         method: "post",
@@ -530,13 +480,41 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           ),
         },
       };
-      console.log("Rebalance Calculate Payload (from step 2):", JSON.stringify(payload));
 
       try {
         const response = await axios.request(config);
-        console.log("Rebalance Calculate API Response (from step 2):", JSON.stringify(response.data));
-        console.log("[RebalanceAdvices] Calculate response - buy count:", response.data?.buy?.length, "sell count:", response.data?.sell?.length, "status:", response.data?.status, "message:", response.data?.message);
+
+        // Error handling matching prod (RebalanceCard.js)
+        if (isRebalanceErrorResponse(response.data)) {
+          const errorMsg = response.data?.message || 'Rebalance calculation failed';
+          if (isBrokerAuthError(errorMsg)) {
+            setOpenTokenExpireModel(true);
+            setLoading(false);
+            return;
+          }
+          if (isSubscriptionAmountError(errorMsg)) {
+            Alert.alert('Update Investment', errorMsg, [{text: 'OK'}]);
+            setLoading(false);
+            return;
+          }
+          if (isLowAllowedBalanceError(errorMsg)) {
+            Alert.alert('Insufficient Funds', errorMsg, [{text: 'OK'}]);
+            setLoading(false);
+            return;
+          }
+        }
+
         const { buy, sell } = response.data;
+
+        // Check portfolio shortfall (matching prod)
+        const shortfall = checkPortfolioShortfall(response.data);
+        if (shortfall.isShortfall && !shortfall.hasTrades) {
+          Alert.alert('Portfolio Shortfall',
+            `Current value ₹${shortfall.currentValue} is below required ₹${shortfall.requiredAmount}`,
+            [{text: 'OK'}]);
+          setLoading(false);
+          return;
+        }
 
         const updatedStockTypeAndSymbol = [
           ...(buy || []).map((item) => ({
@@ -555,15 +533,15 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
 
         setStockTypeAndSymbol(updatedStockTypeAndSymbol);
         setLoading(false);
-        setCalculatedPortfolioData(response.data);
-        console.log("Opening RebalanceModal (step 3) from step 2");
+        // Tag with model name to prevent cross-portfolio contamination (matching prod)
+        const normalizedData = {...response.data, _rebalanceModelName: storeModalName, _rebalanceModelId: modelPortfolioModelId};
+        setCalculatedPortfolioData(normalizedData);
         setOpenRebalanceModal(true);
         setStoreModalName(storeModalName);
         setModelObjectId(modelPortfolioModelId);
         return;
       } catch (error) {
         console.log("Error in step 2 to step 3 transition:", error);
-        console.log("Error response:", error.response);
         setLoading(false);
         throw error;
       }
@@ -573,7 +551,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     // This prevents infinite loop when MPStatusModal calls handleAcceptRebalance on close
     if (selectNonBroker) {
       // User already chose "Continue without broker" - proceed with DummyBroker flow
-      // Always use flag=0 for DummyBroker since there are no brokerage costs to optimize
+      // Use selectedOption to match prod behavior
       let payload = {
         userEmail: userEmail,
         userBroker: "DummyBroker",
@@ -581,7 +559,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
         model_id: modelPortfolioModelId,
         userFund: "0",
-        flag: 0,
+        flag: selectedOption === "option1" ? 1 : 0,
       };
 
       let config = {
@@ -615,10 +593,15 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
       return;
     }
 
-    if (
-      (funds?.status === 1 || funds?.status === 2 || funds === null) &&
-      brokerStatus === "connected"
-    ) {
+    // Check funds using prod-consistent helper
+    const fundsCheck = isFundsErrorOrMissing(funds, brokerStatus);
+    if (fundsCheck.isError && fundsCheck.reason === 'token_expired') {
+      setOpenTokenExpireModel(true);
+      setLoading(false);
+    } else if (fundsCheck.isError && fundsCheck.reason === 'backend_error') {
+      setOpenTokenExpireModel(true);
+      setLoading(false);
+    } else if (fundsCheck.isError && fundsCheck.reason === 'funds_fetch_failed') {
       setOpenTokenExpireModel(true);
       setLoading(false);
     } else if ((matchingFailedTrades ? "repair" : null) && userExecution?.status !== "toExecute") {
@@ -642,6 +625,11 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     } else {
 
       const effectiveBroker = broker ? broker : "DummyBroker";
+      const credentials = {jwtToken, apiKey, secretKey, clientCode, viewToken, sid, serverId};
+      const brokerFields = effectiveBroker !== "DummyBroker"
+        ? buildBrokerPayloadFields(effectiveBroker, credentials, defaultDecrypt, angelOneApiKey)
+        : {};
+
       let payload = {
         userEmail: userEmail,
         userBroker: effectiveBroker,
@@ -650,85 +638,8 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         model_id: modelPortfolioModelId,
         userFund: funds?.data?.availablecash ? funds?.data?.availablecash : "0",
         flag: effectiveBroker === "DummyBroker" ? 0 : (selectedOption === "option1" ? 1 : 0),
+        ...brokerFields,
       };
-      if (broker === "IIFL Securities") {
-        payload = {
-          ...payload,
-          clientCode: clientCode,
-        };
-      } else if (broker === "ICICI Direct") {
-        payload = {
-          ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          secretKey: checkValidApiAnSecret(secretKey),
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Upstox") {
-        payload = {
-          ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          apiSecret: checkValidApiAnSecret(secretKey),
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Angel One") {
-        payload = {
-          ...payload,
-          apiKey: angelOneApiKey,
-          jwtToken: jwtToken,
-        };
-      } else if (broker === "Zerodha") {
-        payload = {
-          ...payload,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Dhan") {
-        payload = {
-          ...payload,
-          clientId: clientCode,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Groww") {
-        payload = {
-          ...payload,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Hdfc Securities") {
-        payload = {
-          ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Kotak") {
-        payload = {
-          ...payload,
-          consumerKey: checkValidApiAnSecret(apiKey),
-          consumerSecret: checkValidApiAnSecret(secretKey),
-          accessToken: jwtToken,
-          viewToken: viewToken,
-          sid: sid,
-          serverId: serverId,
-        };
-      } else if (broker === "AliceBlue") {
-        payload = {
-          ...payload,
-          clientId: clientCode,
-          accessToken: jwtToken,
-          apiKey: apiKey,
-        };
-      } else if (broker === "Fyers") {
-        payload = {
-          ...payload,
-          clientId: clientCode,
-          accessToken: jwtToken,
-        };
-      } else if (broker === "Motilal Oswal") {
-        payload = {
-          ...payload,
-          clientCode: clientCode,
-          accessToken: jwtToken,
-          apiKey: checkValidApiAnSecret(apiKey),
-        };
-      }
       let config = {
         method: "post",
         url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
@@ -742,13 +653,41 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           ),
         },
       };
-      console.log("Rebalance Calculate Payload:", JSON.stringify(payload));
 
       try {
         const response = await axios.request(config);
-        console.log("Rebalance Calculate API Response:", JSON.stringify(response.data));
-        console.log("[RebalanceAdvices] Calculate response (else) - buy count:", response.data?.buy?.length, "sell count:", response.data?.sell?.length, "status:", response.data?.status, "message:", response.data?.message);
+
+        // Error handling matching prod (RebalanceCard.js)
+        if (isRebalanceErrorResponse(response.data)) {
+          const errorMsg = response.data?.message || 'Rebalance calculation failed';
+          if (isBrokerAuthError(errorMsg)) {
+            setOpenTokenExpireModel(true);
+            setLoading(false);
+            return;
+          }
+          if (isSubscriptionAmountError(errorMsg)) {
+            Alert.alert('Update Investment', errorMsg, [{text: 'OK'}]);
+            setLoading(false);
+            return;
+          }
+          if (isLowAllowedBalanceError(errorMsg)) {
+            Alert.alert('Insufficient Funds', errorMsg, [{text: 'OK'}]);
+            setLoading(false);
+            return;
+          }
+        }
+
         const { buy, sell } = response.data;
+
+        // Check portfolio shortfall (matching prod)
+        const shortfall = checkPortfolioShortfall(response.data);
+        if (shortfall.isShortfall && !shortfall.hasTrades) {
+          Alert.alert('Portfolio Shortfall',
+            `Current value ₹${shortfall.currentValue} is below required ₹${shortfall.requiredAmount}`,
+            [{text: 'OK'}]);
+          setLoading(false);
+          return;
+        }
 
         // Empty trades: still open modal so it can show "Portfolio Already Aligned" UI
         if ((!buy || buy.length === 0) && (!sell || sell.length === 0)) {
@@ -761,13 +700,13 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         }
 
         const updatedStockTypeAndSymbol = [
-          ...buy.map((item) => ({
+          ...(buy || []).map((item) => ({
             Symbol: item.symbol,
             Type: "BUY",
             Exchange: item.exchange,
             Quantity: item.quantity,
           })),
-          ...sell.map((item) => ({
+          ...(sell || []).map((item) => ({
             Symbol: item.symbol,
             Type: "SELL",
             Exchange: item.exchange,
@@ -777,16 +716,16 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
 
         setStockTypeAndSymbol(updatedStockTypeAndSymbol);
         setLoading(false);
-        setCalculatedPortfolioData(response.data);
-        console.log("Here response data",response.data);
+        // Tag with model name to prevent cross-portfolio contamination (matching prod)
+        const normalizedData = {...response.data, _rebalanceModelName: storeModalName, _rebalanceModelId: modelPortfolioModelId};
+        setCalculatedPortfolioData(normalizedData);
         setOpenRebalanceModal(true);
         setStoreModalName(storeModalName);
         setModelObjectId(modelPortfolioModelId);
       } catch (error) {
         console.log(error);
-        console.log("Here error",error.response);
         setLoading(false);
-        throw error; // Re-throw to let caller know it failed
+        throw error;
       }
     }
   };
@@ -920,10 +859,6 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           setShowDdpiModal={setShowDdpiModal}
           rebalanceExecutionStatus={RebalanceExecutionStatus}
           setModelPortfolioModelId={setModelPortfolioModelId}
-          onModifyInvestment={() => {
-            setOpenRebalanceModal(false);
-            setShowstatusModal(true);
-          }}
         />
       ) : null}
 

@@ -44,9 +44,9 @@ import {useTrade} from '../../screens/TradeContext';
 import {convertResponse} from '../../utils/tradeUtils';
 import {useConfig} from '../../context/ConfigContext';
 import moment from 'moment';
-import RebalancePreferenceModal from './RebalancePreferenceModal';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import useModalStore from '../../GlobalUIModals/modalStore';
 const {height: screenHeight} = Dimensions.get('window');
 
 const UserStrategySubscribeModal = ({
@@ -74,12 +74,11 @@ const UserStrategySubscribeModal = ({
   setOpenTokenExpireModel,
 }) => {
   const {configData} = useTrade();
+  const openBrokerModal = useModalStore(state => state.openModal);
   const appConfig = useConfig();
   const mainColor = appConfig?.mainColor || '#000';
   const [loading, setLoading] = useState(false);
   const [confirmOrder, setConfirmOrder] = useState(false);
-  const [showPreferenceModal, setShowPreferenceModal] = useState(false);
-  const [rebalanceFlag, setRebalanceFlag] = useState(0);
 
   console.log(strategyDetails);
 
@@ -179,10 +178,6 @@ const UserStrategySubscribeModal = ({
         apiKey,
         jwtToken,
         secretKey,
-        undefined,
-        undefined,
-        undefined,
-        userEmail,
       );
       if (fetchedFunds) {
         console.log('funds get fetch', fetchedFunds);
@@ -201,7 +196,7 @@ const UserStrategySubscribeModal = ({
   const [calculatedPortfolioData, setCaluculatedPortfolioData] = useState([]);
   const [calculatedLoading, setCalculateLoading] = useState(false);
 
-  const calculateRebalance = (flag) => {
+  const calculateRebalance = () => {
     console.log('hereeeeee', broker, funds?.status);
     const isMarketHours = IsMarketHours();
     setCalculateLoading(true);
@@ -228,7 +223,6 @@ const UserStrategySubscribeModal = ({
         advisor: strategyDetails?.advisor,
         model_id: latestRebalance?.model_Id,
         userFund: funds?.data?.availablecash,
-        rebalanceFlag: flag !== undefined ? flag : rebalanceFlag,
       };
       if (broker === 'IIFL Securities') {
         payload = {
@@ -359,12 +353,6 @@ const UserStrategySubscribeModal = ({
     }
   };
 
-  const handlePreferenceComplete = (flag, updatedHoldings) => {
-    setRebalanceFlag(flag);
-    setShowPreferenceModal(false);
-    calculateRebalance(flag);
-  };
-
   const dataArray =
     calculatedPortfolioData?.length !== 0
       ? [
@@ -454,6 +442,23 @@ const UserStrategySubscribeModal = ({
       );
 
       const checkData = response?.data?.results;
+
+      // Handle session expired - broker needs reconnection
+      if (response?.data?.sessionExpired) {
+        setLoading(false);
+        onCloseModal();
+        Toast.show({
+          type: 'error',
+          text1: 'Session Expired',
+          text2: `Your Fyers session has expired. Please reconnect your broker.`,
+          visibilityTime: 5000,
+        });
+        setTimeout(() => {
+          openBrokerModal('Fyers');
+        }, 500);
+        return;
+      }
+
       setOrderPlacementResponse(checkData);
 
       // Update model portfolio DB
@@ -491,6 +496,7 @@ const UserStrategySubscribeModal = ({
             {
               userEmail: userEmail,
               modelName: strategyDetails?.model_name,
+              model_id: latestRebalance?.model_Id,
               executionStatus: executionStatus,
               user_broker: 'Fyers',
             },
@@ -677,6 +683,22 @@ const UserStrategySubscribeModal = ({
     axios
       .request(config)
       .then(response => {
+        // Handle session expired - broker needs reconnection
+        if (response?.data?.sessionExpired) {
+          setLoading(false);
+          onCloseModal();
+          Toast.show({
+            type: 'error',
+            text1: 'Session Expired',
+            text2: `Your ${broker} session has expired. Please reconnect your broker.`,
+            visibilityTime: 5000,
+          });
+          setTimeout(() => {
+            openBrokerModal(broker);
+          }, 500);
+          return;
+        }
+
         console.log('responsi:', response.data.results);
         setOrderPlacementResponse(response.data.results);
         const updateData = {
@@ -1020,6 +1042,23 @@ const UserStrategySubscribeModal = ({
         // Use await instead of .then()
         console.log('Data that we send:', data);
         const response = await axios.request(config);
+
+        // Handle session expired - broker needs reconnection
+        if (response?.data?.sessionExpired) {
+          setLoading(false);
+          onCloseModal();
+          Toast.show({
+            type: 'error',
+            text1: 'Session Expired',
+            text2: `Your Zerodha session has expired. Please reconnect your broker.`,
+            visibilityTime: 5000,
+          });
+          setTimeout(() => {
+            openBrokerModal('Zerodha');
+          }, 500);
+          return;
+        }
+
         console.log('Status Call here:2,', response.data.results);
         setOrderPlacementResponse(response.data.results);
         setOpenSucessModal(true);
@@ -1314,7 +1353,7 @@ const UserStrategySubscribeModal = ({
                 // Show the TouchableOpacity button for other cases
                 <TouchableOpacity
                   style={[styles.actionButton, {backgroundColor: mainColor}]}
-                  onPress={() => setShowPreferenceModal(true)}
+                  onPress={calculateRebalance}
                   disabled={loading || calculatedLoading}>
                   {loading || calculatedLoading ? (
                     <ActivityIndicator color="white" />
@@ -1348,15 +1387,6 @@ const UserStrategySubscribeModal = ({
         setShowDhanModal={setShowDhanModal}
         showKotakModal={showKotakModal}
         setShowKotakModal={setShowKotakModal}
-      />
-      <RebalancePreferenceModal
-        visible={showPreferenceModal}
-        onClose={() => setShowPreferenceModal(false)}
-        modelName={strategyDetails?.model_name}
-        userEmail={userEmail}
-        broker={broker}
-        strategyDetails={strategyDetails}
-        onProceedToTrade={handlePreferenceComplete}
       />
     </Modal>
   );

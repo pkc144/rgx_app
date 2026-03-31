@@ -2,15 +2,20 @@ const server = {
   ccxtServer: {
     baseUrl: `https://ccxtprod.alphaquark.in/`,
   },
+  ccxtWs: {
+    baseUrl: 'wss://ccxt.alphaquark.in',
+    httpUrl: 'https://ccxt.alphaquark.in',
+  },
   server: {
     baseUrl: `https://server.alphaquark.in/`,
   },
   websocket: {
     baseUrl: "https://websocket.alphaquark.in/",   //this will remain like this
   },
-  // server: {
-  //   baseUrl: `http://192.168.0.2:8001/`
-  // },
+  brokerAuth: {
+    callbackUrl: 'https://alphaquark.in/api/deploy/broker/callback',
+    registerUrl: 'https://alphaquark.in/api/deploy/broker/register',
+  },
   };
 
   export default server;

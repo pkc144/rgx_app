@@ -456,7 +456,7 @@ const MPPerformanceScreen = ({route}) => {
   const getAllStrategy = () => {
     let config = {
       method: 'get',
-      url: `${server.server.baseUrl}api/admin/plan/ARFS/model portfolio/${userEmail}`,
+      url: `${server.server.baseUrl}api/admin/plan/${configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG}/model portfolio/${userEmail}`,
 
       headers: {
         'Content-Type': 'application/json',
@@ -470,7 +470,7 @@ const MPPerformanceScreen = ({route}) => {
     axios
       .request(config)
       .then(response => {
-        // console.log("res MOdel Portfolio url", `${server.server.baseUrl}api/admin/plan/ARFS/model portfolio/${userEmail}`);
+        // console.log("res MOdel Portfolio url", `${server.server.baseUrl}api/admin/plan/${configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG}/model portfolio/${userEmail}`);
         setAllStrategy(response.data.data);
 
         setIsLoading(false);

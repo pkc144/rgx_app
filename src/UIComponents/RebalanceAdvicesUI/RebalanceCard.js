@@ -208,8 +208,18 @@ const RebalanceCard = ({
           timeout: 15000,
         },
       );
-      const orderResults =
-        response.data?.data?.user_net_pf_model?.order_results || [];
+      // Handle user_net_pf_model as array (matching prod) — sort by date, take latest
+      const userNetPfModel = response.data?.data?.user_net_pf_model;
+      let orderResults = [];
+      if (Array.isArray(userNetPfModel) && userNetPfModel.length > 0) {
+        const latestPortfolio = [...userNetPfModel].sort(
+          (a, b) => new Date(b.execDate) - new Date(a.execDate),
+        )[0];
+        orderResults = latestPortfolio?.order_results || [];
+      } else if (userNetPfModel?.order_results) {
+        // Fallback: single object format
+        orderResults = userNetPfModel.order_results;
+      }
       if (setApiResponseData) {
         setApiResponseData(response.data);
       }

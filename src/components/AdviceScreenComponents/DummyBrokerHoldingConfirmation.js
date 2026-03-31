@@ -15,6 +15,8 @@ import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import {useTrade} from '../../screens/TradeContext';
+import Toast from 'react-native-toast-message';
+import portfolioEvents, {PORTFOLIO_EVENTS} from '../../utils/portfolioEvents';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -111,40 +113,85 @@ const DummyBrokerHoldingConfirmation = ({
         },
       };
 
-      // First API call
-      const response = await axios.request(config);
-
-      // Second API call
-      const config2 = {
-        method: 'post',
-        url: `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-        data: {
-          userEmail: userEmail,
-          modelName: storeModalName,
-          advisor: advisorTag,
-          broker: 'DummyBroker',
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
+      const requestHeaders = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
       };
 
-      await axios.request(config2);
+      // Step 1: Process trade
+      const response = await axios.request(config);
+
+      // Step 2: Update subscriber execution status to 'executed' (matching prod)
+      try {
+        await axios.put(
+          `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+          {
+            userEmail: userEmail,
+            modelName: storeModalName,
+            model_id: modelPortfolioModelId,
+            executionStatus: 'executed',
+            user_broker: 'DummyBroker',
+          },
+          {headers: requestHeaders},
+        );
+      } catch (statusErr) {
+        console.error('Error updating subscriber execution status for DummyBroker:', statusErr);
+      }
+
+      // Step 3: Enroll in status-check-queue
+      try {
+        await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          {
+            userEmail: userEmail,
+            modelName: storeModalName,
+            advisor: advisorTag,
+            broker: 'DummyBroker',
+          },
+          {headers: requestHeaders},
+        );
+      } catch (queueErr) {
+        console.error('Error adding DummyBroker to status-check-queue:', queueErr);
+      }
+
+      // Emit HOLDINGS_REFRESH event (matching prod — only this event, not REBALANCE_EXECUTED)
+      portfolioEvents.emit(PORTFOLIO_EVENTS.HOLDINGS_REFRESH, {
+        userEmail,
+        modelName: storeModalName,
+      });
+
       getRebalanceRepair();
+
+      Toast.show({
+        type: 'success',
+        text1: 'Rebalance recorded successfully!',
+        visibilityTime: 3000,
+      });
 
       // Success actions
       setLoading(false);
       setOpenRebalanceModal(false);
-      getModelPortfolioStrategyDetails();
+      // Delayed refresh to allow cross-server DB sync (matching prod: 2s, 5s)
+      setTimeout(() => getModelPortfolioStrategyDetails(), 2000);
+      setTimeout(() => getModelPortfolioStrategyDetails(), 5000);
       onClose();
     } catch (error) {
-      console.error('Error in DummyBroker confirmation:', error);
       setLoading(false);
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to record trades';
+      Toast.show({
+        type: 'error',
+        text1: errorMessage,
+        visibilityTime: 5000,
+      });
+      console.error('Trade recording error:', error);
     }
   };
 

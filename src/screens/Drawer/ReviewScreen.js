@@ -12,6 +12,7 @@ import { ChevronLeft, Filter,AlignLeft } from 'lucide-react-native';
 import  AntDesign from 'react-native-vector-icons/AntDesign'; 
 import { Picker } from '@react-native-picker/picker';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useConfig } from '../../context/ConfigContext';
 import { Dropdown } from 'react-native-element-dropdown';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -120,7 +121,7 @@ const [data, setData] = useState([
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <ChevronLeft size={24} color="black" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>ARFS FNO LITE Reviews</Text>
+        <Text style={styles.headerTitle}>Reviews</Text>
       </View>
 
       <View style={styles.sortDropdownContainer}>

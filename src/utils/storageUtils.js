@@ -4,6 +4,7 @@ import axios from 'axios';
 import server from './serverConfig';
 import Config from 'react-native-config';
 import {generateToken} from './SecurityTokenManager';
+import { getAdvisorSubdomain } from './variantHelper';
 
 // Only 3 keys needed
 const STORAGE_KEYS = {
@@ -253,7 +254,7 @@ export const updateRACodeAndConfig = async (newRACode, userEmail) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': 'common',
+          'X-Advisor-Subdomain': getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,

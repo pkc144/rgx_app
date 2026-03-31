@@ -594,7 +594,7 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
           <View style={styles.iconContainer}>
           <ShoppingBag size={24} color="white" />
           </View>
-          <Text style={styles.basketName}>ARFS BASKET</Text>
+          <Text style={styles.basketName}>BASKET</Text>
         </View>
         <View style={{ borderWidth: 1, borderColor: '#E8E8E8', marginTop: 5 }}></View>
 

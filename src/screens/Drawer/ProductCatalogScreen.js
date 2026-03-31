@@ -22,7 +22,7 @@ const ProductCatalogScreen = ({ route }) => {
     const catalogData = [
         {
             id: '1',
-            name: 'ARFS FNO LITE',
+            name: 'FNO LITE',
             price: 29000,
             gst: ' + GST',
             star:'Retention Rate: 4.5',
@@ -35,7 +35,7 @@ const ProductCatalogScreen = ({ route }) => {
             researchMethod: 'Price Action, PCR Analysis, Option chain analysis, Candlestick Patterns, Dow Theory and Other Technical Analysis',
         },{
           id: '2',
-          name: 'ARFS FNO ALPHA',
+          name: 'FNO ALPHA',
           price: 49000,
           gst: '+ GST',
           star:'Retention Rate: 4.3',
@@ -49,7 +49,7 @@ const ProductCatalogScreen = ({ route }) => {
       },
       {
         id: '3',
-        name: 'ARFS FNO BETA',
+        name: 'FNO BETA',
         price: 79000,
         gst: '+ GST',
         star:'Retention Rate: 4.0',

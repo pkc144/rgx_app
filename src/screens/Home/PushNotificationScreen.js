@@ -65,8 +65,7 @@ const PushNotificationScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
 
-  // API Base URL - Update this with your actual API URL
-  const API_BASE_URL = 'http://10.90.60.251:8001'; // Update this
+  const API_BASE_URL = server.server.baseUrl.replace(/\/$/, '');
 
   // Format symbol helper function - FIXED
   const formatSymbol = stock => {

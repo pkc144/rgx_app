@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import io from "socket.io-client";
 import axios from "axios";
+import server from "../utils/serverConfig";
 
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 5000; // 5 seconds
@@ -35,7 +36,7 @@ const throttle = (func, limit) => {
 };
 
 const useWebSocketCurrentPrice = (symbols) => {
-  const ccxtUrl = 'https://ccxt.alphaquark.in';
+  const ccxtUrl = server.ccxtWs.httpUrl;
   const [ltp, setLtp] = useState([]);
   const socketRef = useRef(null);
   const subscribedSymbolsRef = useRef(new Set());
@@ -71,7 +72,7 @@ const useWebSocketCurrentPrice = (symbols) => {
   }, []);
 
   useEffect(() => {
-    socketRef.current = io("wss://ccxt.alphaquark.in", {
+    socketRef.current = io(server.ccxtWs.baseUrl, {
       transports: ["websocket"],
       query: { EIO: "4" },
     });

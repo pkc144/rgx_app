@@ -26,7 +26,7 @@ import {getAdvisorSubdomain} from '../../utils/variantHelper';
 const PhoneNumberScreen = () => {
   const config = useConfig();
   const {logo: LogoComponent, themeColor} = config || {};
-  const advisorName = 'ARFS';
+  const advisorName = config?.appName || config?.apiKeys?.advisorSpecificTag || 'RGX Research';
 
   const {userEmail, setIsProfileCompleted} = useTrade();
   const navigation = useNavigation();

@@ -58,6 +58,7 @@ export const TradeProvider = ({children}) => {
 
   const [configData, setConfigData] = useState(null);
   const [configLoading, setConfigLoading] = useState(true);
+  const [adviceShowDays, setAdviceShowDays] = useState(15);
 
   // ENHANCED: Load stored data with retry mechanism and better logging
   const loadStoredData = useCallback(async (retryCount = 3) => {
@@ -113,7 +114,41 @@ export const TradeProvider = ({children}) => {
 
   const advisortag = configData?.config?.REACT_APP_ADVISOR_TAG;
   const advisorspecific = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
-  const showAdviceStatusDays = Config.REACT_APP_ADVICE_SHOW_LATEST_DAYS;
+  const showAdviceStatusDays = adviceShowDays;
+
+  const fetchAdviceShowDays = useCallback(async () => {
+    try {
+      const subdomain =
+        configData?.config?.REACT_APP_HEADER_NAME ||
+        configData?.subdomain ||
+        getAdvisorSubdomain();
+      const response = await axios.get(
+        `${server.server.baseUrl}api/admin/frontend-config`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': subdomain,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      const days = Number(response.data?.adviceShowLatestDays);
+      if (days && days >= 1 && days <= 365) {
+        setAdviceShowDays(days);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch frontend config, using default 15 days:', error.message);
+    }
+  }, [configData]);
+
+  useEffect(() => {
+    if (configData) {
+      fetchAdviceShowDays();
+    }
+  }, [configData, fetchAdviceShowDays]);
 
   const [modelPortfolioStrategyfinal, setModelPortfolioStrategyfinal] =
     useState([]);
@@ -447,7 +482,7 @@ const getAllTrades = async () => {
       headers: {
         'Content-Type': 'application/json',
         'X-Advisor-Subdomain':
-          configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+          configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -585,9 +620,11 @@ const getAllTrades = async () => {
         }
 
         // REGULAR TRADES: Process normally
+        // Skip model portfolio trades (they have model_id)
         // REJECTED
         if (
           isRejectedStatus(trade?.trade_place_status) &&
+          !trade?.model_id &&
           trade?.Basket === undefined &&
           (trade?.rebalance_status === undefined ||
             trade?.rebalance_status === null) &&
@@ -598,16 +635,17 @@ const getAllTrades = async () => {
 
         // RECOMMENDED
         if (
-          (trade?.trade_place_status === 'recommend' &&
+          !trade?.model_id &&
+          ((trade?.trade_place_status === 'recommend' &&
             tradeDate >= cutoffDate) ||
           (isRejectedStatus(trade?.trade_place_status) &&
-            tradeDate >= cutoffDate)
+            tradeDate >= cutoffDate))
         ) {
           acc.recommended.push(trade);
         }
 
         // IGNORED
-        if (trade.trade_place_status === 'ignored') {
+        if (trade.trade_place_status === 'ignored' && tradeDate >= cutoffDate) {
           acc.ignored.push(trade);
         }
 
@@ -649,7 +687,7 @@ const getAllTrades = async () => {
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -674,7 +712,7 @@ const getAllTrades = async () => {
       //     headers: {
       //       'Content-Type': 'application/json',
       //       'X-Advisor-Subdomain':
-      //         configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+      //         configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
       //       'aq-encrypted-key': generateToken(
       //         Config.REACT_APP_AQ_KEYS,
       //         Config.REACT_APP_AQ_SECRET,
@@ -715,14 +753,14 @@ const getAllTrades = async () => {
         headers: {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+            configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
           ),
         },
       });
-      console.log("RESPONSE HERE FOR VALIDITY---cccccccccccccccccccc------", configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',response?.data)
+      console.log("RESPONSE HERE FOR VALIDITY---cccccccccccccccccccc------", configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),response?.data)
       setPlanList(response?.data?.isValid);
       return response?.data?.isValid;
     } catch (planError) {
@@ -979,12 +1017,12 @@ const getAllTrades = async () => {
     try {
       setIsPerformerLoading(true);
       const response = await axios.get(
-        `${server.ccxtServer.baseUrl}comms/reco/best-performer-closed-advice/arfs/30`,
+        `${server.ccxtServer.baseUrl}comms/reco/best-performer-closed-advice/${configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || getAdvisorSubdomain()}/30`,
         {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1012,7 +1050,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1039,7 +1077,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1069,7 +1107,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1111,7 +1149,7 @@ const getAllTrades = async () => {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain':
-              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+              configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,

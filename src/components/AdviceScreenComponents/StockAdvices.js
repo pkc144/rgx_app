@@ -61,7 +61,7 @@ import notifee, { EventType } from '@notifee/react-native';
 
 import { generateToken } from '../../utils/SecurityTokenManager';
 import MotilalModal from '../BrokerConnectionModal/MotilalModal';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
+import { getAdvisorSubdomain } from '../utils/variantHelper';
 
 const { height: screenHeight } = Dimensions.get('window');
 const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
@@ -412,7 +412,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     AliceBlue: 'aliceblue',
     Dhan: 'dhan',
     Groww: 'groww',
-    'Motilal Oswal': 'motilal-oswal',
+    'Motilal Oswal': 'motilal',
     'Hdfc Securities': 'hdfc',
   };
 
@@ -427,7 +427,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     AliceBlue: 'aliceblue',
     Dhan: 'dhan',
     Groww: 'groww',
-    'Motilal Oswal': 'motilal-oswal',
+    'Motilal Oswal': 'motilal',
   };
 
   const updatePortfolioData = async (brokerName, userEmail) => {
@@ -506,7 +506,19 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
 
   const placeOrder = async stockDetails => {
     setLoading(true);
-    //console.log('consolehereeeeee;:',funds);
+
+    // Market hours check (matching prod: must check before any order placement)
+    if (!IsMarketHours()) {
+      Toast.show({
+        type: 'error',
+        text1: 'Orders cannot be placed outside Market hours',
+        text2: 'Market hours: 9:15 AM - 3:30 PM IST',
+        visibilityTime: 4000,
+      });
+      setLoading(false);
+      return;
+    }
+
     if (funds.status === false || funds.status === 1) {
       setOpenTokenExpireModel(true);
       setOpenReviewTrade(false);
@@ -540,7 +552,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     const getOrderPayload = (isGtt = false) => {
       const trades = isGtt ? gttOrders : (regularOrders.length > 0 ? regularOrders : stockDetails);
 
-      // GTT payload path
+      // GTT payload path — decrypt credentials matching prod
       if (isGtt) {
         const gttPayload = {
           trades,
@@ -548,13 +560,13 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         };
         switch (broker) {
           case 'Upstox':
-            return { ...gttPayload, apiKey, jwtToken, secretKey };
+            return { ...gttPayload, apiKey: checkValidApiAnSecret(apiKey), jwtToken, secretKey: checkValidApiAnSecret(secretKey) };
           case 'Zerodha':
-            return { ...gttPayload, apiKey, secretKey, jwtToken };
+            return { ...gttPayload, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), jwtToken };
           case 'AliceBlue':
             return { ...gttPayload, clientCode, apiKey: checkValidApiAnSecret(apiKey), accessToken: jwtToken };
           default:
-            return { ...gttPayload, apiKey, jwtToken };
+            return { ...gttPayload, apiKey: checkValidApiAnSecret(apiKey), jwtToken };
         }
       }
 
@@ -819,6 +831,33 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         return;
       }
 
+      // Handle empty response as a failed sell order
+      if (!response.data.response || response.data.response.length === 0) {
+        if (allSell || isMixed) {
+          if (broker === 'Dhan') {
+            setShowDhanTpinModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (broker === 'Angel One') {
+            setShowAngleOneTpinModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (broker === 'Fyers') {
+            setShowFyersTpinModal(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (specialBrokers.includes(broker)) {
+            setShowOtherBrokerModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       const rejectedSellCount = response.data.response.reduce(
         (count, order) => {
           return isOrderRejected(order?.orderStatus) &&
@@ -836,27 +875,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           : count;
       }, 0);
 
-      // Check for CDSL/EDIS/TPIN error messages in rejected orders
-      const hasCdslError = response.data.response.some((order) => {
-        const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
-        return msg.includes("cdsl") || msg.includes("edis") || msg.includes("tpin") || msg.includes("validate qty");
-      });
-
-      console.log(`${broker} Rejected Sell Count:`, rejectedSellCount, 'Success Count:', successCount, 'CDSL Error:', hasCdslError);
-
-      // Dhan: Check CDSL error messages in rejected orders
-      if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        rejectedSellCount >= 1
-      ) {
-        if (hasCdslError) {
-          setShowDhanTpinModel(true);
-          setOpenReviewTrade(false);
-          setLoading(false);
-          return;
-        }
-      }
+      console.log(`${broker} Rejected Sell Count:`, rejectedSellCount, 'Success Count:', successCount);
 
       // Special brokers (IIFL, ICICI, Upstox, Kotak, HDFC, AliceBlue, etc.)
       if (
@@ -866,7 +885,9 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         if (allBuy) {
           console.log('All trades are BUY for broker:', broker);
           setOpenSucessModal(true);
-        } else if ((allSell || isMixed) && !userDetails?.is_authorized_for_sell && rejectedSellCount >= 1) {
+        } else if ((allSell || isMixed) && rejectedSellCount >= 1) {
+          // Match prod: trigger TPIN modal whenever any sell order is rejected
+          // Don't gate on successCount — even partial rejection needs TPIN auth
           console.log(
             allSell ? 'All trades are SELL' : 'Trades are Mixed',
             'for broker:',
@@ -880,40 +901,28 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           setOpenSucessModal(true);
         }
       } else if (
-        broker === 'Angel One' &&
-        edisStatus &&
-        edisStatus.edis === false &&
         (allSell || isMixed) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
+        rejectedSellCount >= 1
       ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setOpenSucessModal(false);
-        setShowAngleOneTpinModel(true);
-        setOpenReviewTrade(false);
-        return;
-      } else if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        dhanEdisStatus?.data?.some((h) => h.edis === false) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
-      ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setShowDhanTpinModel(true);
+        // Match prod: trigger TPIN modal whenever any sell order is rejected.
+        // Always show broker-specific TPIN modal for rejected sell orders.
+        console.log('Setting TPIN modal to true for', broker);
         setOpenSucessModal(false);
         setOpenReviewTrade(false);
-        return;
-      } else if (
-        broker === 'Fyers' &&
-        (allSell || isMixed) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
-      ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setOpenSucessModal(false);
-        setShowFyersTpinModal(true);
-        setOpenReviewTrade(false);
+
+        if (broker === 'Angel One') {
+          setShowAngleOneTpinModel(true);
+        } else if (broker === 'Dhan') {
+          setShowDhanTpinModel(true);
+        } else if (broker === 'Fyers') {
+          setShowFyersTpinModal(true);
+        } else if (broker === 'Zerodha') {
+          setShowDdpiModal(true);
+        } else {
+          // Fallback: show success modal with rejection details
+          setOrderPlacementResponse(response.data.response);
+          setOpenSucessModal(true);
+        }
         return;
       } else {
         console.log('Setting openSuccessModal to true');
@@ -969,16 +978,30 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         error.response?.data?.details?.[0]?.message ||
         "There was an issue in placing the trade, please try again later.";
 
-      // Check for CDSL/EDIS errors in catch handler for Dhan
-      const catchMsg = edisMessage.toLowerCase();
-      if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        (catchMsg.includes("cdsl") || catchMsg.includes("edis") || catchMsg.includes("tpin"))
-      ) {
-        setShowDhanTpinModel(true);
-        setOpenReviewTrade(false);
-        return;
+      // Trigger broker-specific TPIN modals for sell order failures
+      // Don't gate on is_authorized_for_sell or ddpi_enabled — EDIS expires per-session
+      if (allSell || isMixed) {
+        if (broker === 'Dhan') {
+          setShowDhanTpinModel(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Angel One') {
+          setShowAngleOneTpinModel(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Fyers') {
+          setShowFyersTpinModal(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Zerodha') {
+          setShowDdpiModal(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (specialBrokers.includes(broker)) {
+          setShowOtherBrokerModel(true);
+          setOpenReviewTrade(false);
+          return;
+        }
       }
 
       // Build synthetic rejected response from stockDetails for the modal
@@ -1517,31 +1540,31 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         setOpenReviewTrade(true);
       }
     } else if (broker === 'Angel One') {
-      if (edisStatus && edisStatus.edis === true) {
-        console.log(
-          `All trades for Angel One: ${allBuy ? 'BUY' : allSell ? 'SELL' : 'Mixed'
-          }`,
-        );
-        setOpenReviewTrade(true); // Open review trade modal for all cases
+      if (allBuy) {
+        console.log('All trades are BUY for Angel One');
+        setOpenReviewTrade(true);
       } else if (
-        edisStatus &&
-        edisStatus.edis === false &&
-        (allSell || isMixed)
+        (allSell || isMixed) &&
+        !userDetails?.ddpi_enabled &&
+        !userDetails?.is_authorized_for_sell
       ) {
-        console.log('edisStatus is missing or not valid for Angel One.');
-        setShowAngleOneTpinModel(true); // Show TPIN modal for invalid edis
+        console.log('DDPI not enabled and not authorized for sell for Angel One.');
+        setShowAngleOneTpinModel(true); // Show TPIN modal
       } else {
+        console.log(
+          `All trades for Angel One: ${allBuy ? 'BUY' : allSell ? 'SELL' : 'Mixed'}`,
+        );
         setOpenReviewTrade(true);
       }
     } else if (broker === 'Dhan') {
-      if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+      if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
         console.log(
           `All trades for Dhan: ${allBuy ? 'BUY' : allSell ? 'SELL' : 'Mixed'}`,
         );
         setOpenReviewTrade(true); // All holdings authorized, proceed
       } else if (
         (allSell || isMixed) &&
-        dhanEdisStatus?.data?.some((h) => h.edis === false)
+        (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))
       ) {
         console.log(
           'edisStatus is missing or not valid for Dhan.',
@@ -1601,23 +1624,23 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         setOpenReviewTrade(true);
       }
     } else if (broker === 'Angel One') {
-      if (edisStatus && edisStatus.edis === true) {
+      if (allBuy) {
         setOpenReviewTrade(true);
       } else if (
-        edisStatus &&
-        edisStatus.edis === false &&
-        (allSell || isMixed)
+        (allSell || isMixed) &&
+        !userDetails?.ddpi_enabled &&
+        !userDetails?.is_authorized_for_sell
       ) {
         setShowAngleOneTpinModel(true);
       } else {
         setOpenReviewTrade(true);
       }
     } else if (broker === 'Dhan') {
-      if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+      if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
         setOpenReviewTrade(true);
       } else if (
         (allSell || isMixed) &&
-        dhanEdisStatus?.data?.some((h) => h.edis === false)
+        (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))
       ) {
         setShowDhanTpinModel(true);
       } else {
@@ -2138,10 +2161,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
             setStockDetails([newStock]);
             setOpenReviewTrade(true);
           } else if (isSellOrder) {
-            if (edisStatus && edisStatus?.edis === true) {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
-            } else if (edisStatus?.edis === false) {
+            if (!userDetails?.ddpi_enabled && !userDetails?.is_authorized_for_sell) {
               setShowAngleOneTpinModel(true);
             } else {
               setStockDetails([newStock]);
@@ -2156,10 +2176,10 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
             setStockDetails([newStock]);
             setOpenReviewTrade(true);
           } else if (isSellOrder) {
-            if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+            if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
               setStockDetails([newStock]);
               setOpenReviewTrade(true);
-            } else if (dhanEdisStatus?.data?.some((h) => h.edis === false)) {
+            } else if (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false)) {
               setShowDhanTpinModel(true);
             } else {
               setStockDetails([newStock]);
@@ -2214,10 +2234,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           setStockDetails([newStock]);
           setOpenReviewTrade(true);
         } else if (isSellOrder) {
-          if (edisStatus && edisStatus?.edis === true) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
-          } else if (edisStatus?.edis === false) {
+          if (!userDetails?.ddpi_enabled && !userDetails?.is_authorized_for_sell) {
             setShowAngleOneTpinModel(true);
           } else {
             setStockDetails([newStock]);
@@ -2229,10 +2246,10 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           setStockDetails([newStock]);
           setOpenReviewTrade(true);
         } else if (isSellOrder) {
-          if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+          if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
             setStockDetails([newStock]);
             setOpenReviewTrade(true);
-          } else if (dhanEdisStatus?.data?.some((h) => h.edis === false)) {
+          } else if (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false)) {
             setShowDhanTpinModel(true);
           } else {
             setStockDetails([newStock]);
@@ -2937,6 +2954,8 @@ useEffect(() => {
           proceedWithTpin={handleProceedWithTpin}
           userDetails={userDetails && userDetails}
           setOpenReviewTrade={setOpenReviewTrade}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -2956,6 +2975,8 @@ useEffect(() => {
           userDetails={userDetails}
           edisStatus={edisStatus}
           tradingSymbol={stockDetails.map(stock => stock.tradingSymbol)}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -2964,6 +2985,8 @@ useEffect(() => {
           isOpen={showFyersTpinModal}
           setIsOpen={setShowFyersTpinModal}
           userDetails={userDetails}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -2975,6 +2998,8 @@ useEffect(() => {
           dhanEdisStatus={dhanEdisStatus}
           stockTypeAndSymbol={stockTypeAndSymbol}
           singleStockTypeAndSymbol={singleStockTypeAndSymbol}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -3007,6 +3032,8 @@ useEffect(() => {
           setStoreModalName={setStoreModalName}
           storeModalName={storeModalName}
           funds={funds}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 

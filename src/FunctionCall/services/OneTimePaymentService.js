@@ -24,10 +24,10 @@ export async function completeOneTimePayment({
 }) {
   const headers = {
     "Content-Type": "application/json",
-    "X-Advisor-Subdomain": process.envREACT_APP_URL,
+    "X-Advisor-Subdomain": process.env.REACT_APP_HEADER_NAME,
     "aq-encrypted-key": encryptApiKey(
-      process.envREACT_APP_AQ_KEYS,
-      process.envREACT_APP_AQ_SECRET
+      process.env.REACT_APP_AQ_KEYS,
+      process.env.REACT_APP_AQ_SECRET
     ),
   };
 

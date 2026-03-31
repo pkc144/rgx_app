@@ -47,10 +47,8 @@ const buildOrderBookPayload = (broker, credentials) => {
 
   switch (broker) {
     case 'IIFL Securities':
-      return {
-        url: `${server.ccxtServer.baseUrl}iifl/order-book`,
-        data: {clientCode},
-      };
+      // IIFL backend endpoints are currently unavailable (404)
+      throw new Error('IIFL Securities integration is temporarily unavailable');
 
     case 'ICICI Direct':
       if (!apiKey || !jwtToken || !secretKey) {
@@ -208,13 +206,8 @@ const buildCancelOrderPayload = (broker, credentials, orderId, orderDetails = {}
 
   switch (broker) {
     case 'IIFL Securities':
-      return {
-        url: `${server.ccxtServer.baseUrl}iifl/cancel-order`,
-        data: {
-          clientCode,
-          orderId,
-        },
-      };
+      // IIFL backend endpoints are currently unavailable (404)
+      throw new Error('IIFL Securities integration is temporarily unavailable');
 
     case 'ICICI Direct':
       return {
@@ -702,20 +695,8 @@ const buildModifyOrderPayload = (broker, credentials, orderId, modifications) =>
       };
 
     case 'Kotak':
-      return {
-        url: `${server.ccxtServer.baseUrl}kotak/modify-order`,
-        data: {
-          consumerKey: decryptCredential(apiKey),
-          consumerSecret: decryptCredential(secretKey),
-          accessToken: jwtToken,
-          sid,
-          serverId: serverId || '',
-          orderId,
-          price: modifications.price,
-          quantity: modifications.quantity,
-          orderType: modifications.orderType || 'LIMIT',
-        },
-      };
+      // Kotak modify-order endpoint is not available (404); cancel and re-place instead
+      throw new Error('Order modification is not supported for Kotak. Please cancel the order and place a new one.');
 
     default:
       throw new Error(`Order modification not supported for broker: ${broker}`);

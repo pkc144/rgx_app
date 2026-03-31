@@ -773,6 +773,10 @@ const IgnoreTradesScreen = () => {
       await axios.put(
         `${server.server.baseUrl}api/zerodha/update-trade-reco`,
         {
+          stockDetails: stockDetails,
+          leaving_datetime: currentISTDateTime,
+        },
+        {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
@@ -781,10 +785,6 @@ const IgnoreTradesScreen = () => {
               Config.REACT_APP_AQ_SECRET,
             ),
           },
-        },
-        {
-          stockDetails: stockDetails,
-          leaving_datetime: currentISTDateTime,
         },
       );
 
