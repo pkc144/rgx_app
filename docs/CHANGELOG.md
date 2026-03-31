@@ -4,6 +4,13 @@ All notable changes to the RGX Research Mobile App (EquityPro) are documented he
 
 ---
 
+## [5.2.3] - 2026-04-01
+
+### Added
+- **Test suite ported from AlphaB2B**: Ported 11 test suites (281 tests) from `Alphab2bapp/src/__tests__/` to `rgx_app/src/__tests__/`. Includes unit tests for `brokerAuth`, `brokerSessionUtils`, `brokerSupport`, `orderStatusUtils`, `portfolioEvents`, `rebalanceHelpers`, `ProcessTrades`, `storageUtils`, `BrokerOrderBookAPI`, and integration tests for broker trade flow and rebalance flow. Adapted tests for RGX-specific differences: axios-based brokerAuth, simplified storageUtils (3 keys, no retry), `getAdvisorSubdomain()` subdomain resolution. Skipped 3 B2B-only test files (`ModelPortfolioService`, `rebalanceDiffUtils`, `symbolNormalizer`) whose source modules do not exist in RGX. Created `__mocks__/` directory with mocks for `react-native-config`, `react-native-crypto-js`, `react-native-toast-message`, and `@react-native-async-storage/async-storage`. Updated `jest.config.js` with setup files, module name mappers, and transform ignore patterns.
+
+---
+
 ## [5.2.2] - 2026-04-01
 
 ### Changed
