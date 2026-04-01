@@ -812,6 +812,11 @@ const MPInvestNowModal = ({
             },
           },
         );
+        // Update local state so the same session won't re-ask for Digio
+        setAdvisorSpecificUserDetails(prev => ({
+          ...prev,
+          digio_verification: true,
+        }));
       } catch (err) {
         console.error('[Digio Polling] Error updating user:', err);
       }
@@ -1112,27 +1117,10 @@ const MPInvestNowModal = ({
           .then(async response => {
             console.log('here i am', JSON.stringify(response.data));
             if (response?.data?.result?.agreement_status === 'completed') {
+              // Mark Digio as done FIRST — signing is complete, don't let
+              // downstream steps (doc download) prevent the flag from being set.
               try {
-                console.log('here opened');
-                const response = await axios.get(
-                  `${server.ccxtServer.baseUrl}misc/digio/download/signed-doc/${storeDigioData?.id}/${advisorTag}`,
-                  {
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'X-Advisor-Subdomain':
-                        configData?.config?.REACT_APP_HEADER_NAME,
-                      'aq-encrypted-key': generateToken(
-                        Config.REACT_APP_AQ_KEYS,
-                        Config.REACT_APP_AQ_SECRET,
-                      ),
-                    },
-                    responseType: 'blob',
-                  },
-                );
-                console.log(
-                  'Handle success hit final-------------------------222222222',
-                );
-                const digioResponse = await fetch(
+                await fetch(
                   `${server.server.baseUrl}api/digio/update-user`,
                   {
                     method: 'POST',
@@ -1151,17 +1139,47 @@ const MPInvestNowModal = ({
                     },
                   },
                 );
-                // Show success modal with anti-drop-off mechanism instead of direct payment
-                setDigioSuccessModal(true);
-                setLoading(false);
-                console.log('this get true----');
+                console.log('[Digio] digio_verification set to true on backend');
 
-                // Clear pending Digio on successful completion
-                await clearPendingDigio();
-                console.log('[Digio] Cleared pending Digio after successful signature');
-              } catch (error) {
-                console.error('Error downloading PDF:', error);
+                // Update local state so the same session won't re-ask for Digio
+                setAdvisorSpecificUserDetails(prev => ({
+                  ...prev,
+                  digio_verification: true,
+                }));
+              } catch (err) {
+                console.error('[Digio] Failed to update digio_verification:', err);
               }
+
+              // Download signed doc (best-effort, doesn't block success flow)
+              try {
+                await axios.get(
+                  `${server.ccxtServer.baseUrl}misc/digio/download/signed-doc/${storeDigioData?.id}/${advisorTag}`,
+                  {
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Advisor-Subdomain':
+                        configData?.config?.REACT_APP_HEADER_NAME,
+                      'aq-encrypted-key': generateToken(
+                        Config.REACT_APP_AQ_KEYS,
+                        Config.REACT_APP_AQ_SECRET,
+                      ),
+                    },
+                    responseType: 'blob',
+                  },
+                );
+                console.log('[Digio] Signed doc downloaded successfully');
+              } catch (error) {
+                console.error('[Digio] Error downloading signed PDF (non-blocking):', error);
+              }
+
+              // Show success modal with anti-drop-off mechanism instead of direct payment
+              setDigioSuccessModal(true);
+              setLoading(false);
+              console.log('this get true----');
+
+              // Clear pending Digio on successful completion
+              await clearPendingDigio();
+              console.log('[Digio] Cleared pending Digio after successful signature');
             } else {
               // console.log('this opens----');
               setDigioUnsuccessModal(true);
