@@ -52,7 +52,7 @@ const UpstoxHelpContent = ({expanded, onExpandChange}) => {
           <>
             <Text style={styles.instruction}>
               3. Click on the "New App" button. Fill in the "App Name" field
-              with "AlphaQuark" or a name of your choice. Enter the "Redirect
+              with "EquityPro" or a name of your choice. Enter the "Redirect
               URL" as{' '}
               <Text
                 onPress={() => Linking.openURL(brokerConnectRedirectURL)}

@@ -78,7 +78,7 @@ export const checkAndFetchAdvisorConfig = async advisorRaCode => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': 'common',
+          'X-Advisor-Subdomain': getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,

@@ -31,7 +31,7 @@ const ICICIHelpContent = ({expanded, onExpandChange }) => {
                            and log in using your username and password. Verify your identity with the OTP and submit.
                          </Text>
                          <Text style={styles.instruction}>
-                           2. Click on the "Register an App" tab, then fill in the "App Name" field with "AlphaQuark" or a name of
+                           2. Click on the "Register an App" tab, then fill in the "App Name" field with "EquityPro" or a name of
                            your choice. Enter the "Redirect URL" as{" "}
                            <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
                              {brokerConnectRedirectURL}

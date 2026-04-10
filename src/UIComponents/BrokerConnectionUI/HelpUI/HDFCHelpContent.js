@@ -50,7 +50,7 @@ const HDFCHelpContent = ({expanded, onExpandChange }) => {
                           </Text>
                           <Text style={styles.instruction}>
                             5. Copy the *API* and *Secret Key* and paste
-            them into theAlphaQuark platform to connect
+            them into the EquityPro platform to connect
             your broker.
                           </Text>
         </>

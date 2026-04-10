@@ -1061,7 +1061,7 @@ export function AngleOneTpinModal({
       <input type="hidden" name="ReqId" value="${edisData?.ReqId || ''}" />
       <input type="hidden" name="Version" value="1.1" />
       <input type="hidden" name="TransDtls" value="${edisData?.TransDtls || ''}" />
-      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL || 'https://prod.alphaquark.in'}/stock-recommendation" />
+      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL || 'https://equitypro.co.in'}/stock-recommendation" />
       <input id="submitBtn" type="submit" />
     </form>
   </body>
@@ -1814,7 +1814,7 @@ export function OtherBrokerModel({
         '3.Select Authorize with T-PIN.',
         '4.Click Continue to CDSL.',
         '5.Enter your T-PIN (or generate a new one if needed) and verify it, then enter the OTP for authentication.',
-        `6.Once verified, return to the ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'} platform and place your sell order.`,
+        `6.Once verified, return to the ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'EquityPro'} platform and place your sell order.`,
       ],
     },
     'Kotak Securities': {
@@ -1833,7 +1833,7 @@ export function OtherBrokerModel({
         '3.Click Raise eDIS Request, select stock(s), and submit for authorization.',
         '4.Accept the Terms and Conditions, click **Authorize Now, and use **Forgotten TPIN if needed.',
         '5.Complete authorization on CDSL by entering your TPIN and OTP. ',
-        `6.After successful authorization, click OK and retry the sell order on ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}.`,
+        `6.After successful authorization, click OK and retry the sell order on ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'EquityPro'}.`,
       ],
     },
     AliceBlue: {
