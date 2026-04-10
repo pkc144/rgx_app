@@ -42,7 +42,7 @@ import CustomTabBar from '../Drawer/CustomTabbar';
 import CustomTabBarOrder from '../Drawer/CustomTabbarOrder';
 import LinearGradient from 'react-native-linear-gradient';
 import {useTrade} from '../TradeContext';
-import {isOrderSuccess, isOrderRejected, isOrderPending, getOrderStatusDisplay} from '../../utils/orderStatusUtils';
+import {isOrderSuccess, isOrderRejected, isOrderCancelled, isOrderPending, getOrderStatusDisplay} from '../../utils/orderStatusUtils';
 
 export default function OrderScreen() {
   const {configData} = useTrade();
@@ -134,6 +134,7 @@ export default function OrderScreen() {
             isOrderRejected(trade.trade_place_status) &&
             (trade.rebalance_status === undefined ||
               trade.rebalance_status === null) &&
+            !trade.model_id &&
             tradeDate >= sevenDaysAgo
           );
         });
@@ -149,7 +150,8 @@ export default function OrderScreen() {
               trade.date === todaysDate &&
               isOrderRejected(trade.trade_place_status) &&
               (trade.rebalance_status === undefined ||
-                trade.rebalance_status === null),
+                trade.rebalance_status === null) &&
+              !trade.model_id,
           );
         setRejectedTradesToday(rejectedOrdersToday);
         isLoading(false);
@@ -256,8 +258,19 @@ export default function OrderScreen() {
   };
 
   const OrderItem = ({item, color1, color2}) => {
+    const [showReason, setShowReason] = useState(false);
+    const isRejected = isOrderRejected(item.trade_place_status);
+    const rejectionReason = item.orderStatusMessage || item.message_aq || '';
+    const totalQty = item.Lots || item.Quantity || '';
+    const avgPrice = item.AvgPrice || item.tradedPrice || '';
+
     return (
-      <View style={styles.orderContainer}>
+      <TouchableOpacity
+        activeOpacity={isRejected ? 0.7 : 1}
+        onPress={() => {
+          if (isRejected) setShowReason(prev => !prev);
+        }}
+        style={styles.orderContainer}>
         <View style={styles.row}>
           {(item?.Exchange === 'NFO' || item?.Exchange === 'BFO') &&
           item?.OptionType !== 'FUT' ? (
@@ -289,9 +302,9 @@ export default function OrderScreen() {
           }}>
           <View style={styles.detailsRow}>
             <Text style={styles.detailsText}>
-              Qty. {item.tradedQty}/{item.Lots}
+              Qty. {item.tradedQty || 0}/{totalQty || '-'}
               {'  '}|{'  '}
-              Avg. {item.AvgPrice}
+              Avg. {avgPrice || '-'}
               {'  '}|{'  '}
               {item.Exchange}
             </Text>
@@ -334,7 +347,14 @@ export default function OrderScreen() {
             {getOrderStatusDisplay(item.trade_place_status)}{' '}
           </Text>
         </View>
-      </View>
+        {showReason && rejectionReason ? (
+          <View style={styles.rejectionReasonContainer}>
+            <Text style={styles.rejectionReasonText}>
+              Reason: {rejectionReason}
+            </Text>
+          </View>
+        ) : null}
+      </TouchableOpacity>
     );
   };
   const getStatusColors = status => {
@@ -344,7 +364,10 @@ export default function OrderScreen() {
     if (isOrderPending(status)) {
       return {color1: '#F9F0E6', color2: '#D49244'};
     }
-    // Default for rejected, cancelled, etc.
+    if (isOrderCancelled(status)) {
+      return {color1: '#F3F4F6', color2: '#6B7280'};
+    }
+    // Default for rejected, failure, etc.
     return {color1: '#FDEAEC', color2: '#EA2D3F'};
   };
 
@@ -1108,5 +1131,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 8,
     fontWeight: '600',
+  },
+  rejectionReasonContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#FFF5F5',
+    borderLeftWidth: 3,
+    borderLeftColor: '#EA2D3F',
+    borderRadius: 4,
+  },
+  rejectionReasonText: {
+    fontSize: 12,
+    color: '#EA2D3F',
+    fontFamily: 'Poppins-Regular',
   },
 });

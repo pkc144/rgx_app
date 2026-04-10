@@ -4,6 +4,35 @@ All notable changes to the RGX Research Mobile App (EquityPro) are documented he
 
 ---
 
+## [5.2.4] - 2026-04-01
+
+### Fixed
+- **Order status classification**: Moved `open`/`transit`/`placed`/`ordered` from SUCCESS_STATUSES to PENDING_STATUSES in `orderStatusUtils.js`. Added separate `isOrderCancelled()` function — cancelled orders no longer treated as rejected.
+- **OrderScreen card colors**: Cancelled orders now show grey (#F3F4F6/#6B7280) instead of red. Added expandable rejection reason display on tap for rejected orders. Added qty/price fallback defaults to prevent `undefined` display. Filtered out model portfolio trades (`!trade.model_id`) from rejected orders list. Files: `OrderScreen.js`, `orderStatusUtils.js`.
+- **TradeContext fetch params**: Fixed `fetchFunds()`, `fetchBrokerSpecificHoldings()`, `fetchBrokerAllHoldings()` calls — replaced `userEmail` with `configData` as last param, added missing `viewToken` param to holdings calls. Added `adviceShowDays` to useEffect dependency array so trades re-fetch when setting changes. File: `TradeContext.js`.
+- **TradeContext recommended filter**: Model portfolio trades with `trade_place_status === 'recommend'` now correctly appear in recommended list (matching AlphaB2B). `!trade.model_id` guard moved to rejected sub-condition only. File: `TradeContext.js`.
+- **ICICI Direct token field**: Changed `sessionToken` to `accessToken` in `UserStrategySubscribeModal.js` to match backend expectation.
+- **Zerodha payload cleanup**: Removed unnecessary `apiKey`/`SecretKey` from Zerodha broker payload in `UserStrategySubscribeModal.js` — server only needs `accessToken`.
+- **Kotak credential decryption**: Fixed `ProcessTrades.js` to send `consumerKey`/`consumerSecret` (decrypted) and `viewToken` instead of raw encrypted `apiKey`/`secretKey` for regular orders.
+- **MPStatusModal stale failure guard**: Added `isOrderSuccess`/`isOrderPending` check before marking orders as failed, preventing stale backend `rebalance_status: "failure"` from incorrectly marking live orders. File: `MPStatusModal.js`.
+- **Security: removed credential logging**: Removed `console.log` statements in `UserStrategySubscribeModal.js` that leaked Upstox credentials to device logs.
+
+### Added
+- **EDIS pre-flight sell check**: Added EDIS authorization pre-validation for 8 brokers (AliceBlue, IIFL, ICICI, Upstox, Kotak, Hdfc, Motilal, Groww) in `UserStrategySubscribeModal.js`. Blocks sell orders with user-friendly toast when `is_authorized_for_sell` is false.
+- **Axis Securities broker support**: Added `"Axis Securities": "axis"` to `BROKER_URL_MAP` in `ProcessTrades.js`.
+- **DummyBroker fallback**: Added `broker ? broker : 'DummyBroker'` fallback in `UserStrategySubscribeModal.js` when no broker is connected.
+- **EDIS keyword detection**: `ProcessTrades.js` now detects EDIS-related rejections by keyword matching (`cdsl`, `edis`, `tpin`, `ddpi`, `demat`, etc.) instead of triggering TPIN modals for all rejected sell orders.
+- **Rebalance retry after TPIN**: Added `reopenRebalanceModal` and `getUserDetails` callbacks to all TPIN/EDIS/DDPI modals in `RebalanceAdviceContent.js` so users can auto-retry rebalancing after authorization.
+- **Dynamic white label text**: Replaced 5 hardcoded "AlphaQuark" instances in `HelpModal.js` with `Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'`.
+
+### Changed
+- **AliceBlue apiKey**: Changed from `checkValidApiAnSecret(apiKey)` to raw `apiKey` in `UserStrategySubscribeModal.js` to match AlphaB2B behavior.
+- **Kotak serverId default**: Added empty string fallback (`serverId ? serverId : ''`) in `UserStrategySubscribeModal.js`.
+- **Model name trimming**: Added `.trim()` to `strategyDetails?.model_name` in `UserStrategySubscribeModal.js`.
+- **Fund default**: Added `'0'` fallback for `userFund` when `availablecash` is undefined in `UserStrategySubscribeModal.js`.
+
+---
+
 ## [5.2.3] - 2026-04-01
 
 ### Added

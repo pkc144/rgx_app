@@ -80,7 +80,7 @@ const HelpModal = ({ broker, visible, onClose }) => {
                 and log in using your username and password. Verify your identity with the OTP and submit.
               </Text>
               <Text style={styles.instruction}>
-                2. Click on the "Register an App" tab, then fill in the "App Name" field with "AlphaQuark" or a name of
+                2. Click on the "Register an App" tab, then fill in the "App Name" field with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of
                 your choice. Enter the "Redirect URL" as{" "}
                 <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
                   {brokerConnectRedirectURL}
@@ -293,7 +293,7 @@ name, redirect URL: {' '}
               </Text>
               <Text style={styles.instruction}>
                 5. Copy the *API* and *Secret Key* and paste
-them into theAlphaQuark platform to connect
+them into the {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'} platform to connect
 your broker.
               </Text>
             </View>
@@ -397,7 +397,7 @@ your broker.
         </Text>
 
         <Text style={styles.instruction1}>
-          (ii) Create an Application: Navigate to the "Applications" section, click on "Add New Application," and fill required details (use any app name, e.g., AlphaQuark). Select Unlimited in Shared Quota, leave description & group empty, then save.
+          (ii) Create an Application: Navigate to the "Applications" section, click on "Add New Application," and fill required details (use any app name, e.g., {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}). Select Unlimited in Shared Quota, leave description & group empty, then save.
         </Text>
 
         <Text style={styles.instruction1}>
@@ -481,7 +481,7 @@ and continue.
             </Text>
             <Text style={styles.instruction}>
               3. Click on the "New App" button. Fill in the "App Name"
-field with "AlphaQuark" or a name of your choice.
+field with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of your choice.
 Enter the "Redirect URL" as <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
 {brokerConnectRedirectURL}</Text>
 {' '} You can skip the Postback URL and Description as
@@ -569,7 +569,7 @@ designated screen.
           {/* STEP 6 */}
           <Text style={styles.instruction}>
             6. On the Trading API page, click on <Text style={{ fontWeight: 'bold' }}>"Create an API Key"</Text>. 
-            Enter a name for your app (e.g., AlphaQuark) and enter the Redirect URL below:
+            Enter a name for your app (e.g., {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}) and enter the Redirect URL below:
           </Text>
 
           <View style={styles.linkContainer}>

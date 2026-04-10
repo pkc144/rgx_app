@@ -21,6 +21,7 @@ const BROKER_URL_MAP = {
   "Motilal Oswal": "motilal-oswal",
   Zerodha: "zerodha/api",
   Groww: "groww",
+  "Axis Securities": "axis",
 };
 
 const checkValidApiAnSecret = (details) => {
@@ -51,6 +52,7 @@ export const createPlaceOrderFunction = ({
   secretKey,
   jwtToken,
   sid,
+  viewToken,
   serverId,
   setShowOtherBrokerModel,
   setShowDhanTpinModel,
@@ -236,11 +238,12 @@ export const createPlaceOrderFunction = ({
         case "Kotak":
           return {
             ...regularPayload,
-            apiKey,
-            secretKey,
-            jwtToken,
+            consumerKey: checkValidApiAnSecret(apiKey),
+            consumerSecret: checkValidApiAnSecret(secretKey),
+            accessToken: jwtToken,
             sid,
             serverId: serverId ? serverId : "",
+            viewToken,
           };
         case "Hdfc Securities":
           return { ...regularPayload, apiKey, jwtToken };
@@ -335,28 +338,23 @@ export const createPlaceOrderFunction = ({
         setOpenSucessModal(true);
         setOpenReviewTrade(false);
         setLoading(false);
-        const rejectedSellCount = response.data.response.reduce(
-          (count, order) => {
+        const EDIS_KEYWORDS = ['cdsl', 'edis', 'tpin', 'ddpi', 'demat', 'authorization required', 'not authorized for sell', 'poa', 'mandate'];
+        const detectEdisFailures = (orders) => {
+          return orders.reduce((count, order) => {
             const isRejected = [
-              "REJECTED",
-              "Rejected",
-              "rejected",
-              "cancelled",
-              "CANCELLED",
-              "Cancelled",
-              "FAILURE",
-              "failure",
-              "Failure",
+              "REJECTED", "Rejected", "rejected",
+              "cancelled", "CANCELLED", "Cancelled",
+              "FAILURE", "failure", "Failure",
             ].includes(order?.orderStatus);
-            return isRejected && order.transactionType === "SELL"
-              ? count + 1
-              : count;
-          },
-          0
-        );
+            if (!isRejected || order.transactionType !== "SELL") return count;
+            const msg = (order?.orderStatusMessage || order?.message_aq || '').toLowerCase();
+            const hasEdisKeyword = EDIS_KEYWORDS.some(kw => msg.includes(kw));
+            return hasEdisKeyword ? count + 1 : count;
+          }, 0);
+        };
+        const rejectedSellCount = detectEdisFailures(response.data.response);
 
-        // Handle TPIN/EDIS modals for all brokers when sell orders are rejected
-        // Don't rely on CDSL keyword detection — error message formats can change
+        // Handle TPIN/EDIS modals only when EDIS-related keywords found in rejection messages
         if (
           !isReturningFromOtherBrokerModal &&
           (allSell || isMixed) &&
@@ -396,8 +394,6 @@ export const createPlaceOrderFunction = ({
             (allSell || isMixed) &&
             rejectedSellCount >= 1
           ) {
-            // Don't gate on is_authorized_for_sell DB flag — it persists across
-            // sessions but EDIS authorization expires per-session
             setShowOtherBrokerModel(true);
             setOpenReviewTrade(false);
             setLoading(false);

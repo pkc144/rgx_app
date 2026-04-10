@@ -215,14 +215,31 @@ const UserStrategySubscribeModal = ({
       showToast();
       return;
     } else {
-      console.log('ModelName:', strategyDetails);
+      // EDIS pre-flight check for brokers that require manual sell authorization
+      const edisCheckBrokers = ['AliceBlue', 'IIFL Securities', 'ICICI Direct', 'Upstox', 'Kotak', 'Hdfc Securities', 'Motilal Oswal', 'Groww'];
+      if (edisCheckBrokers.includes(broker) && !userDetails?.is_authorized_for_sell) {
+        const hasSellOrders = latestRebalance?.adviceEntries?.some(
+          entry => entry.transactionType === 'SELL',
+        );
+        if (hasSellOrders) {
+          setCalculateLoading(false);
+          Toast.show({
+            type: 'error',
+            text1: 'Authorization Required',
+            text2: 'Please authorize your stocks for selling at your broker portal before placing sell orders.',
+            visibilityTime: 5000,
+          });
+          return;
+        }
+      }
+
       let payload = {
         userEmail: userEmail,
-        userBroker: broker,
-        modelName: strategyDetails?.model_name,
+        userBroker: broker ? broker : 'DummyBroker',
+        modelName: strategyDetails?.model_name?.trim(),
         advisor: strategyDetails?.advisor,
         model_id: latestRebalance?.model_Id,
-        userFund: funds?.data?.availablecash,
+        userFund: funds?.data?.availablecash ? funds?.data?.availablecash : '0',
       };
       if (broker === 'IIFL Securities') {
         payload = {
@@ -234,10 +251,9 @@ const UserStrategySubscribeModal = ({
           ...payload,
           apiKey: checkValidApiAnSecret(apiKey),
           secretKey: checkValidApiAnSecret(secretKey),
-          sessionToken: jwtToken,
+          accessToken: jwtToken,
         };
       } else if (broker === 'Upstox') {
-        console.log('Data to pay:');
         payload = {
           ...payload,
           clientCode: clientCode,
@@ -245,14 +261,6 @@ const UserStrategySubscribeModal = ({
           apiSecret: checkValidApiAnSecret(secretKey),
           accessToken: jwtToken,
         };
-        console.log(
-          'Data to pay2:',
-          payload,
-          clientCode,
-          checkValidApiAnSecret(apiKey),
-          checkValidApiAnSecret(secretKey),
-          jwtToken,
-        );
       } else if (broker === 'Angel One') {
         payload = {
           ...payload,
@@ -267,7 +275,7 @@ const UserStrategySubscribeModal = ({
           accessToken: jwtToken,
           viewToken: viewToken,
           sid: sid,
-          serverId: serverId,
+          serverId: serverId ? serverId : '',
         };
       } else if (broker === 'Hdfc Securities') {
         payload = {
@@ -278,8 +286,6 @@ const UserStrategySubscribeModal = ({
       } else if (broker === 'Zerodha') {
         payload = {
           ...payload,
-          apiKey: checkValidApiAnSecret(apiKey),
-          SecretKey: checkValidApiAnSecret(secretKey),
           accessToken: jwtToken,
         };
       } else if (broker === 'Fyers') {
@@ -292,8 +298,8 @@ const UserStrategySubscribeModal = ({
         payload = {
           ...payload,
           clientId: clientCode,
+          apiKey: apiKey,
           accessToken: jwtToken,
-          apiKey: checkValidApiAnSecret(apiKey),
         };
       } else if (broker === 'Dhan') {
         payload = {

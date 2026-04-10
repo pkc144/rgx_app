@@ -650,6 +650,8 @@ const RebalanceAdviceContent = React.memo(
             proceedWithTpin={handleProceedWithTpin}
             userDetails={userDetails && userDetails}
             setOpenReviewTrade={setOpenReviewTrade}
+            reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+            getUserDetails={getUserDeatils}
           />
         )}
 
@@ -669,6 +671,8 @@ const RebalanceAdviceContent = React.memo(
             userDetails={userDetails}
             edisStatus={edisStatus}
             tradingSymbol={stockDetails.map(stock => stock.tradingSymbol)}
+            reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+            getUserDetails={getUserDeatils}
           />
         )}
 
@@ -677,6 +681,8 @@ const RebalanceAdviceContent = React.memo(
             isOpen={showFyersTpinModal}
             setIsOpen={setShowFyersTpinModal}
             userDetails={userDetails}
+            reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+            getUserDetails={getUserDeatils}
           />
         )}
 
@@ -688,6 +694,8 @@ const RebalanceAdviceContent = React.memo(
             dhanEdisStatus={dhanEdisStatus}
             stockTypeAndSymbol={stockTypeAndSymbol}
             singleStockTypeAndSymbol={singleStockTypeAndSymbol}
+            reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+            getUserDetails={getUserDeatils}
           />
         )}
 
@@ -720,6 +728,8 @@ const RebalanceAdviceContent = React.memo(
             setStoreModalName={setStoreModalName}
             storeModalName={storeModalName}
             funds={funds}
+            reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+            getUserDetails={getUserDeatils}
           />
         )}
       </View>

@@ -26,7 +26,7 @@ import { Picker } from '@react-native-picker/picker';
 import { debounce } from 'lodash';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
-import { isOrderRejected } from '../../utils/orderStatusUtils';
+import { isOrderRejected, isOrderSuccess, isOrderPending } from '../../utils/orderStatusUtils';
 const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
@@ -79,6 +79,12 @@ const formatPrice = price => {
 };
 
 const isStockFailed = stock => {
+  // If orderStatus indicates the order was actually placed/executed (OPEN, TRANSIT,
+  // TRADED, COMPLETE, etc.), it is NOT failed — even if rebalance_status says "failure"
+  // due to stale data from backend missing OPEN/TRANSIT in SUCCESS_ORDER_MAPPING.
+  if (isOrderSuccess(stock.orderStatus) || isOrderPending(stock.orderStatus)) {
+    return false;
+  }
   return (
     isOrderRejected(stock.orderStatus) ||
     stock.rebalance_status === 'failed' ||

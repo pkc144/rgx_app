@@ -6,12 +6,12 @@
 
 const SUCCESS_STATUSES = [
   'complete', 'completed', 'traded', 'filled', 'executed',
-  'placed', 'ordered', 'open', 'transit',
 ];
 
 const PENDING_STATUSES = [
   'pending', 'trigger pending', 'trigger_pending',
   'requested', 'am', 'after market',
+  'open', 'transit', 'placed', 'ordered',
 ];
 
 const REJECTED_STATUSES = [
@@ -55,8 +55,14 @@ export const isOrderSuccess = (status) =>
  */
 export const isOrderRejected = (status) => {
   const normalized = normalizeOrderStatus(status);
-  return normalized === 'rejected' || normalized === 'cancelled';
+  return normalized === 'rejected';
 };
+
+/**
+ * Check if order status indicates cancellation.
+ */
+export const isOrderCancelled = (status) =>
+  normalizeOrderStatus(status) === 'cancelled';
 
 /**
  * Check if order status indicates it is still pending.

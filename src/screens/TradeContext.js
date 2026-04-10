@@ -624,10 +624,10 @@ const getAllTrades = async () => {
         // REJECTED
         if (
           isRejectedStatus(trade?.trade_place_status) &&
-          !trade?.model_id &&
           trade?.Basket === undefined &&
           (trade?.rebalance_status === undefined ||
             trade?.rebalance_status === null) &&
+          !trade?.model_id &&
           tradeDate >= cutoffDate
         ) {
           acc.rejected.push(trade);
@@ -635,11 +635,11 @@ const getAllTrades = async () => {
 
         // RECOMMENDED
         if (
-          !trade?.model_id &&
-          ((trade?.trade_place_status === 'recommend' &&
+          (trade?.trade_place_status === 'recommend' &&
             tradeDate >= cutoffDate) ||
           (isRejectedStatus(trade?.trade_place_status) &&
-            tradeDate >= cutoffDate))
+            !trade?.model_id &&
+            tradeDate >= cutoffDate)
         ) {
           acc.recommended.push(trade);
         }
@@ -985,7 +985,7 @@ const getAllTrades = async () => {
         sid,
         viewToken,
         serverId,
-        userEmail,
+        configData,
       );
       console.log("Fetched Funds-----",fetchedFunds);
       if (fetchedFunds) {
@@ -1239,7 +1239,7 @@ const getAllTrades = async () => {
       getAllNotifcations();
       getModelPortfolioStrategyDetails();
     }
-  }, [userEmail, configData]);
+  }, [userEmail, configData, adviceShowDays]);
 
   // for broker specigfic Holdings
   const [BrokerHoldingsData, setBrokerHoldingsData] = useState([]);
@@ -1273,8 +1273,9 @@ const getAllTrades = async () => {
         jwtToken,
         secretKey,
         sid,
+        viewToken,
         serverId,
-        userEmail,
+        configData,
       );
       if (brokerSpecificHolding) {
         setBrokerHoldingsData(brokerSpecificHolding);
@@ -1318,8 +1319,9 @@ const getAllTrades = async () => {
         jwtToken,
         secretKey,
         sid,
+        viewToken,
         serverId,
-        userEmail,
+        configData,
       );
       if (allHoldings) {
         setAllHoldingsData(allHoldings);
