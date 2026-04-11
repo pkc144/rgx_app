@@ -26,6 +26,7 @@ import {useTrade} from '../TradeContext';
 import TermsModal from './TermsModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment';
+import {SvgUri} from 'react-native-svg';
 import {useConfig} from '../../context/ConfigContext';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 // Import enhanced storage utilities
@@ -329,6 +330,12 @@ const SignupScreen = () => {
             <View style={styles.logoContainer}>
               {LogoComponent && typeof LogoComponent === 'function' ? (
                 <LogoComponent style={styles.logo} />
+              ) : LogoComponent && typeof LogoComponent === 'string' && LogoComponent.endsWith('.svg') ? (
+                <SvgUri
+                  uri={LogoComponent}
+                  width={styles.logo.width}
+                  height={styles.logo.height}
+                />
               ) : LogoComponent ? (
                 <Image
                   source={LogoComponent}

@@ -18,6 +18,7 @@ import auth from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import {Image} from 'react-native-elements';
+import {SvgUri} from 'react-native-svg';
 import {useConfig} from '../../context/ConfigContext';
 // --- ASSETS ---
 const AlphaQuarkLogo = require('../../assets/logo.png');
@@ -91,6 +92,12 @@ const ResetPasswordScreen = () => {
             <View style={styles.logoContainer}>
               {LogoComponent && typeof LogoComponent === 'function' ? (
                 <LogoComponent style={styles.logo} />
+              ) : LogoComponent && typeof LogoComponent === 'string' && LogoComponent.endsWith('.svg') ? (
+                <SvgUri
+                  uri={LogoComponent}
+                  width={styles.logo.width}
+                  height={styles.logo.height}
+                />
               ) : LogoComponent ? (
                 <Image
                   source={LogoComponent}

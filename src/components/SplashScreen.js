@@ -8,6 +8,7 @@ import axios from 'axios';
 import {useNavigation} from '@react-navigation/native';
 import server from '../utils/serverConfig';
 import {generateToken} from '../utils/SecurityTokenManager';
+import {SvgUri} from 'react-native-svg';
 import {useConfig} from '../context/ConfigContext';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -121,6 +122,12 @@ export default function SplashScreen() {
           <View style={{width: 150, height: 150}} />
         ) : LogoComponent && typeof LogoComponent === 'function' ? (
           <LogoComponent width={200} height={200} />
+        ) : LogoComponent && typeof LogoComponent === 'string' && LogoComponent.endsWith('.svg') ? (
+          <SvgUri
+            uri={LogoComponent}
+            width={150}
+            height={150}
+          />
         ) : LogoComponent && typeof LogoComponent === 'string' ? (
           <Image
             source={{uri: LogoComponent}}

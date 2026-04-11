@@ -26,6 +26,7 @@ import {useTrade} from '../TradeContext';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import Toast from 'react-native-toast-message';
 import {Mail, Lock, Eye} from 'lucide-react-native';
+import {SvgUri} from 'react-native-svg';
 import APP_VARIANTS from '../../utils/Config';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useConfig} from '../../context/ConfigContext';
@@ -391,6 +392,12 @@ const LoginScreen = () => {
                   <View style={styles.logo} />
                 ) : LogoComponent && typeof LogoComponent === 'function' ? (
                   <LogoComponent style={styles.logo} />
+                ) : LogoComponent && typeof LogoComponent === 'string' && LogoComponent.endsWith('.svg') ? (
+                  <SvgUri
+                    uri={LogoComponent}
+                    width={styles.logo.width}
+                    height={styles.logo.height}
+                  />
                 ) : LogoComponent && typeof LogoComponent === 'string' ? (
                   <Image
                     source={{uri: LogoComponent}}
