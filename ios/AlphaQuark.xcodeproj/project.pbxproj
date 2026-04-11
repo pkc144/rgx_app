@@ -692,7 +692,7 @@
 				DEVELOPMENT_TEAM = 6H43CN8AV6;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = AlphaQuark/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = AlphaQuark;
+				INFOPLIST_KEY_CFBundleDisplayName = "EquityPro by RGX Research";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -703,7 +703,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = in.alphaquark.alphapro;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.aq;
 				PRODUCT_NAME = AlphaQuark;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -727,7 +727,7 @@
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = 6H43CN8AV6;
 				INFOPLIST_FILE = AlphaQuark/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = AlphaQuark;
+				INFOPLIST_KEY_CFBundleDisplayName = "EquityPro by RGX Research";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -738,7 +738,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = in.alphaquark.alphapro;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.aq;
 				PRODUCT_NAME = AlphaQuark;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "AlphaQuark Distribution";

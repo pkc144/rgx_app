@@ -148,8 +148,7 @@ const sendEmailNotification = async (props) => {
     console.log("Sending email notification to:", email);
 
     const getAdvisorCodomain = (advisor) => {
-      if (advisor === "AlphaQuark") return "prod";
-      if (advisor === "AlphaQuarkTest") return "test";
+      if (advisor === "EquityPro by RGXResearch") return "rgxresearch";
       return advisor.toLowerCase();
     };
 
@@ -220,8 +219,7 @@ const sendWhatsAppNotification = async (props) => {
       : `+${countryCode}`;
 
     const getAdvisorCodomain = (advisor) => {
-      if (advisor === "AlphaQuark") return "prod";
-      if (advisor === "AlphaQuarkTest") return "test";
+      if (advisor === "EquityPro by RGXResearch") return "rgxresearch";
       return advisor.toLowerCase();
     };
 

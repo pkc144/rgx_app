@@ -893,7 +893,7 @@ const UserStrategySubscribeModal = ({
             stockDetails: stockDetails,
             leaving_datetime: currentISTDateTime,
             email: userEmail,
-            trade_given_by: 'demoadvisor@alphaquark.in',
+            trade_given_by: strategyDetails?.advisor || configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
           },
         )
         .then(res => {
