@@ -110,6 +110,40 @@ The ICICI flow was refactored on 2026-04-17 to match web. The client-side chain 
 
 **User migration**: existing ICICI users on RGX must update their dev-dashboard Redirect URL. If they land on the legacy URL with `apisession=` in the query string, the modal surfaces a guided error with the correct URL to register.
 
+## Partner Broker Flow Alignment (v5.3.3 audit)
+
+The 5 partner-OAuth brokers (Zerodha, Angel One, Dhan, AliceBlue, Axis Securities) are fully aligned with `Alphab2bapp` and web's `prod-alphaquark-github`. Partner OAuth means the broker provides a consent URL, the user authenticates at the broker's site, and CCXT handles the token exchange server-side — no per-user IP whitelist needed.
+
+### Zerodha
+
+Advisor-shared Kite Connect app (`REACT_APP_ZERODHA_API_KEY` baked into the build). User taps tile → Kite Connect OAuth WebView → broker redirects with `request_token` → CCXT exchanges via `/zerodha/gen-access-token` with `user_email` in body → `PUT /api/user/connect-broker` saves `accessToken`.
+
+**Intentional mobile divergence from web**: web requires each user to register their own Kite Connect app + paste apiKey/secretKey. Mobile uses the advisor-shared app so there's no credential form. Documented in alphab2b v3.8.1 "Broker connection web-parity alignment".
+
+### Angel One
+
+Partner SmartAPI with nonce-based callback registration. `brokerAuth.registerCallback('angelone', '/stock-recommendation')` stamps the nonce on the backend before the WebView opens the partner URL. Broker redirects with `auth_token` in query → mobile parses → `PUT /api/user/connect-broker`. Uses advisor-level `REACT_APP_ANGEL_ONE_API_KEY`.
+
+**v5.3.1 addition**: `verify-edis` callsites send `userEmail` (camelCase), accepted by the ccxt-india dual-key contract.
+
+### Dhan (v5.3.3 — OAuth primary)
+
+OAuth mode is primary; manual credential form is fallback. `DhanConnectModal` renders `<DhanOAuthUI>` by default. WebView opens `${ccxtServer}dhan/login` → CCXT redirects to Dhan consent page → Dhan redirects back to `REACT_APP_BROKER_CONNECT_REDIRECT_URL` with `dhan_client_id` + `dhan_access_token` query params → modal intercepts → `PUT /api/user/connect-broker`.
+
+If OAuth fails or user wants to paste credentials directly (e.g., for automation), `setOauthMode(false)` flips to the credential form which accepts `clientCode` + `accessToken`. Both paths converge on the same `connect-broker` endpoint.
+
+### AliceBlue
+
+CCXT origin-tracking flow (added v5.3.0). `buildAliceBlueAuthUrl()` constructs `${ccxtServer}aliceblue/login?origin=…&returnPath=…` where `origin` + `returnPath` come from parsing `REACT_APP_BROKER_CONNECT_REDIRECT_URL`. CCXT stamps the origin in MongoDB, redirects to AliceBlue, AliceBlue sends back to `${origin}${returnPath}` with `user_broker=AliceBlue&status=0&access_token=…&client_id=…`. WebView intercepts → `PUT /api/user/connect-broker`.
+
+**RGX fallback divergence**: when `REACT_APP_BROKER_CONNECT_REDIRECT_URL` is missing, RGX falls back to `https://${getAdvisorSubdomain()}.alphaquark.in/stock-recommendation` (resolves to `rgxresearch.alphaquark.in`); alphab2b falls back to `https://prod.alphaquark.in/stock-recommendation`. Both apps work correctly via the env var in production — only the unreachable fallback path differs.
+
+### Axis Securities
+
+Partner SSO with client-side `ssoId → authToken` exchange (web parity — web does this client-side too, not server-side). Flow: WebView opens `${ccxtServer}axis/login-url` → user authenticates → redirect URL includes `ssoId` → mobile POSTs to `${ccxtServer}axis/callback` with `{ssoId, redirectUrl}` → reads nested `.data.data` envelope, unwraps `authToken.token` / `refreshToken.token`, grabs `metadata?.accounts?.[0]?.subAccountId` as `subAccountId` fallback → `PUT /api/user/connect-broker`.
+
+**Response parsing fix (v5.3.0)**: previously read flat `authTokenAxis` / `refreshTokenAxis` off `.data` which don't exist in the actual response shape. Aligned to web's `StockRecommendation.js:1716-1728` nested envelope.
+
 ## Per-Broker Details
 
 | Broker | Auth type | User creds needed | Token expiry | Key modal file |

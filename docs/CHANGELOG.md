@@ -4,6 +4,33 @@ All notable changes to the RGX Research Mobile App (EquityPro) are documented he
 
 ---
 
+## [5.3.3] - 2026-04-20 — Dhan OAuth-primary flow + partner broker audit
+
+### Fixed — Dhan connect modal stuck on legacy credential-only flow
+
+`src/components/BrokerConnectionModal/DhanConnectModal.js` — was 368 lines out of sync with alphab2b. Ported the OAuth-primary flow (OAuth mode starts true; manual credential form is fallback):
+- Added `oauthMode` state + `hasProcessedCallback` ref
+- Added `DHAN_OAUTH_URL = ${ccxtServer}dhan/login` (CCXT-driven consent flow)
+- Renders `<DhanOAuthUI>` from `UIComponents/BrokerConnectionUI/DhanOAuthUI.js` (already ported in v5.3.0 Phase 9)
+- Uses `CrossPlatformOverlay` primitive (already in RGX, identical to alphab2b)
+- `handleDhanCallback` parses deep-link callback with `dhan_client_id` + `dhan_access_token` params
+
+### Audited — 5 partner brokers now fully aligned with alphab2b + web
+
+Cross-checked Zerodha, Angel One, Dhan, AliceBlue, Axis Securities flows against `Alphab2bapp`. Result:
+
+| Broker | Modal diff vs alphab2b | Flow | ModalManager wired | BrokerSelectionModal tile | TokenExpireBrokerModal OAUTH list |
+|--------|------------------------|------|--------------------|----------------------------|-----------------------------------|
+| Zerodha | 0 | Partner OAuth (advisor-shared Kite Connect) | ✓ | ✓ | ✓ |
+| Angel One | 0 | Partner OAuth (SmartAPI) | ✓ | ✓ | ✓ |
+| Dhan | 0 (after this fix) | OAuth primary + credential fallback | ✓ | ✓ | ✓ |
+| AliceBlue | 2 (intentional) | CCXT origin-tracking WebView | ✓ | ✓ | ✓ |
+| Axis Securities | 0 | Partner SSO (ssoId → authToken) | ✓ | ✓ | ✓ |
+
+AliceBlue's 2-line intentional divergence: RGX's `buildAliceBlueAuthUrl()` fallback is `https://${getAdvisorSubdomain()}.alphaquark.in/stock-recommendation` (resolves to `rgxresearch.alphaquark.in`) vs alphab2b's hardcoded `https://prod.alphaquark.in/stock-recommendation` — correct RGX multi-tenant behavior.
+
+---
+
 ## [5.3.2] - 2026-04-20 — HDFC EgressIpCallout wire-up + docs
 
 ### Fixed — HDFC Securities was missing EgressIpCallout hard-gate

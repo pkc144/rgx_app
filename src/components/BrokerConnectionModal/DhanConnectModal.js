@@ -1,156 +1,210 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, Dimensions } from 'react-native';
+import React, {useState, useRef, useEffect} from 'react';
+import {StyleSheet, Dimensions} from 'react-native';
 import server from '../../utils/serverConfig';
-import { getAuth } from '@react-native-firebase/auth';
+import {getAuth} from '@react-native-firebase/auth';
 import axios from 'axios';
-import { generateToken } from '../../utils/SecurityTokenManager';
+import {generateToken} from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import DhanConnectUI from '../../UIComponents/BrokerConnectionUI/DhanConnectUI';
-import { useTrade } from '../../screens/TradeContext';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
+import DhanOAuthUI from '../../UIComponents/BrokerConnectionUI/DhanOAuthUI';
+import {useTrade} from '../../screens/TradeContext';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-const commonHeight = screenHeight * 0.06;
-const commonWidth = '100%';
+
+const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
+
 const DhanConnectModal = ({
   isVisible,
-
   onClose,
   setShowBrokerModal,
   fetchBrokerStatusModal,
 }) => {
-  const { configData } = useTrade();
-  const showAlert = useModalStore((state) => state.showAlert);
+  const {configData} = useTrade();
+  const showAlert = useModalStore(state => state.showAlert);
+
+  // OAuth mode is primary (matching web). Manual credential form is fallback.
+  const [oauthMode, setOauthMode] = useState(true);
+
+  // Credential form state (manual / fallback path)
   const [cliendId, setCliendId] = useState('');
   const [accessToken, setaccessToken] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isPasswordVisibleup, setIsPasswordVisibleup] = useState(false);
+  const [helpVisible, setHelpVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [shouldRenderContent, setShouldRenderContent] = useState(false);
+
+  const hasProcessedCallback = useRef(false);
+
   const auth = getAuth();
   const user = auth.currentUser;
-  const [loading, setLoading] = useState(false);
   const userEmail = user?.email;
-  const sheet = useRef(null);
-  const scrollViewRef = useRef(null);
-  const [shouldRenderContent, setShouldRenderContent] = React.useState(false);
 
-  const [helpVisible, setHelpVisible] = useState(false);
-  const OpenHelpModal = () => {
-    // console.log('modal:',helpVisible)
-    setHelpVisible(true);
-  };
-  const [userDetails, setUserDetails] = useState();
+  const [userDetails, setUserDetails] = useState(null);
+
+  const getHeaders = () => ({
+    'Content-Type': 'application/json',
+    'X-Advisor-Subdomain':
+      configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+    'aq-encrypted-key': generateToken(
+      Config.REACT_APP_AQ_KEYS,
+      Config.REACT_APP_AQ_SECRET,
+    ),
+  });
+
   const getUserDeatils = () => {
     axios
       .get(`${server.server.baseUrl}api/user/getUser/${userEmail}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
+        headers: getHeaders(),
       })
-      .then(res => {
-        setUserDetails(res.data.User);
-      })
+      .then(res => setUserDetails(res.data.User))
       .catch(err => console.log(err));
   };
-  useEffect(() => {
-    getUserDeatils();
-  }, [userEmail, server.server.baseUrl]);
 
-  const userId = userDetails && userDetails._id;
+  useEffect(() => {
+    if (userEmail) getUserDeatils();
+  }, [userEmail]);
+
   useEffect(() => {
     if (isVisible) {
       setShouldRenderContent(true);
-      console.log('open');
-      sheet.current?.present(); // Show the TrueSheet if visible
-    } else {
-      sheet.current?.dismiss(); // Hide the TrueSheet if not visible
+      hasProcessedCallback.current = false;
+      setOauthMode(true); // Always start in OAuth mode when opening
     }
   }, [isVisible]);
 
+  const userId = userDetails?._id;
 
-  const [isLoading, setIsLoading] = useState(false);
+  // Dhan OAuth start URL — CCXT generates consent + redirects to Dhan's site
+  const DHAN_OAUTH_URL = `${server.ccxtServer.baseUrl}dhan/login`;
 
-  const handleSubmit = () => {
+  // ── OAuth callback handler ────────────────────────────────────────
+  // The CCXT /dhan/callback consumes the token and redirects to:
+  // prod.alphaquark.in/stock-recommendation?dhan_client_id=...&dhan_access_token=...
+  const handleWebViewNavigationStateChange = navState => {
+    const {url} = navState;
+    if (!url || hasProcessedCallback.current) return;
+
+    if (url.includes('dhan_client_id=') && url.includes('dhan_access_token=')) {
+      const queryString = url.split('?')[1];
+      if (!queryString) return;
+
+      const params = {};
+      queryString.split('&').forEach(pair => {
+        const eqIdx = pair.indexOf('=');
+        if (eqIdx === -1) return;
+        const key = decodeURIComponent(pair.slice(0, eqIdx));
+        const value = decodeURIComponent(pair.slice(eqIdx + 1));
+        params[key] = value;
+      });
+
+      const dhanClientId = params['dhan_client_id'];
+      const dhanAccessToken = params['dhan_access_token'];
+
+      if (dhanClientId && dhanAccessToken) {
+        hasProcessedCallback.current = true;
+        saveBrokerConnection(dhanClientId, dhanAccessToken);
+      }
+    }
+  };
+
+  // ── Shared save logic (used by both OAuth and credential form) ────
+  const saveBrokerConnection = async (clientId, jwtToken) => {
+    if (!userId) {
+      // userId not loaded yet — try fetching and retry
+      try {
+        const res = await axios.get(
+          `${server.server.baseUrl}api/user/getUser/${userEmail}`,
+          {headers: getHeaders()},
+        );
+        const uid = res.data?.User?._id;
+        if (!uid) {
+          showAlert('error', 'Error', 'User not found. Please try again.');
+          return;
+        }
+        return saveBrokerConnectionWithUid(uid, clientId, jwtToken);
+      } catch {
+        showAlert('error', 'Error', 'User not found. Please try again.');
+        return;
+      }
+    }
+    return saveBrokerConnectionWithUid(userId, clientId, jwtToken);
+  };
+
+  const saveBrokerConnectionWithUid = async (uid, clientId, jwtToken) => {
     setLoading(true);
-    const data = JSON.stringify({
-      uid: userId,
-      user_broker: 'Dhan',
-      clientCode: cliendId, // separate clientCode input
-      jwtToken: accessToken, // separate jwtToken input
-    });
-    console.log('data', data);
-    const config = {
-      method: 'put',
-      url: `${server.server.baseUrl}api/user/connect-broker`,
-
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-        'aq-encrypted-key': generateToken(
-          Config.REACT_APP_AQ_KEYS,
-          Config.REACT_APP_AQ_SECRET,
-        ),
-      },
-
-      data: data,
-    };
-    axios
-      .request(config)
-      .then(response => {
-        console.log('[Dhan] Broker connected successfully, updating model portfolio...');
-
-        // Update model portfolio with broker information (non-critical)
-        let newBrokerData = {
-          user_email: userEmail,
+    try {
+      await axios.request({
+        method: 'put',
+        url: `${server.server.baseUrl}api/user/connect-broker`,
+        headers: getHeaders(),
+        data: JSON.stringify({
+          uid,
           user_broker: 'Dhan',
-        };
-        let A1_broker = {
+          clientCode: clientId,
+          jwtToken,
+        }),
+      });
+
+      console.log('[Dhan] Broker connected, updating model portfolio...');
+
+      // Update model portfolio with new broker (non-critical)
+      try {
+        await axios.request({
           method: 'post',
           url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
-          data: JSON.stringify(newBrokerData),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        };
-
-        // Execute the model portfolio broker update - catch separately so connection success isn't affected
-        return axios.request(A1_broker).catch(err => {
-          console.warn('[Dhan] Model portfolio update failed (non-critical):', err);
-          return null;
+          headers: getHeaders(),
+          data: JSON.stringify({user_email: userEmail, user_broker: 'Dhan'}),
         });
-      })
-      .then(response => {
-        if (response) {
-          console.log('[Dhan] Model portfolio updated successfully');
-        }
-        setLoading(false);
-        console.log('connected');
-        showAlert('success', 'Connected Successfully', 'Your Dhan broker has been connected successfully!');
-        fetchBrokerStatusModal();
-        eventEmitter.emit('refreshEvent', { source: 'Dhan broker connection' });
-        // setShowDhanModal(false);
-        setShowBrokerModal(false);
-        onClose();
-        getUserDeatils();
-        setIsLoading(false);
-      })
-      .catch(error => {
-        console.log(error.response, error.response?.message, error.message);
-        setLoading(false);
-        getUserDeatils();
-        showAlert('error', 'Incorrect Credentials', 'Please check your Client ID and Access Token and try again.');
-      });
+      } catch (err) {
+        console.warn('[Dhan] Model portfolio update failed (non-critical):', err);
+      }
+
+      setLoading(false);
+      showAlert(
+        'success',
+        'Connected Successfully',
+        'Your Dhan broker has been connected successfully!',
+      );
+      fetchBrokerStatusModal();
+      eventEmitter.emit('refreshEvent', {source: 'Dhan broker connection'});
+      setShowBrokerModal(false);
+      onClose();
+      getUserDeatils();
+    } catch (error) {
+      console.error('[Dhan] Connection error:', error);
+      setLoading(false);
+      showAlert(
+        'error',
+        'Connection Failed',
+        'Failed to connect Dhan. Please check your credentials and try again.',
+      );
+    }
   };
+
+  // ── Credential form submit (manual fallback path) ─────────────────
+  const handleSubmit = () => {
+    if (!cliendId || !accessToken) {
+      showAlert('error', 'Missing Fields', 'Please enter your Client ID and Access Token.');
+      return;
+    }
+    saveBrokerConnection(cliendId, accessToken);
+  };
+
+  // ── Render ────────────────────────────────────────────────────────
+  if (oauthMode) {
+    return (
+      <DhanOAuthUI
+        isVisible={isVisible}
+        onClose={onClose}
+        authUrl={DHAN_OAUTH_URL}
+        handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
+        loading={loading}
+        onSwitchToManual={() => setOauthMode(false)}
+      />
+    );
+  }
 
   return (
     <DhanConnectUI
@@ -167,7 +221,7 @@ const DhanConnectModal = ({
       handleSubmit={handleSubmit}
       loading={loading}
       shouldRenderContent={shouldRenderContent}
-      OpenHelpModal={OpenHelpModal}
+      OpenHelpModal={() => setHelpVisible(true)}
       setHelpVisible={setHelpVisible}
       helpVisible={helpVisible}
     />
@@ -178,98 +232,6 @@ const styles = StyleSheet.create({
   modal: {
     justifyContent: 'flex-end',
     margin: 0,
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    zIndex: 1,
-  },
-  horizontal: {
-    width: 110,
-    height: 6,
-    borderRadius: 250,
-    alignSelf: 'center',
-    backgroundColor: 'lightgray',
-  },
-  scrollViewContent: {
-    padding: 0,
-  },
-  playerWrapper: {
-    overflow: 'hidden',
-    marginTop: 20,
-    alignSelf: 'center',
-    borderRadius: 20,
-  },
-  content: {
-    marginTop: screenHeight * 0.01,
-  },
-  content1: {
-    paddingHorizontal: 10,
-  },
-  label: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: 'black',
-    marginBottom: 5,
-  },
-  inputContainer: {
-    borderColor: '#d5d4d4',
-    alignSelf: 'center',
-    borderWidth: 1,
-    borderRadius: 10,
-    color: 'black',
-    paddingHorizontal: 10,
-    width: '106%',
-    height: commonHeight,
-  },
-  instruction: {
-    fontSize: 15,
-    color: 'black',
-    marginVertical: 3,
-    fontFamily: 'Poppins-Regular',
-  },
-  link: {
-    color: 'blue',
-    textDecorationLine: 'underline',
-  },
-  stepGuide: {
-    fontSize: 18,
-    color: 'black',
-    marginRight: 10,
-    marginLeft: 10,
-    fontFamily: 'Poppins-SemiBold',
-  },
-  proceedButton: {
-    backgroundColor: 'black',
-    padding: 10,
-    borderRadius: 8,
-    height: screenHeight * 0.06,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  proceedButtonText: {
-    fontSize: screenWidth * 0.045,
-    fontWeight: '600',
-    color: 'white',
-  },
-  webView: {
-    flex: 1,
-  },
-  closeWebViewButton: {
-    backgroundColor: 'black',
-    padding: 10,
-    alignItems: 'center',
-  },
-  closeWebViewButtonText: {
-    color: 'white',
-    fontSize: 16,
   },
 });
 
