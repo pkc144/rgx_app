@@ -84,6 +84,11 @@ const FyersConnect = ({
 
   const userId = userDetails && userDetails._id;
 
+  // Egress-IP gate (see EgressIpCallout). Fyers requires a dedicated
+  // static IP whitelisted in the user's Fyers API dashboard.
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
+
   // Step 1: Extract auth_code from OAuth callback URL
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
@@ -107,6 +112,7 @@ const FyersConnect = ({
   const connectFyers = () => {
     if (fyersAuthCode !== null && apiKey && secretKey) {
       let data = JSON.stringify({
+        user_email: userEmail,
         clientId: secretKey,
         clientSecret: apiKey,
         authCode: fyersAuthCode,
@@ -231,6 +237,10 @@ const FyersConnect = ({
   };
 
   const updateSecretKey = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
     setLoading(true);
     let data = JSON.stringify({
       uid: userId,
@@ -310,6 +320,13 @@ const FyersConnect = ({
       helpVisible={helpVisible}
       setHelpVisible={setHelpVisible}
       styles={styles}
+      egressUserId={userId}
+      egressUserEmail={userEmail}
+      egressReady={egressReady}
+      setEgressReady={setEgressReady}
+      unmetAck={unmetAck}
+      setUnmetAck={setUnmetAck}
+      configData={configData}
     />
   );
 };

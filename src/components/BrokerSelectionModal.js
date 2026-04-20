@@ -111,6 +111,12 @@ const BrokerSelectionModal = ({
       url: 'https://www.groww.com/',
       logo: require('../assets/GrowwIcon.png'),
     },
+    {
+      name: 'Axis',
+      key: 'Axis Securities',
+      url: 'https://simplehai.axisdirect.in/',
+      logo: require('../assets/axis.png'),
+    },
   ];
 
   const [pressedBroker, setPressedBroker] = useState(null);

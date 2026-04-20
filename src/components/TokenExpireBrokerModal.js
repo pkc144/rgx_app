@@ -6,8 +6,18 @@ import { Info, Eye, EyeOff, X } from "lucide-react-native";
 import server from '../utils/serverConfig';
 import { generateToken } from '../utils/SecurityTokenManager';
 import Config from 'react-native-config';
+import useModalStore from '../GlobalUIModals/modalStore';
+import { getAdvisorSubdomain } from '../utils/variantHelper';
 
-const OAUTH_BROKERS = ['Zerodha', 'Angel One', 'Dhan', 'Fyers', 'Upstox', 'AliceBlue', 'Groww', 'Hdfc Securities', 'Motilal Oswal'];
+// OAuth/re-consent brokers — the reconnect modal shows a single
+// "Reconnect {broker}" button for each. Axis Securities was missing
+// (2026-04-18): Axis sessions expiring would render the modal with no
+// button and no form, leaving the user stuck. Added Axis so the same
+// partner-OAuth path applies (matches web TokenExpireBrokarModal.js:1027).
+// Groww removed 2026-04-20 — migrated from partner OAuth to credential
+// form (API Key + API Secret + per-customer IP whitelist). Groww session
+// expiry now goes through the credential-form reconnect path.
+const OAUTH_BROKERS = ['Zerodha', 'Angel One', 'Dhan', 'Fyers', 'Upstox', 'AliceBlue', 'Hdfc Securities', 'Motilal Oswal', 'Axis Securities'];
 
 const TokenExpireBrokerModal = ({
   openTokenExpireModel,
@@ -45,7 +55,7 @@ const TokenExpireBrokerModal = ({
     axios.post(`${server.server.baseUrl}api/iifl/generate-session`, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -93,7 +103,7 @@ const TokenExpireBrokerModal = ({
     axios.post(`${server.server.baseUrl}api/kotak/update-key`, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -136,7 +146,7 @@ const TokenExpireBrokerModal = ({
     axios.put(`${server.server.baseUrl}api/kotak/connect-broker`, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -186,6 +196,18 @@ const TokenExpireBrokerModal = ({
 
   const isOAuthBroker = OAUTH_BROKERS.includes(broker);
 
+  // Groww session expired → open the new credential form via the
+  // global ModalManager (ported from web e73bd81, which dispatches
+  // the "aq:open-broker-connect" DOM event — RN equivalent is the
+  // zustand modalStore openModal('Groww') → ModalManager renders
+  // GrowwConnectModal). Prevents users getting stuck on a modal
+  // that would otherwise render neither the OAuth button nor a
+  // credential form after Groww left OAUTH_BROKERS.
+  const handleGrowwReconnect = () => {
+    setOpenTokenExpireModel(false);
+    useModalStore.getState().openModal('Groww');
+  };
+
   if (!openTokenExpireModel) return null;
 
   return (
@@ -221,6 +243,15 @@ const TokenExpireBrokerModal = ({
                 disabled={loginLoading}
               >
                 <Text style={styles.submitButtonText}>Reconnect {broker}</Text>
+              </TouchableOpacity>
+            )}
+            {broker === 'Groww' && (
+              <TouchableOpacity
+                style={styles.submitButton}
+                onPress={handleGrowwReconnect}
+                disabled={loginLoading}
+              >
+                <Text style={styles.submitButtonText}>Reconnect Groww</Text>
               </TouchableOpacity>
             )}
             {broker === 'IIFL Securities' && (

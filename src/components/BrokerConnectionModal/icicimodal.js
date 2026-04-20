@@ -68,22 +68,8 @@ const ICICIUPModal = ({
     }
   }, [userEmail]);
 
-  const [apiSession, setApiSession] = useState(null);
-  const [sessionToken, setSessionToken] = useState(null);
   const isToastShown = useRef(false);
-
-  const parseQueryString = queryString => {
-    const params = {};
-    const query = queryString?.startsWith('?') ? queryString.substring(1) : queryString;
-    const pairs = query?.split('&') || [];
-    pairs.forEach(pair => {
-      const [key, value] = pair.split('=');
-      if (key && value) {
-        params[decodeURIComponent(key)] = decodeURIComponent(value);
-      }
-    });
-    return params;
-  };
+  const hasProcessedCallback = useRef(false);
 
   // Handle modal visibility
   useEffect(() => {
@@ -93,121 +79,107 @@ const ICICIUPModal = ({
       sheet.current?.dismiss();
       setShowWebView(false);
       setAuthUrl('');
-      setApiSession(null);
+      isToastShown.current = false;
+      hasProcessedCallback.current = false;
     }
   }, [isVisible]);
 
-  // Step 1: Extract apisession from callback URL
+  // Called after the CCXT server-side callback has finished the apisession →
+  // session_token exchange and saved to the user record. No client-side
+  // credential exchange happens here — this just closes the WebView, updates
+  // model portfolio, and refreshes state (matches web's post-redirect flow).
+  const finalizeConnection = () => {
+    if (isToastShown.current) return;
+    isToastShown.current = true;
+    setShowWebView(false);
+
+    // Non-critical: sync model portfolio with the newly connected broker.
+    try {
+      axios.request({
+        method: 'post',
+        url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+        data: JSON.stringify({ user_email: userEmail, user_broker: 'ICICI Direct' }),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+        },
+      });
+    } catch (err) {
+      console.warn('[ICICI] Model portfolio update failed (non-critical):', err);
+    }
+
+    fetchBrokerStatusModal?.();
+    eventEmitter.emit('refreshEvent', { source: 'ICICI Direct broker connection' });
+    showAlert('success', 'Connected Successfully', 'Your ICICI Direct broker has been connected successfully!');
+    onClose();
+    setShowBrokerModal?.(false);
+  };
+
+  // Option B (web-parity) WebView interception.
+  //
+  // Expected flow after user authenticates at api.icicidirect.com:
+  //   1. ICICI redirects to the URL registered in the user's ICICI dev
+  //      dashboard. For web-parity, that URL MUST be
+  //      `${ccxtServer}icici/auth-callback/${advisorSubdomain}` (see
+  //      ICICIHelpContent.js).
+  //   2. CCXT processes `apisession`, exchanges for `session_token`, saves
+  //      everything server-side, then redirects the browser to the advisor's
+  //      front-end URL (which on mobile matches REACT_APP_BROKER_CONNECT_REDIRECT_URL).
+  //   3. We detect that final redirect here → close WebView → refresh state.
+  //
+  // If the user is still on the legacy mobile-direct callback URL, the
+  // WebView will see `apisession=` on a URL that isn't the CCXT auth-callback.
+  // We surface a guided error telling them to update the dashboard URL,
+  // because the legacy client-side `customer-details` + `connect-broker`
+  // handshake has been removed.
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
     console.log('[ICICI] WebView URL:', url);
+    if (!url || hasProcessedCallback.current) return;
 
-    if (url.includes('apisession=')) {
-      const queryString = url.split('?')[1];
-      if (queryString) {
-        const queryParams = parseQueryString(queryString);
-        const apisession = queryParams.apisession;
-        if (apisession) {
-          console.log('[ICICI] API session received');
-          setApiSession(apisession);
-          setShowWebView(false);
-        }
-      }
+    const redirectBase =
+      configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+      Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+    const ccxtAuthCallbackPrefix = `${server.ccxtServer.baseUrl}icici/auth-callback/`;
+
+    // Final redirect: CCXT finished → front-end app URL. Success.
+    if (redirectBase && url.startsWith(redirectBase)) {
+      hasProcessedCallback.current = true;
+      finalizeConnection();
+      return;
+    }
+
+    // Legacy dashboard config detected (user registered the app URL, not the
+    // CCXT callback). We can't complete the flow without dashboard migration.
+    if (url.includes('apisession=') && !url.startsWith(ccxtAuthCallbackPrefix)) {
+      hasProcessedCallback.current = true;
+      setShowWebView(false);
+      showAlert(
+        'error',
+        'ICICI Callback Not Configured',
+        `Please log in to your ICICI developer dashboard, edit your app, and set the Redirect URL to:\n\n${ccxtAuthCallbackPrefix}${
+          configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain() || ''
+        }\n\nThen try connecting again.`,
+      );
     }
   };
-
-  // Step 2: Exchange apisession for session token via ICICI customer-details
-  useEffect(() => {
-    if (apiSession && apiKey) {
-      const data = {
-        apiKey: apiKey,
-        accessToken: apiSession,
-      };
-
-      axios
-        .post(`${server.ccxtServer.baseUrl}icici/customer-details`, data, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        })
-        .then(response => {
-          if (response.data.Status === 200) {
-            console.log('[ICICI] Session token received');
-            setSessionToken(response.data.Success.session_token);
-          }
-        })
-        .catch(error => {
-          console.error('[ICICI] customer-details error:', error);
-          showAlert('error', 'Connection Error', 'Failed to connect to ICICI Direct. Please try again.');
-        });
-    }
-  }, [apiSession, apiKey]);
-
-  // Step 3: Save broker connection to DB
-  useEffect(() => {
-    if (sessionToken && userDetails?._id && !isToastShown.current) {
-      const brokerData = {
-        uid: userDetails._id,
-        user_broker: 'ICICI Direct',
-        jwtToken: sessionToken,
-        apiKey: checkValidApiAnSecret(apiKey),
-        secretKey: checkValidApiAnSecret(secretKey),
-      };
-
-      axios
-        .put(`${server.server.baseUrl}api/user/connect-broker`, brokerData, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        })
-        .then(() => {
-          isToastShown.current = true;
-
-          // Update model portfolio (non-critical)
-          try {
-            axios.request({
-              method: 'post',
-              url: `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
-              data: JSON.stringify({ user_email: userEmail, user_broker: 'ICICI Direct' }),
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-                'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
-              },
-            });
-          } catch (err) {
-            console.warn('[ICICI] Model portfolio update failed (non-critical):', err);
-          }
-
-          fetchBrokerStatusModal();
-          eventEmitter.emit('refreshEvent', { source: 'ICICI Direct broker connection' });
-          showAlert('success', 'Connected Successfully', 'Your ICICI Direct broker has been connected successfully!');
-          onClose();
-          setShowBrokerModal(false);
-        })
-        .catch(error => {
-          console.error('[ICICI] connect-broker error:', error);
-          showAlert('error', 'Connection Error', 'Failed to connect broker. Please try again.');
-        });
-    }
-  }, [sessionToken, userDetails]);
 
   const checkValidApiAnSecret = details => {
     const bytesKey = CryptoJS.AES.encrypt(details, 'ApiKeySecret');
     return bytesKey.toString();
   };
 
+  // Egress-IP gate (see EgressIpCallout). ICICI requires a dedicated
+  // static IP whitelisted in Breeze API app → IP Whitelist.
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
+
   const initiateAuth = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
     if (!userDetails?._id || !apiKey || !secretKey) {
       showAlert('error', 'Missing Fields', 'Please fill in all required fields.');
       return;
@@ -284,6 +256,13 @@ const ICICIUPModal = ({
       initiateAuth={initiateAuth}
       handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
       shouldRenderContent={true}
+      egressUserId={userDetails?._id}
+      egressUserEmail={userEmail}
+      egressReady={egressReady}
+      setEgressReady={setEgressReady}
+      unmetAck={unmetAck}
+      setUnmetAck={setUnmetAck}
+      configData={configData}
     />
   );
 };

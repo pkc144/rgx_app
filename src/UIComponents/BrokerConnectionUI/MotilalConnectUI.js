@@ -26,6 +26,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import {WebView} from 'react-native-webview';
 import motilalIcon from '../../assets/Motilalicon.png';
 import MotilalHelpContent from './HelpUI/MotilalHelpContent';
+import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
@@ -51,6 +52,13 @@ const MotilalConnectUI = ({
   authUrl,
   handleWebViewNavigationStateChange,
   handleWebViewClose,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
@@ -152,6 +160,81 @@ const MotilalConnectUI = ({
                   </View>
                 </TouchableOpacity>
 
+                {/* Motilal is IPv4-only — all calls go through the
+                    server's shared static IPv4 (72.61.251.253) via the
+                    IPv4-pinned session on ccxt-india. Ports web 156589e:
+                    replace EgressIpCallout with a simple static callout
+                    showing the server IPv4, a Copy button, and an
+                    acknowledgment checkbox. `egressReady` gate is
+                    preserved so Connect stays locked until ticked;
+                    `unmetAck` still fires the red-flash signal. */}
+                <View style={styles.motilalIpCallout}>
+                  <Text style={styles.motilalIpTitle}>
+                    Server IPv4 to whitelist on Motilal
+                  </Text>
+                  <View style={styles.motilalIpRow}>
+                    <Text style={styles.motilalIpValue}>72.61.251.253</Text>
+                    {/* Matches the existing app-wide pattern (HelpModal.js,
+                        KotakConsumerKeySteps.js, DdpiModal.js) — Clipboard
+                        used as a runtime global without an explicit import.
+                        If the platform doesn't expose a Clipboard shim, the
+                        catch shows a toast asking the user to long-press. */}
+                    <TouchableOpacity
+                      onPress={() => {
+                        try {
+                          // eslint-disable-next-line no-undef
+                          Clipboard.setString('72.61.251.253');
+                          Toast.show({
+                            type: 'success',
+                            text1: 'Server IP copied',
+                            position: 'bottom',
+                            visibilityTime: 1500,
+                          });
+                        } catch {
+                          Toast.show({
+                            type: 'info',
+                            text1: 'Long-press the IP to copy manually',
+                            position: 'bottom',
+                            visibilityTime: 2500,
+                          });
+                        }
+                      }}
+                      style={styles.motilalIpCopy}>
+                      <Text style={styles.motilalIpCopyText}>Copy</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.motilalIpHint}>
+                    Paste the IP above into Motilal's "Allowed IPs" field on
+                    the API Key settings page. Motilal rejects every order
+                    from a non-whitelisted IP.
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setEgressReady && setEgressReady(!egressReady);
+                      if (unmetAck) setUnmetAck && setUnmetAck(false);
+                    }}
+                    style={[
+                      styles.motilalIpAckRow,
+                      unmetAck && !egressReady && styles.motilalIpAckRowFlash,
+                    ]}>
+                    <View
+                      style={[
+                        styles.motilalIpAckBox,
+                        egressReady && styles.motilalIpAckBoxChecked,
+                      ]}>
+                      {egressReady ? (
+                        <Text style={styles.motilalIpAckCheck}>✓</Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.motilalIpAckLabel}>
+                      I've whitelisted{' '}
+                      <Text style={{fontWeight: '700'}}>72.61.251.253</Text> on
+                      Motilal's API Key page.
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
                 {/* Input Card */}
                 <View style={styles.inputCard}>
                   <View style={styles.connectRow}>
@@ -205,13 +288,13 @@ const MotilalConnectUI = ({
                         styles.proceedButton,
                         {
                           backgroundColor:
-                            apiKey && clientCode
+                            apiKey && clientCode && egressReady
                               ? 'rgba(0, 86, 183, 1)'
                               : '#d3d3d3',
                         },
                       ]}
                       onPress={handleConnect}
-                      disabled={!(apiKey && clientCode)}>
+                      disabled={!(apiKey && clientCode && egressReady)}>
                       {loading ? (
                         <ActivityIndicator size={27} color="#fff" />
                       ) : (
@@ -351,6 +434,73 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   proceedButtonText: {color: '#fff', fontSize: 16, fontWeight: '600'},
+
+  // Motilal static server-IPv4 callout (replaces EgressIpCallout for
+  // this broker only — see web 156589e).
+  motilalIpCallout: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 10,
+    marginTop: 10,
+  },
+  motilalIpTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 6,
+  },
+  motilalIpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  motilalIpValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    letterSpacing: 0.5,
+  },
+  motilalIpCopy: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#fde68a',
+  },
+  motilalIpCopyText: {fontSize: 12, fontWeight: '600', color: '#78350f'},
+  motilalIpHint: {fontSize: 12, color: '#92400e', lineHeight: 17, marginBottom: 10},
+  motilalIpAckRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 6,
+    borderRadius: 6,
+  },
+  motilalIpAckRowFlash: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  motilalIpAckBox: {
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderColor: '#92400e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  motilalIpAckBoxChecked: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  motilalIpAckCheck: {color: '#fff', fontSize: 12, fontWeight: '700'},
+  motilalIpAckLabel: {flex: 1, fontSize: 12, color: '#0f172a', lineHeight: 17},
 });
 
 export default MotilalConnectUI;

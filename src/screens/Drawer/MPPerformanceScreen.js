@@ -504,7 +504,6 @@ const MPPerformanceScreen = ({route}) => {
         userDetails?.jwtToken,
         userDetails?.secretKey,
         userDetails?.sid,
-        userDetails?.viewToken,
         userDetails?.serverId,
         userEmail,
       );

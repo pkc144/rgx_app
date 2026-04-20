@@ -32,6 +32,7 @@ import CustomTabBar from './CustomTabbar';
 import RenderHTML from 'react-native-render-html';
 import LinearGradient from 'react-native-linear-gradient';
 import {useConfig} from '../../context/ConfigContext';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 const {width, width: ScreenWidth} = Dimensions.get('window');
 
@@ -72,22 +73,22 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
 
   const [index, setIndex] = useState(0);
 
-  // Dynamic routes based on data availability
+  // Dynamic routes based on feature flags. Each tab's scene renders its own
+  // empty state when the underlying list is empty, so tab visibility is
+  // driven purely by the advisor's enabled features (matches web behavior).
   const routes = React.useMemo(() => {
     const availableRoutes = [];
 
-    // Add Bespoke tab only if config is enabled AND data exists
-    if (configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true && allBespoke?.length > 0) {
+    if (config?.bespokePlansEnabled !== false) {
       availableRoutes.push({key: 'bespoke', title: 'Bespoke Plan'});
     }
 
-    // Add Model Portfolio tab only if config is enabled AND data exists
-    if (configData?.config?.REACT_APP_MODEL_PORTFOLIO_STATUS === true && allStrategy?.length > 0) {
+    if (config?.modelPortfolioEnabled !== false) {
       availableRoutes.push({key: 'modelportfolio', title: 'Model Portfolio'});
     }
 
     return availableRoutes;
-  }, [configData, allBespoke, allStrategy]);
+  }, [config]);
  // console.log("routesss-----",routes);
 
   const [selectedPlanType, setSelectedPlanType] = useState(null);
@@ -116,7 +117,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -140,7 +141,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -165,7 +166,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -179,7 +180,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         singleStrategyDetails: portfolioData,
       }));
       if (portfolioData?.model?.rebalanceHistory?.length) {
-        const latest = portfolioData.model.rebalanceHistory.sort(
+        const latest = [...portfolioData.model.rebalanceHistory].sort(
           (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
         )[0];
         setLatestRebalance(latest);
@@ -198,7 +199,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -216,13 +217,14 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   );
 
   // Effects for fetching data and detail updates
+  // Must wait for both userEmail AND advisorTag (from configData) to be available
   useEffect(() => {
-    if (userEmail) {
+    if (userEmail && advisorTag) {
       getUserDeatils();
       getAllBespoke();
       getAllStrategy();
     }
-  }, [userEmail]);
+  }, [userEmail, advisorTag]);
 
   // Notify parent about data availability
   useEffect(() => {
@@ -304,14 +306,14 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     });
   };
 
-  const [subscriptionData, setSubscriptionData] = useState([]);
+  const [subscriptionData, setSubscriptionData] = useState(null);
   const getAllSubscriptionData = () => {
     let config = {
       method: 'get',
       url: `${server.server.baseUrl}api/all-clients/user/${userEmail}`,
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -329,8 +331,10 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       });
   };
   useEffect(() => {
-    getAllSubscriptionData();
-  }, []);
+    if (userEmail) {
+      getAllSubscriptionData();
+    }
+  }, [userEmail]);
 
   // List renders
   const renderItembespoke = ({item}) => (
@@ -375,9 +379,16 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     />
   );
 
+  // Sort model portfolios: subscribed first, then unsubscribed
+  const sortedStrategy = [...(allStrategy || [])].sort((a, b) => {
+    const aSubscribed = a?.subscription != null ? 1 : 0;
+    const bSubscribed = b?.subscription != null ? 1 : 0;
+    return bSubscribed - aSubscribed;
+  });
+
   const renderMPList = () => (
     <FlatList
-      data={allStrategy}
+      data={sortedStrategy}
       renderItem={renderItem}
       keyExtractor={(item, index) =>
         item._id || item.id || item.model_name?.toString() || index.toString()

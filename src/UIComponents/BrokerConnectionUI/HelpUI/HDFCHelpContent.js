@@ -43,14 +43,17 @@ const HDFCHelpContent = ({expanded, onExpandChange }) => {
                           </Text>
                           <Text style={styles.instruction}>
                             4. Click *Create* to make a new app. Enter app
-            name, redirect URL: {' '}
+            name, paste your dedicated static IP (claimed in the
+            IP-whitelist panel above) into the "Allowed IPs" field on the
+            InvestRight app form — HDFC rejects orders from non-whitelisted
+            IPs. Set the redirect URL to: {' '}
             <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
                               {brokerConnectRedirectURL}</Text>
             {' '}and description, then click *Create *.
                           </Text>
                           <Text style={styles.instruction}>
                             5. Copy the *API* and *Secret Key* and paste
-            them into the EquityPro platform to connect
+            them into the {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'} platform to connect
             your broker.
                           </Text>
         </>

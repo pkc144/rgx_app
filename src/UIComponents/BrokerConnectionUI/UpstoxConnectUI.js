@@ -22,6 +22,7 @@ import {
 } from 'lucide-react-native';
 import WebView from 'react-native-webview';
 import UpstoxHelpContent from './HelpUI/UpstoxHelpContent';
+import EgressIpCallout from '../../components/BrokerConnectionModal/EgressIpCallout';
 import LinearGradient from 'react-native-linear-gradient';
 import upstoxIcon from '../../assets/upstox.png';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -47,6 +48,13 @@ const UpstoxConnectUI = ({
   authUrl,
   handleWebViewNavigationStateChange,
   scrollViewRef,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const insets = useSafeAreaInsets();
@@ -141,6 +149,19 @@ const UpstoxConnectUI = ({
                   </View>
                 </TouchableOpacity>
 
+                {/* Egress-IP gate (see EgressIpCallout). Upstox requires a
+                    dedicated static IP whitelisted in the user's developer
+                    portal (UDAPI1154 "static IP mismatch" otherwise). */}
+                <EgressIpCallout
+                  broker="upstox"
+                  customerId={egressUserId}
+                  customerEmail={egressUserEmail}
+                  configData={configData}
+                  onAcknowledgeChange={setEgressReady}
+                  showUnmetAck={unmetAck}
+                  onUnmetAckHandled={() => setUnmetAck && setUnmetAck(false)}
+                />
+
                 {/* Input card */}
                 <View style={styles.inputCard}>
                   <View style={styles.connectRow}>
@@ -187,11 +208,13 @@ const UpstoxConnectUI = ({
                       styles.proceedButton,
                       {
                         backgroundColor:
-                          apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                          apiKey && secretKey && egressReady
+                            ? '#0056B7'
+                            : '#d3d3d3',
                       },
                     ]}
                     onPress={updateSecretKey}
-                    disabled={!(apiKey && secretKey)}>
+                    disabled={!(apiKey && secretKey && egressReady)}>
                     {isLoading ? (
                       <ActivityIndicator size={27} color="#fff" />
                     ) : (

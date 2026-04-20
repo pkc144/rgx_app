@@ -68,8 +68,7 @@ describe('Integration: Broker Trade Flow', () => {
 
     test('step 4: check funds', () => {
       const funds = {status: 0, data: {availablecash: 50000}};
-      const result = isFundsErrorOrMissing(funds, 'connected');
-      expect(result.isError).toBe(false);
+      expect(isFundsErrorOrMissing(funds, 'connected')).toBe(false);
     });
 
     test('step 5: build rebalance payload', () => {

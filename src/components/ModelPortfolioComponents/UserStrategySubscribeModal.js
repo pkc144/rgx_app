@@ -178,6 +178,9 @@ const UserStrategySubscribeModal = ({
         apiKey,
         jwtToken,
         secretKey,
+        undefined,
+        undefined,
+        userEmail,
       );
       if (fetchedFunds) {
         console.log('funds get fetch', fetchedFunds);

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
+import EgressIpCallout from '../../components/BrokerConnectionModal/EgressIpCallout';
 import kotakIcon from '../../assets/kotak_securities.png';
 import KotakHelpContent from './HelpUI/KotakHelpContent';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -59,6 +60,13 @@ const KotakConnectUI = ({
   updateKotakSecretKey,
   submitOtp,
   isLoading,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
@@ -142,6 +150,20 @@ const KotakConnectUI = ({
                   </View>
                 </TouchableOpacity>
 
+                {/* Egress-IP gate — shows "claim your dedicated static IP"
+                    CTA, then the assigned IP + acknowledgment checkbox once
+                    claimed. Parent's Connect button is gated on egressReady.
+                    Returns null for partner brokers (not applicable to Kotak). */}
+                <EgressIpCallout
+                  broker="kotak"
+                  customerId={egressUserId}
+                  customerEmail={egressUserEmail}
+                  configData={configData}
+                  onAcknowledgeChange={setEgressReady}
+                  showUnmetAck={unmetAck}
+                  onUnmetAckHandled={() => setUnmetAck && setUnmetAck(false)}
+                />
+
                 {/* OTP Flow */}
                 {openOtpBox ? (
                   <View style={styles.inputCard}>
@@ -158,9 +180,9 @@ const KotakConnectUI = ({
                       onPress={submitOtp}
                       style={[
                         styles.proceedButton,
-                        (!mpin || !totp) && {backgroundColor: '#d3d3d3'},
+                        (!mpin || !totp || !egressReady) && {backgroundColor: '#d3d3d3'},
                       ]}
-                      disabled={!mpin || !totp}>
+                      disabled={!mpin || !totp || !egressReady}>
                       {isLoading ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
@@ -223,16 +245,19 @@ const KotakConnectUI = ({
                       </View>
                     ))}
 
-                    {/* Connect Button */}
+                    {/* Connect Button. Also gated on egressReady — the
+                        user cannot proceed until they've claimed a
+                        dedicated IP AND ticked the "I've whitelisted this
+                        IP" acknowledgment in EgressIpCallout above. */}
                     <TouchableOpacity
                       onPress={updateKotakSecretKey}
                       style={[
                         styles.proceedButton,
-                        (!mpin || !consumerKey || !consumerSecret) && {
+                        (!mpin || !consumerKey || !consumerSecret || !egressReady) && {
                           backgroundColor: '#d3d3d3',
                         },
                       ]}
-                      disabled={!mpin || !consumerKey || !consumerSecret}>
+                      disabled={!mpin || !consumerKey || !consumerSecret || !egressReady}>
                       {isLoading ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (

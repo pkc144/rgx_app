@@ -103,7 +103,18 @@ const UpstoxModal = ({
     setHelpVisible(true);
   };
 
+  // Egress-IP gate state (see EgressIpCallout.js). Upstox is on
+  // WHITELIST_BROKERS; users MUST claim a dedicated IP and whitelist
+  // it in their Upstox developer portal before connecting, otherwise
+  // Upstox rejects with UDAPI1154 "static IP mismatch".
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
+
   const updateSecretKey = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
     // Validate redirect URL before proceeding
     if (!brokerConnectRedirectURL) {
       showAlert('error', 'Configuration Error', 'Broker redirect URL is not configured. Please contact support.');
@@ -116,6 +127,7 @@ const UpstoxModal = ({
       apiKey: checkValidApiAnSecret(apiKey),
       secretKey: checkValidApiAnSecret(secretKey),
       redirect_uri: brokerConnectRedirectURL,
+      user_broker: 'Upstox',
     });
     let config = {
       method: 'post',
@@ -195,6 +207,7 @@ const UpstoxModal = ({
   const connectUpstox = () => {
     if (upstoxCode !== null && apiKey && secretKey) {
       let data = JSON.stringify({
+        user_email: userEmail,
         apiKey: apiKey,
         apiSecret: secretKey,
         code: upstoxCode,
@@ -350,6 +363,13 @@ const UpstoxModal = ({
       setHelpVisible={setHelpVisible}
       scrollViewRef={null}
       screenHeight={screenHeight}
+      egressUserId={userId}
+      egressUserEmail={userEmail}
+      egressReady={egressReady}
+      setEgressReady={setEgressReady}
+      unmetAck={unmetAck}
+      setUnmetAck={setUnmetAck}
+      configData={configData}
     />
   );
 };

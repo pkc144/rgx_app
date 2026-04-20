@@ -59,7 +59,7 @@ const MotilalHelpContent = ({expanded, onExpandChange }) => {
                          {/* STEP 6 */}
                          <Text style={styles.instruction}>
                            6. On the Trading API page, click on <Text style={{ fontWeight: 'bold' }}>"Create an API Key"</Text>. 
-                           Enter a name for your app (e.g., EquityPro) and enter the Redirect URL below:
+                           Enter a name for your app (e.g., {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}) and enter the Redirect URL below:
                          </Text>
                
                          <View style={styles.linkContainer}>

@@ -2,20 +2,23 @@
  * ProcessTrades.js
  *
  * Centralized trade processing utility.
- * Ported from prod-alphaquark-github web app for consistency.
+ * Aligned with prod-alphaquark-github web app
+ * (`src/Home/ProcessTrades/ProcessTrades.js`) for flow parity.
  *
  * Provides a unified pipeline for:
- * - Building broker-specific order payloads
+ * - Building broker-specific order payloads (incl. web-parity GTT leg shape)
  * - Separating GTT vs regular orders
  * - Routing to correct API endpoints
- * - Handling EDIS/TPIN/DDPI modal triggers on sell failures
+ * - Triggering TPIN/DDPI/EDIS modal callbacks on rejected SELL orders
+ *   (no keyword filter — matches web which explicitly avoids that)
  * - Post-order refresh logic
  */
 
 import CryptoJS from 'react-native-crypto-js';
+import RNConfig from 'react-native-config';
 import {server, ccxtServer} from './serverConfig';
 import {generateToken} from './SecurityTokenManager';
-import Config from './Config';
+import {getAdvisorSubdomain} from './variantHelper';
 
 /**
  * Broker URL slug mapping for GTT/process-trades endpoints.
@@ -37,35 +40,17 @@ const BROKER_URL_MAP = {
 };
 
 /**
- * EDIS/TPIN error keywords indicating sell authorization needed.
+ * Rejection / cancellation / failure statuses from broker order responses.
+ * Case-insensitive set matching web (ProcessTrades.js:363-373) — previously
+ * mobile only caught `REJECTED` / `FAILURE` (uppercase exact), so responses
+ * with `Rejected` / `cancelled` / `Failure` mixed case silently fell through.
  */
-const EDIS_ERROR_KEYWORDS = [
-  'cdsl',
-  'edis',
-  'tpin',
-  'ddpi',
-  'demat',
-  'authorization required',
-  'not authorized for sell',
-  'poa',
-  'mandate',
-];
+const REJECTED_ORDER_STATUSES = new Set([
+  'REJECTED', 'Rejected', 'rejected',
+  'CANCELLED', 'Cancelled', 'cancelled',
+  'FAILURE', 'Failure', 'failure',
+]);
 
-/**
- * Create a reusable order placement function with broker-specific configuration.
- *
- * @param {object} config
- * @param {string} config.broker - Broker name
- * @param {object} config.credentials - User's broker credentials
- * @param {string} config.userEmail - User email
- * @param {string} config.tradeGivenBy - Advisor email
- * @param {object} config.configData - App config data
- * @param {function} [config.onTpinRequired] - Callback when TPIN/EDIS modal needed (broker, failedOrders)
- * @param {function} [config.onSessionExpired] - Callback when token expired
- * @param {function} [config.onComplete] - Callback on success (results)
- * @param {function} [config.onError] - Callback on error (message)
- * @returns {function} Async function that places orders: (stockDetails) => Promise<response>
- */
 export function createPlaceOrderFunction({
   broker,
   credentials,
@@ -79,7 +64,6 @@ export function createPlaceOrderFunction({
 }) {
   return async function placeOrders(stockDetails) {
     try {
-      // Separate GTT and regular orders — only Upstox and Zerodha support GTT via dedicated endpoint
       const gttBrokers = ['upstox', 'zerodha'];
       const gttOrders = stockDetails.filter(
         s => s.gttCheck === true && gttBrokers.includes(broker.toLowerCase()),
@@ -90,7 +74,6 @@ export function createPlaceOrderFunction({
 
       let allResults = [];
 
-      // Place GTT orders via broker-specific endpoint
       if (gttOrders.length > 0) {
         const gttPayload = buildOrderPayload(
           broker,
@@ -106,14 +89,16 @@ export function createPlaceOrderFunction({
         const gttResponse = await executeOrder(
           `${ccxtServer}${brokerUrl}/process-trades`,
           gttPayload,
+          configData,
         );
 
-        if (gttResponse?.response) {
+        if (Array.isArray(gttResponse)) {
+          allResults = [...allResults, ...gttResponse];
+        } else if (gttResponse?.response) {
           allResults = [...allResults, ...gttResponse.response];
         }
       }
 
-      // Place regular orders via unified endpoint
       if (regularOrders.length > 0) {
         const regularPayload = buildOrderPayload(
           broker,
@@ -128,13 +113,13 @@ export function createPlaceOrderFunction({
         const regularResponse = await executeOrder(
           `${server}api/process-trades/order-place`,
           regularPayload,
+          configData,
         );
 
         if (regularResponse?.response) {
           allResults = [...allResults, ...regularResponse.response];
         }
 
-        // Check for EDIS/TPIN failures on SELL orders
         if (regularResponse?.response && onTpinRequired) {
           const edisFailures = detectEdisFailures(
             regularResponse.response,
@@ -145,7 +130,6 @@ export function createPlaceOrderFunction({
           }
         }
 
-        // Check for session expiry
         if (regularResponse?.sessionExpired && onSessionExpired) {
           onSessionExpired();
           return {success: false, results: allResults, sessionExpired: true};
@@ -158,6 +142,10 @@ export function createPlaceOrderFunction({
 
       return {success: true, results: allResults};
     } catch (err) {
+      if (err?.sessionExpired && onSessionExpired) {
+        onSessionExpired();
+        return {success: false, results: [], sessionExpired: true};
+      }
       const message = err.message || 'Order placement failed';
       if (onError) {
         onError(message);
@@ -167,9 +155,6 @@ export function createPlaceOrderFunction({
   };
 }
 
-/**
- * Build broker-specific order payload.
- */
 function buildOrderPayload(
   broker,
   credentials,
@@ -179,6 +164,55 @@ function buildOrderPayload(
   configData,
   isGtt,
 ) {
+  // GTT orders use web's per-trade leg structure (web ProcessTrades.js:93-144):
+  //  - legs live INSIDE each trade object, not at the payload top level
+  //  - field names: Symbol → tradingSymbol, Exchange → exchange, Type → transactionType
+  //  - numeric fields (triggerPrice, ltp) are parseFloat-cast
+  //  - quantity comes from stock.quantity, not from the leg
+  if (isGtt) {
+    const buildLeg = leg =>
+      leg
+        ? {
+            tradingSymbol: leg.Symbol,
+            exchange: leg.Exchange,
+            transactionType: leg.Type,
+            quantity: undefined,
+            orderType: leg.OrderType,
+            productType: leg.ProductType,
+            price: parseFloat(leg.triggerPrice),
+            triggerPrice: parseFloat(leg.triggerPrice),
+            ltp: parseFloat(leg.ltp),
+          }
+        : undefined;
+
+    const gttTrades = trades.map(stock => {
+      const base = {
+        trade_given_by: stock.trade_given_by || tradeGivenBy,
+        user_broker: broker,
+        user_email: userEmail,
+        zerodhaTradeId: stock.zerodhaTradeId,
+      };
+      if (stock.entryLeg) {
+        base.entryLeg = {...buildLeg(stock.entryLeg), quantity: stock.quantity};
+      }
+      if (stock.leg1) {
+        base.leg1 = {...buildLeg(stock.leg1), quantity: stock.quantity};
+      }
+      if (stock.leg2) {
+        base.leg2 = {...buildLeg(stock.leg2), quantity: stock.quantity};
+      }
+      return base;
+    });
+
+    return {
+      trades: gttTrades,
+      user_email: userEmail,
+      user_broker: broker,
+      gtt: true,
+      ...getBrokerCredentials(broker, credentials, configData),
+    };
+  }
+
   const formattedTrades = trades.map(stock => ({
     user_email: userEmail,
     trade_given_by: tradeGivenBy,
@@ -197,27 +231,14 @@ function buildOrderPayload(
     user_broker: broker,
   }));
 
-  const payload = {
+  return {
     trades: formattedTrades,
     user_email: userEmail,
     user_broker: broker,
     ...getBrokerCredentials(broker, credentials, configData),
   };
-
-  if (isGtt) {
-    payload.gtt = true;
-    // Add GTT leg details if present
-    if (trades[0]?.entryLeg) payload.entryLeg = trades[0].entryLeg;
-    if (trades[0]?.leg1) payload.leg1 = trades[0].leg1;
-    if (trades[0]?.leg2) payload.leg2 = trades[0].leg2;
-  }
-
-  return payload;
 }
 
-/**
- * Get broker-specific credentials for order payload.
- */
 function getBrokerCredentials(broker, credentials, configData) {
   const decrypt = val => {
     if (!val) return val;
@@ -237,7 +258,7 @@ function getBrokerCredentials(broker, credentials, configData) {
 
   switch (broker) {
     case 'Zerodha':
-      return {jwtToken: credentials.jwtToken};
+      return {accessToken: credentials.jwtToken};
 
     case 'Angel One':
       return {
@@ -261,11 +282,12 @@ function getBrokerCredentials(broker, credentials, configData) {
 
     case 'Kotak':
       return {
-        apiKey: credentials.apiKey,
-        secretKey: credentials.secretKey,
-        jwtToken: credentials.jwtToken,
+        consumerKey: decrypt(credentials.apiKey),
+        consumerSecret: decrypt(credentials.secretKey),
+        accessToken: credentials.jwtToken,
         sid: credentials.sid,
-        serverId: credentials.serverId,
+        serverId: credentials.serverId || '',
+        viewToken: credentials.viewToken,
       };
 
     case 'IIFL Securities':
@@ -285,15 +307,15 @@ function getBrokerCredentials(broker, credentials, configData) {
 
     case 'Motilal Oswal':
       return {
-        apiKey: credentials.apiKey,
+        apiKey: decrypt(credentials.apiKey),
         clientCode: credentials.clientCode,
-        jwtToken: credentials.jwtToken,
+        accessToken: credentials.jwtToken,
       };
 
     case 'AliceBlue':
       return {
         clientCode: credentials.clientCode,
-        apiKey: credentials.apiKey,
+        apiKey: decrypt(credentials.apiKey),
         accessToken: credentials.jwtToken,
       };
 
@@ -317,19 +339,37 @@ function getBrokerCredentials(broker, credentials, configData) {
   }
 }
 
-/**
- * Execute an order API call.
- */
-async function executeOrder(url, payload) {
-  const token = generateToken(Config.AQ_KEY, Config.AQ_SECRET);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
+async function executeOrder(url, payload, configData) {
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain':
+          configData?.config?.REACT_APP_HEADER_NAME ||
+          configData?.subdomain ||
+          getAdvisorSubdomain(),
+        'aq-encrypted-key': generateToken(
+          RNConfig.REACT_APP_AQ_KEYS,
+          RNConfig.REACT_APP_AQ_SECRET,
+        ),
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    const networkErr = new Error(err?.message || 'Network error');
+    networkErr.sessionExpired = true;
+    networkErr.cause = err;
+    throw networkErr;
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    const authErr = new Error(`Order API unauthorized: ${response.status}`);
+    authErr.sessionExpired = true;
+    authErr.status = response.status;
+    throw authErr;
+  }
 
   if (!response.ok) {
     throw new Error(`Order API error: ${response.status}`);
@@ -339,29 +379,28 @@ async function executeOrder(url, payload) {
 }
 
 /**
- * Detect EDIS/TPIN failures from order results.
+ * Return every rejected SELL from a response, without inspecting the error
+ * message. Matches web (ProcessTrades.js:382-383 comment:
+ * "Don't rely on CDSL keyword detection — error message formats can change").
+ *
+ * The previous mobile implementation required a substring match against a
+ * fixed EDIS/CDSL keyword list, which silently failed when brokers tweaked
+ * their rejection text. Dropping the keyword filter means the TPIN modal now
+ * triggers on every rejected SELL, including genuine fund / market-hours
+ * failures — accepted trade-off for reliability, matching web.
  */
 function detectEdisFailures(orderResults, originalTrades) {
   return orderResults.filter(result => {
-    if (result.orderStatus === 'REJECTED' || result.orderStatus === 'FAILURE') {
-      const message = (result.message || '').toLowerCase();
-      const isEdisError = EDIS_ERROR_KEYWORDS.some(kw => message.includes(kw));
-      if (isEdisError) {
-        const original = originalTrades.find(
-          t =>
-            t.tradingSymbol === result.tradingSymbol ||
-            t.tradingSymbol === result.symbol,
-        );
-        return original?.transactionType === 'SELL';
-      }
-    }
-    return false;
+    if (!REJECTED_ORDER_STATUSES.has(result.orderStatus)) return false;
+    const original = originalTrades.find(
+      t =>
+        t.tradingSymbol === result.tradingSymbol ||
+        t.tradingSymbol === result.symbol,
+    );
+    return original?.transactionType === 'SELL';
   });
 }
 
-/**
- * Get the broker URL slug for API endpoints.
- */
 export function getBrokerUrlSlug(broker) {
   return BROKER_URL_MAP[broker] || broker.toLowerCase();
 }

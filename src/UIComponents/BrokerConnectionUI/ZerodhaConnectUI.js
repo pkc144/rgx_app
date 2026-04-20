@@ -98,6 +98,7 @@ const ZerodhaConnectUI = ({
     try {
       console.log('[ZerodhaConnectUI] Generating access token...');
       const payload = {
+        user_email: userEmail,
         apiKey: apiKey,
         requestToken: requestToken,
       };

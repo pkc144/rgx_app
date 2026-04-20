@@ -119,6 +119,7 @@ const HDFCconnectModal = ({
         apiKey: apiKey,
         apiSecret: secretKey,
         requestToken: hdfcRequestToken,
+        user_email: userEmail,
       });
       console.log('[HDFC] Exchanging request token for access token...');
       let config = {
@@ -237,6 +238,7 @@ const HDFCconnectModal = ({
       uid: userId,
       apiKey: checkValidApiAnSecret(apiKey),
       secretKey: checkValidApiAnSecret(secretKey),
+      user_broker: 'Hdfc Securities',
     });
     let config = {
       method: 'post',

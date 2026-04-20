@@ -23,6 +23,7 @@ import moment from 'moment';
 import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
+import {isOrderRejected, isOrderSuccess, isOrderPending} from '../../utils/orderStatusUtils';
 
 import PriceText from '../../components/AdviceScreenComponents/DynamicText/PriceText';
 import PortfolioPercentage from '../../components/AdviceScreenComponents/DynamicText/PortfolioPercentage';
@@ -36,9 +37,9 @@ import CustomTabBarMPPerformance from '../Drawer/CustomTabbarMPPerformance';
 import EmptyStateInfoMP from '../Drawer/EmptyStateMP';
 import PerformanceChart from '../../components/ModelPortfolioComponents/PerformanceChart';
 import DistributionGrid from '../Drawer/DistributionRowGrid';
-import SubscribedPFList from '../../components/ModelPortfolioComponents/SubscribedPFList';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 const screenWidth = Dimensions.get('window').width;
 const ScreenHeight = Dimensions.get('window').height;
@@ -82,8 +83,8 @@ const AfterSubscriptionScreen = ({route}) => {
   const [modifyInvestmentModal, setModifyInvestmentModal] = useState(false);
   const [tabHeights, setTabHeights] = useState([0, 0, 0]);
   const [routes] = useState([
-    {key: 'portfolio', title: 'Portfolio'},
-    {key: 'overview', title: 'OverView'},
+    {key: 'holdings', title: 'Portfolio Holdings'},
+    {key: 'portfolio', title: 'Portfolio Distribution'},
   ]);
   const handleTabLayout = index => event => {
     const {height} = event.nativeEvent.layout;
@@ -100,7 +101,7 @@ const AfterSubscriptionScreen = ({route}) => {
       .get(`${server.server.baseUrl}api/user/getUser/${userEmail}`, {
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -128,7 +129,7 @@ const AfterSubscriptionScreen = ({route}) => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -140,7 +141,7 @@ const AfterSubscriptionScreen = ({route}) => {
           const portfolioData = res.data[0].originalData;
           setStrategyDetails(portfolioData);
           if (portfolioData?.model?.rebalanceHistory?.length > 0) {
-            const latest = portfolioData.model.rebalanceHistory.sort(
+            const latest = [...portfolioData.model.rebalanceHistory].sort(
               (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
             )[0];
             setLatestRebalance(latest);
@@ -160,28 +161,56 @@ const AfterSubscriptionScreen = ({route}) => {
 
     try {
       setPortfolioLoading(true);
-      const response = await axios.get(
-        `${
-          server.server.baseUrl
-        }api/model-portfolio-db-update/subscription-raw-amount?email=${encodeURIComponent(
-          userEmail,
-        )}&modelName=${encodeURIComponent(
-          strategyDetails?.model_name,
-        )}&user_broker=${encodeURIComponent(
-          userDetails?.user_broker || "",
-        )}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        },
-      );
-      setSubscrptionAmount(response.data.data);
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
+      };
+
+      // Fetch from both endpoints in parallel (matching web app)
+      // 1. CCXT server — has the correct, up-to-date user_net_pf_model
+      // 2. Backend — has subscription metadata (amounts, raw data)
+      const [portfolioResponse, subscriptionResponse] = await Promise.allSettled([
+        axios.get(
+          `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${encodeURIComponent(
+            userEmail,
+          )}/${encodeURIComponent(strategyDetails?.model_name)}`,
+          {headers},
+        ),
+        axios.get(
+          `${server.server.baseUrl}api/model-portfolio-db-update/subscription-raw-amount?email=${encodeURIComponent(
+            userEmail,
+          )}&modelName=${encodeURIComponent(
+            strategyDetails?.model_name,
+          )}&user_broker=${encodeURIComponent(
+            userDetails?.user_broker || "",
+          )}`,
+          {headers},
+        ),
+      ]);
+
+      const portfolioData = portfolioResponse.status === 'fulfilled'
+        ? portfolioResponse.value?.data?.data
+        : null;
+      const subscriptionData = subscriptionResponse.status === 'fulfilled'
+        ? subscriptionResponse.value?.data?.data
+        : null;
+
+      // Normalize user_net_pf_model to always be an array (matching web)
+      if (portfolioData?.user_net_pf_model && !Array.isArray(portfolioData.user_net_pf_model)) {
+        portfolioData.user_net_pf_model = [portfolioData.user_net_pf_model];
+      }
+
+      // Merge: CCXT's user_net_pf_model takes priority (matching web)
+      const mergedData = {
+        ...subscriptionData,
+        user_net_pf_model: portfolioData?.user_net_pf_model || subscriptionData?.user_net_pf_model || [],
+      };
+
+      setSubscrptionAmount(mergedData);
       setPortfolioLoading(false);
     } catch (error) {
       setPortfolioLoading(false);
@@ -194,20 +223,48 @@ const AfterSubscriptionScreen = ({route}) => {
     }
   }, [strategyDetails]);
 
-  const sortedRebalances =
-    subscriptionAmount?.subscription_amount_raw?.sort(
-      (a, b) => new Date(b.dateTime) - new Date(a.dateTime),
-    ) || [];
+  const sortedRebalances = [...(subscriptionAmount?.subscription_amount_raw || [])].sort(
+    (a, b) => new Date(b.dateTime) - new Date(a.dateTime),
+  );
 
-  const net_portfolio_updated = subscriptionAmount?.user_net_pf_model?.sort(
-    (a, b) => new Date(b.execDate) - new Date(a.execDate),
-  )?.[0];
+  // Use user_net_pf_model as source of truth; fallback to user_net_pf_updated (matching web)
+  const net_portfolio_updated = (() => {
+    const modelArr = subscriptionAmount?.user_net_pf_model;
+    if (Array.isArray(modelArr) && modelArr.length > 0) {
+      const latest = [...modelArr].sort(
+        (a, b) => new Date(b.execDate) - new Date(a.execDate),
+      )[0];
+      if (latest?.order_results) return latest;
+    }
+    // Fallback to user_net_pf_updated with updated_qty mapping (matching web)
+    const updatedArr = subscriptionAmount?.user_net_pf_updated;
+    if (Array.isArray(updatedArr) && updatedArr.length > 0) {
+      const latest = [...updatedArr].sort(
+        (a, b) => new Date(b.execDate) - new Date(a.execDate),
+      )[0];
+      if (latest?.order_results) {
+        return {
+          ...latest,
+          order_results: latest.order_results.map(item => ({
+            ...item,
+            quantity: item.updated_qty || 0,
+          })),
+        };
+      }
+    }
+    return null;
+  })();
 
-  // Filter out rejected/failed/cancelled orders from calculations
-  const rejectedStatuses = ["rejected", "failure", "cancelled", "failed", "unplaced"];
+  // Filter out rejected/failed/cancelled orders from calculations.
+  // Orders with success/pending status (OPEN, TRANSIT, TRADED, etc.) are kept even if
+  // rebalance_status is stale, since the order was actually placed at the broker.
   const validOrderResults = net_portfolio_updated?.order_results?.filter((order) => {
-    const status = (order.orderStatus || "").toLowerCase();
-    return !rejectedStatuses.includes(status) && Number(order.quantity || 0) > 0;
+    if (isOrderSuccess(order.orderStatus) || isOrderPending(order.orderStatus)) {
+      return Number(order.quantity || 0) > 0;
+    }
+    return !isOrderRejected(order.orderStatus) &&
+      order.orderStatus?.toLowerCase() !== 'unplaced' &&
+      Number(order.quantity || 0) > 0;
   });
 
   const {getLTPForSymbol} = useWebSocketCurrentPrice(
@@ -220,30 +277,142 @@ const AfterSubscriptionScreen = ({route}) => {
       0,
     ) || 0;
 
+  // Total Invested uses all order_results (matching web — no rejected filter)
   const totalInvested =
-    validOrderResults?.reduce((total, stock) => {
-      return total + stock.averagePrice * stock.quantity;
-    }, 0) || 0;
+    net_portfolio_updated?.order_results?.reduce(
+      (total, stock) => total + parseFloat(stock.averagePrice) * stock.quantity,
+      0,
+    ) || 0;
 
+  // Saved LTP snapshot from DB (persisted when user last viewed this portfolio)
+  const savedLtpSnapshot = subscriptionAmount?.ltp_snapshot?.prices || {};
+
+  // Fetch LTP from ccxt cache when no saved snapshot and no WebSocket data
+  const [fetchedLtps, setFetchedLtps] = useState({});
+  useEffect(() => {
+    if (!validOrderResults?.length || Object.keys(savedLtpSnapshot).length > 0) return;
+    // Check if WebSocket has any data
+    const hasLiveData = validOrderResults.some(s => getLTPForSymbol(s.symbol) > 0);
+    if (hasLiveData) return;
+
+    const fetchLtpsFromCache = async () => {
+      const ltpMap = {};
+      for (const stock of validOrderResults) {
+        try {
+          const exchange = stock.exchange || 'NSE';
+          const response = await axios.get(
+            `${server.ccxtServer.baseUrl}websocket/cache/ltp/${exchange}/${stock.symbol}`,
+            {
+              headers: {
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+              },
+            },
+          );
+          if (response.data?.ltp) {
+            ltpMap[stock.symbol] = parseFloat(response.data.ltp);
+          }
+        } catch (e) {
+          // Symbol not in cache — skip
+        }
+      }
+      if (Object.keys(ltpMap).length > 0) {
+        setFetchedLtps(ltpMap);
+        // Also save to DB for next time
+        axios.put(
+          `${server.server.baseUrl}api/model-portfolio/ltp-snapshot`,
+          {email: userEmail, modelName: fileName, ltpMap},
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+              'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+            },
+          },
+        ).catch(() => {});
+      }
+    };
+    fetchLtpsFromCache();
+  }, [validOrderResults, savedLtpSnapshot]);
+
+  // Total Current uses LTP — matching web behavior (skip if no LTP, with mobile fallbacks)
   const totalCurrent =
-    validOrderResults?.reduce((total, stock) => {
-      return total + getLTPForSymbol(stock.symbol) * stock.quantity;
+    net_portfolio_updated?.order_results?.reduce((total, stock) => {
+      const liveLtp = getLTPForSymbol(stock.symbol);
+      const savedLtp = parseFloat(savedLtpSnapshot[stock.symbol]);
+      const cachedLtp = parseFloat(fetchedLtps[stock.symbol]);
+      // Fallback chain: live WebSocket → saved DB snapshot → ccxt cache
+      const ltp = (liveLtp > 0) ? liveLtp
+        : (!isNaN(savedLtp) && savedLtp > 0) ? savedLtp
+        : (!isNaN(cachedLtp) && cachedLtp > 0) ? cachedLtp
+        : null;
+      // Skip stock if no LTP available (matching web)
+      if (ltp === null || isNaN(ltp)) return total;
+      return total + ltp * stock.quantity;
     }, 0) || 0;
 
+  // Save LTP snapshot to DB when prices arrive (for portfolio-summary endpoint)
+  useEffect(() => {
+    if (!validOrderResults?.length || !fileName || !userEmail) return;
+
+    const ltpMap = {};
+    let hasAnyLTP = false;
+    validOrderResults.forEach(stock => {
+      const ltp = parseFloat(getLTPForSymbol(stock.symbol));
+      if (!isNaN(ltp) && ltp > 0) {
+        ltpMap[stock.symbol] = ltp;
+        hasAnyLTP = true;
+      }
+    });
+
+    if (!hasAnyLTP) return;
+
+    // Debounce: save after 5 seconds of stable prices
+    const timer = setTimeout(() => {
+      axios.put(
+        `${server.server.baseUrl}api/model-portfolio/ltp-snapshot`,
+        { email: userEmail, modelName: fileName, ltpMap },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+          },
+        }
+      ).catch(err => console.log('LTP snapshot save failed:', err.message));
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [validOrderResults, fileName, userEmail, getLTPForSymbol]);
+
+  // Matches web (prod-alphaquark-github StrategyDetailsWithPortfolioData.js:614-632):
+  // when no LTP is available, show "N/A" for currentPrice / returns instead of
+  // silently falling back to averagePrice — keeps the row consistent with the
+  // top-card totalCurrent, which also skips no-LTP stocks. Mobile-only snapshot
+  // and ccxt-cache fallbacks are kept (they're legitimate offline sources),
+  // but avg is no longer used as a last-resort for "current".
   const tableData =
-    validOrderResults?.map(stock => ({
-      symbol: stock.symbol,
-      currentPrice: getLTPForSymbol(stock?.symbol)
-        ? getLTPForSymbol(stock?.symbol)
-        : 0,
-      avgBuyPrice: stock?.averagePrice,
-      returns:
-        ((getLTPForSymbol(stock?.symbol) - stock?.averagePrice) /
-          stock?.averagePrice) *
-        100,
-      weights: (stock?.quantity / totalUpdatedQty) * 100,
-      shares: stock?.quantity,
-    })) || [];
+    validOrderResults?.map(stock => {
+      const liveLtp = getLTPForSymbol(stock?.symbol);
+      const savedLtp = parseFloat(savedLtpSnapshot[stock?.symbol]);
+      const cachedLtp = parseFloat(fetchedLtps[stock?.symbol]);
+      const avg = parseFloat(stock?.averagePrice);
+      const resolvedLtp = (liveLtp > 0) ? liveLtp
+        : (!isNaN(savedLtp) && savedLtp > 0) ? savedLtp
+        : (!isNaN(cachedLtp) && cachedLtp > 0) ? cachedLtp
+        : null;
+      const hasValidPrice =
+        resolvedLtp !== null && !isNaN(resolvedLtp) && resolvedLtp !== 0 &&
+        !isNaN(avg) && avg !== 0;
+      return {
+        symbol: stock.symbol,
+        currentPrice: hasValidPrice ? resolvedLtp : 'N/A',
+        avgBuyPrice: stock?.averagePrice,
+        returns: hasValidPrice ? ((resolvedLtp - avg) / avg) * 100 : 'N/A',
+        weights: (stock?.quantity / totalUpdatedQty) * 100,
+        shares: stock?.quantity,
+      };
+    }) || [];
 
   const [singleStrategyDetails, setSingleStrategyDetails] = useState();
   const getSingleStrategyDetails = () => {
@@ -259,7 +428,7 @@ const AfterSubscriptionScreen = ({route}) => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -276,7 +445,7 @@ const AfterSubscriptionScreen = ({route}) => {
             portfolioData.model &&
             portfolioData.model.rebalanceHistory.length > 0
           ) {
-            const latest = portfolioData.model.rebalanceHistory.sort(
+            const latest = [...portfolioData.model.rebalanceHistory].sort(
               (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
             )[0];
             setLatestRebalance(latest);
@@ -319,28 +488,42 @@ const AfterSubscriptionScreen = ({route}) => {
                 <View style={styles.circle2} />
                 <View style={styles.circle3} />
               </View>
-              <View style={styles.balanceRow}>
-                <View style={{flex: 1}}>
-                  <Text style={styles.caption}>Current Investment</Text>
-                  <PortfolioPercentage
-                    type={'totalcurrent'}
-                    totalInvested={totalInvested}
-                    net_portfolio_updated={net_portfolio_updated}
-                  />
+              {/* 3-card layout: Invested | Current | Returns — all from same data source */}
+              <View style={{flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 10}}>
+                <View style={{flex: 1, alignItems: 'flex-start'}}>
+                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>TOTAL INVESTED</Text>
+                  <Text style={{color: '#FFFFFF', fontSize: 18, fontFamily: 'Poppins-SemiBold', marginTop: 2}}>
+                    ₹{totalInvested?.toLocaleString('en-IN', {maximumFractionDigits: 0}) || '0'}
+                  </Text>
                 </View>
-                <View style={styles.plSection}>
-                  <Text style={styles.totalReturnsLabel}>Total Returns</Text>
-                  <PortfolioPercentage
-                    type={'totalnet'}
-                    totalInvested={totalInvested}
-                    net_portfolio_updated={net_portfolio_updated}
-                  />
+                <View style={{width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 8}} />
+                <View style={{flex: 1, alignItems: 'center'}}>
+                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>TOTAL CURRENT</Text>
+                  <Text style={{color: '#FFFFFF', fontSize: 18, fontFamily: 'Poppins-SemiBold', marginTop: 2}}>
+                    ₹{totalCurrent?.toLocaleString('en-IN', {maximumFractionDigits: 0}) || '0'}
+                  </Text>
+                </View>
+                <View style={{width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 8}} />
+                <View style={{flex: 1, alignItems: 'flex-end'}}>
+                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>CURRENT RETURNS</Text>
+                  <Text style={{
+                    color: (totalCurrent - totalInvested) >= 0 ? '#4ADE80' : '#F87171',
+                    fontSize: 14,
+                    fontFamily: 'Poppins-SemiBold',
+                    marginTop: 2,
+                  }}>
+                    {(totalCurrent - totalInvested) >= 0 ? '+' : '-'}₹{Math.abs(totalCurrent - totalInvested).toLocaleString('en-IN', {maximumFractionDigits: 0})}
+                  </Text>
+                  <Text style={{
+                    color: (totalCurrent - totalInvested) >= 0 ? '#4ADE80' : '#F87171',
+                    fontSize: 11,
+                    fontFamily: 'Poppins-Medium',
+                  }}>
+                    {totalInvested > 0 ? `${((totalCurrent - totalInvested) / totalInvested * 100).toFixed(2)}%` : '0.00%'}
+                  </Text>
                 </View>
               </View>
               <View style={styles.metaRow}>
-                <Text style={styles.metaText}>
-                  Invested ₹{totalInvested?.toFixed(2)}
-                </Text>
                 <Text style={styles.metaText}>
                   Exp. Date{' '}
                   {moment(strategyDetails?.nextRebalanceDate).format(
@@ -353,16 +536,20 @@ const AfterSubscriptionScreen = ({route}) => {
             <View style={styles.pillsRow}>
               <InfoPill
                 title="Next Rebalance"
-                value={moment(strategyDetails?.nextRebalanceDate).format(
-                  'DD MMM, YYYY',
-                )}
+                value={
+                  strategyDetails?.nextRebalanceDate && moment(strategyDetails.nextRebalanceDate).isBefore(moment())
+                    ? 'Rebalance due'
+                    : moment(strategyDetails?.nextRebalanceDate).format('DD MMM, YYYY')
+                }
                 accent
               />
               <InfoPill
                 title="Last Rebalance"
-                value={moment(strategyDetails?.last_updated).format(
-                  'DD MMM, YYYY',
-                )}
+                value={
+                  strategyDetails?.last_updated
+                    ? moment(strategyDetails.last_updated).format('DD MMM, YYYY')
+                    : 'N/A'
+                }
               />
               <InfoPill title="Rebalance" value={strategyDetails?.frequency} />
             </View>
@@ -374,6 +561,59 @@ const AfterSubscriptionScreen = ({route}) => {
               <TabView
                 navigationState={{index, routes}}
                 renderScene={SceneMap({
+                  holdings: () => (
+                    <SafeAreaView style={{flex: 1, backgroundColor: '#fff'}}>
+                      {tableData.length > 0 ? (
+                        <View style={{paddingHorizontal: 16, paddingTop: 8, flex: 1}}>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                            <View>
+                              <View style={{flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB'}}>
+                                <Text style={{width: 110, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280'}}>Stock</Text>
+                                <Text style={{width: 95, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Current Price</Text>
+                                <Text style={{width: 90, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Avg. Buy</Text>
+                                <Text style={{width: 80, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Returns</Text>
+                                <Text style={{width: 70, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Weight</Text>
+                                <Text style={{width: 70, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Shares</Text>
+                              </View>
+                              <FlatList
+                                data={tableData}
+                                keyExtractor={(item, idx) => item.symbol + idx}
+                                scrollEnabled={true}
+                                nestedScrollEnabled={true}
+                                renderItem={({item}) => {
+                                  const hasPrice = item.currentPrice !== 'N/A';
+                                  const hasReturns = item.returns !== 'N/A';
+                                  const hasWeight = Number.isFinite(item.weights);
+                                  return (
+                                  <View style={{flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', alignItems: 'center'}}>
+                                    <Text style={{width: 110, fontSize: 12, fontFamily: 'Poppins-Medium', color: '#1F2937'}}>{item.symbol}</Text>
+                                    <Text style={{width: 95, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>
+                                      {hasPrice ? `₹${parseFloat(item.currentPrice).toFixed(2)}` : 'N/A'}
+                                    </Text>
+                                    <Text style={{width: 90, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>₹{parseFloat(item.avgBuyPrice).toFixed(2)}</Text>
+                                    <Text style={{width: 80, fontSize: 12, fontFamily: 'Poppins-SemiBold', color: hasReturns ? (item.returns >= 0 ? '#16A34A' : '#DC2626') : '#9CA3AF', textAlign: 'right'}}>
+                                      {hasReturns ? `${item.returns >= 0 ? '+' : ''}${item.returns.toFixed(2)}%` : 'N/A'}
+                                    </Text>
+                                    <Text style={{width: 70, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>
+                                      {hasWeight ? `${item.weights.toFixed(2)}%` : '-'}
+                                    </Text>
+                                    <Text style={{width: 70, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>{item.shares}</Text>
+                                  </View>
+                                  );
+                                }}
+                              />
+                            </View>
+                          </ScrollView>
+                          <Text style={{fontSize: 9, fontFamily: 'Poppins-Regular', color: '#9CA3AF', marginTop: 6, textAlign: 'center'}}>
+                            Prices may be delayed. Scroll to see all stocks.
+                          </Text>
+                        </View>
+                      ) : (
+                        <EmptyStateInfoMP />
+                      )}
+                    </SafeAreaView>
+                  ),
+
                   portfolio: () => (
                     <View
                       style={{flex: 1, width: '100%', paddingHorizontal: 16}}>
@@ -383,82 +623,19 @@ const AfterSubscriptionScreen = ({route}) => {
                           holdings={validOrderResults}
                           getLTPForSymbol={getLTPForSymbol}
                           totalCurrent={totalCurrent}
+                          type="MPPerformanceScreen"
                         />
                       ) : (
                         <EmptyStateInfoMP />
                       )}
-                      <SubscribedPFList
-                        modelPortfolioStrategy={strategyDetails ? [strategyDetails] : []}
-                        userEmail={userEmail}
-                        broker={userDetails?.user_broker}
-                        userDetails={userDetails}
-                        navigation={navigation}
-                      />
                     </View>
-                  ),
-
-                  overview: () => (
-                    <SafeAreaView style={{flex: 1, backgroundColor: '#fff'}}>
-                      <ScrollView
-                        nestedScrollEnabled
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={{
-                          alignItems: 'center',
-                          paddingHorizontal: 16,
-                          paddingTop: 0,
-                          paddingBottom: 0, // give breathing space
-                        }}>
-                        <View style={{flex: 1}}>
-                          <PerformanceChart modelName={fileName} />
-                        </View>
-
-                        <View style={{paddingTop: 0, width: '100%'}}>
-                          <Text style={styles.methodTextHead}>
-                            Defining the universe
-                          </Text>
-                          <Text style={styles.methodText}>
-                            {singleStrategyDetails?.definingUniverse}
-                          </Text>
-
-                          <Text style={styles.methodTextHead}>Research</Text>
-                          <Text style={styles.methodText}>
-                            {singleStrategyDetails?.researchOverView}
-                          </Text>
-
-                          <Text style={styles.methodTextHead}>
-                            Constituent Screening
-                          </Text>
-                          <Text style={styles.methodText}>
-                            {singleStrategyDetails?.constituentScreening}
-                          </Text>
-
-                          <Text style={styles.methodTextHead}>Weighting</Text>
-                          <Text style={styles.methodText}>
-                            {singleStrategyDetails?.weighting}
-                          </Text>
-
-                          <Text style={styles.methodTextHead}>Rebalance</Text>
-                          <Text style={styles.methodText}>
-                            {singleStrategyDetails?.rebalanceMethodologyText}
-                          </Text>
-
-                          <Text style={styles.methodTextHead}>
-                            Asset Allocation
-                          </Text>
-                          <Text style={styles.methodText}>
-                            {singleStrategyDetails?.assetAllocationText}
-                          </Text>
-                        </View>
-                      </ScrollView>
-                    </SafeAreaView>
                   ),
                 })}
                 onIndexChange={setIndex}
                 initialLayout={{width: screenWidth}}
-                onLayout={handleTabLayout(2)}
                 renderTabBar={props => (
                   <CustomTabBarMPPerformance
-                    isSubscriptionActive={false} // pass to show lock icon
+                    isSubscriptionActive={false}
                     {...props}
                   />
                 )}

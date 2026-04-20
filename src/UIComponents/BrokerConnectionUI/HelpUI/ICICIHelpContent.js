@@ -2,10 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
+import server from '../../../utils/serverConfig';
+import { getAdvisorSubdomain } from '../../../utils/variantHelper';
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const ICICIHelpContent = ({expanded, onExpandChange }) => {
-  const brokerConnectRedirectURL=Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+  // Web-parity callback URL — server finishes the apisession handshake.
+  const advisorSubdomain =
+    Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain() || '';
+  const iciciCallbackUrl = `${server.ccxtServer.baseUrl}icici/auth-callback/${advisorSubdomain}`;
   useEffect(() => {
     onExpandChange?.(expanded);
   }, [expanded]);
@@ -31,12 +36,12 @@ const ICICIHelpContent = ({expanded, onExpandChange }) => {
                            and log in using your username and password. Verify your identity with the OTP and submit.
                          </Text>
                          <Text style={styles.instruction}>
-                           2. Click on the "Register an App" tab, then fill in the "App Name" field with "EquityPro" or a name of
-                           your choice. Enter the "Redirect URL" as{" "}
-                           <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
-                             {brokerConnectRedirectURL}
+                           2. Click on the "Register an App" tab, then fill in the "App Name" field with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of
+                           your choice. Paste your dedicated static IP (claimed in the IP-whitelist panel above) into the Breeze "IP Whitelist" field — ICICI rejects every order from a non-whitelisted IP. Enter the "Redirect URL" as{" "}
+                           <Text style={styles.link}>
+                             {iciciCallbackUrl}
                            </Text>{" "}
-                           and click "Submit". Please ensure that "redirect URL" is entered correctly as mentioned above.
+                           and click "Submit". Please ensure that "Redirect URL" is entered exactly as shown above — if you previously registered a different URL, update it.
                          </Text>
                    
             

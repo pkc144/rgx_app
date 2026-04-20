@@ -74,6 +74,10 @@ const StockCard = React.memo(
     index, // Pass index here
     isExpanded, // Expansion logic
     onToggleExpand, // Toggle function
+    tradePlaceStatus,
+    rejectionMessage,
+    planName,
+    positionStatus,
     animatedHeight,
     cancel,
     edit,
@@ -81,6 +85,15 @@ const StockCard = React.memo(
   }) => {
     const [showAttachmentModal, setShowAttachmentModal] = useState(false);
     const price = useLTPStore(state => state.ltps[symbol]);
+
+    // P&L and Change% calculation (matching web app logic)
+    const entryPrice = parseFloat(advisedPrice) || 0;
+    const ltp = parseFloat(price) || 0;
+    const pnl = ltp && entryPrice ? ltp - entryPrice : null;
+    const changePercent = ltp && entryPrice ? ((ltp - entryPrice) / entryPrice) * 100 : null;
+    const formattedPlanName = planName
+      ? planName.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+      : null;
     // console.log('price we are getting ---',price,symbol);
     // Calculate advisedRangeCondition at this level using the price from context
     const advisedRangeCondition = React.useMemo(() => {
@@ -331,12 +344,62 @@ const StockCard = React.memo(
       </View>
     )}
 
+    {/* P&L and Change% Row */}
+    {pnl !== null && (
+      <View style={[styles.row1, {paddingVertical: 2}]}>
+        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <Text style={styles.slPtLabel}>P&L </Text>
+          <Text style={[styles.slPtValue, {color: pnl >= 0 ? '#16A34A' : '#DC2626'}]}>
+            {pnl >= 0 ? '₹' : '-₹'}{Math.abs(pnl).toFixed(2)}
+          </Text>
+        </View>
+        {changePercent !== null && (
+          <View style={{flexDirection: 'row', alignItems: 'center', marginLeft: 16}}>
+            <Text style={styles.slPtLabel}>Change </Text>
+            <Text style={[styles.slPtValue, {color: changePercent >= 0 ? '#16A34A' : '#DC2626'}]}>
+              {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
+            </Text>
+          </View>
+        )}
+      </View>
+    )}
+
+    {/* Plan Name and Position Status */}
+    {(formattedPlanName || positionStatus) ? (
+      <View style={{flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, paddingHorizontal: 3.5}}>
+        {formattedPlanName ? (
+          <Text style={{fontSize: 11, fontFamily: 'Poppins-Regular', color: '#6B7280'}}>
+            Plan: {formattedPlanName}
+          </Text>
+        ) : <View />}
+        {positionStatus ? (
+          <View style={{
+            backgroundColor: positionStatus === 'Open' ? '#DCFCE7' : '#F3F4F6',
+            paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4,
+          }}>
+            <Text style={{fontSize: 10, fontFamily: 'Poppins-Medium', color: positionStatus === 'Open' ? '#16A34A' : '#6B7280'}}>
+              {positionStatus}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    ) : null}
+
     {/* Date/Time Row */}
     <View style={{paddingVertical: 6, paddingHorizontal: 3.5}}>
       <Text style={styles.dateText}>
         {moment(date).format('Do MMM YYYY')} | {moment(date).format('h:mm A')}
       </Text>
     </View>
+
+    {/* Rejection reason for rejected orders */}
+    {type === 'OSrejected' && rejectionMessage ? (
+      <View style={{backgroundColor: '#FEF2F2', borderRadius: 6, padding: 8, marginHorizontal: 10, marginBottom: 6}}>
+        <Text style={{fontSize: 11, fontFamily: 'Poppins-Medium', color: '#991B1B'}}>
+          Rejected: {rejectionMessage}
+        </Text>
+      </View>
+    ) : null}
 
     {/* Action Buttons */}
     {cancel === true ? (
@@ -347,6 +410,26 @@ const StockCard = React.memo(
             {opacity: advisedRangeCondition ? 1 : 0.5},
           ]}>
           <Text style={styles.tradeButtonTextCancel}>Cancelled</Text>
+        </TouchableOpacity>
+      </View>
+    ) : type === 'OSrejected' ? (
+      <View style={[styles.actionButtons, {marginBottom: 10}]}>
+        <TouchableOpacity
+          onPress={() => handleIgnoreTradePress(tradeId)}
+          style={styles.addButton}>
+          <Text style={styles.addButtonText}>Ignore</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => {
+            if (!planList) {
+              navigation.navigate('Model Portfolio');
+            } else {
+              handleTradePress(symbol, tradeId, action);
+            }
+          }}
+          style={styles.tradeButton}>
+          <Text style={styles.tradeButtonText}>Trade Now</Text>
         </TouchableOpacity>
       </View>
     ) : (

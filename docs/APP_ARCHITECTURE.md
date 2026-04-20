@@ -1,8 +1,8 @@
 # Mobile App Architecture
 
-> **Last updated**: 2026-03-31
-> **Covers**: React Native mobile app (`Alphab2bapp`), Node.js backend (`aq_backend_github`), Python backend (`ccxt-india`)
-> **Consistency with**: `prod-alphaquark-github` (web app)
+> **Last updated**: 2026-04-20 (synced to AlphaB2B v3.8.1)
+> **Covers**: React Native mobile app (`rgx_app`), Node.js backend (`aq_backend_github`), Python backend (`ccxt-india`)
+> **Consistency with**: `prod-alphaquark-github` (web app), `Alphab2bapp` (sibling app)
 
 ---
 
@@ -17,20 +17,28 @@
 7. [State Management](#7-state-management)
 8. [File Reference](#8-file-reference)
 9. [Web Parity Status](#9-web-parity-status)
+10. [v5.3.0 Sync — Changes Since 2026-04-01](#10-v530-sync--changes-since-2026-04-01)
 
 ---
 
 ## 1. Overview
 
-The AlphaQuark B2B mobile app is a React Native application that enables advisory clients to:
+The **RGX Research (EquityPro)** mobile app is a React Native application that enables advisory clients to:
 - Connect to 14 stock brokers and manage sessions
 - Receive and execute trade recommendations from advisors
 - Subscribe to model portfolios and execute rebalance signals
 - Track portfolio P&L with real-time WebSocket prices
 
-**Supported brokers:** Zerodha, Angel One, Upstox, ICICI Direct, Kotak, Dhan, Fyers, IIFL Securities, AliceBlue, Motilal Oswal, Hdfc Securities, Groww, Axis Securities, DummyBroker (simulation)
+**Supported brokers:** Zerodha, Angel One, Upstox, ICICI Direct, Kotak, Dhan, Fyers, IIFL Securities, AliceBlue, Motilal Oswal, Hdfc Securities, Groww, Axis Securities, DummyBroker (simulation).
 
-**Shared backend:** The mobile app shares the same Node.js (`aq_backend_github`) and Python (`ccxt-india`) backends as the web app (`prod-alphaquark-github`).
+**Shared backend:** The app shares the same Node.js (`aq_backend_github`) and Python (`ccxt-india`) backends as the web app (`prod-alphaquark-github`) and the sibling mobile app (`Alphab2bapp`). Data isolation is enforced via the `X-Advisor-Subdomain: rgxresearch` header — all data writes land in the `rgxresearch` MongoDB namespace.
+
+**Multi-tenant defaults (this app):**
+- `APP_VARIANT=rgxresearch`
+- `X-Advisor-Subdomain: rgxresearch` (via `.env` + `getAdvisorSubdomain()` fallback)
+- Broker redirect URL: `https://equitypro.co.in/stock-recommendation`
+- Deep-link scheme: `rgxapp://`
+- Android package: `com.rgx.aq`
 
 ---
 
@@ -1080,3 +1088,102 @@ const state = generateState('zerodha', '/recommendation');
 import { isPublisherSupported, createBatches, convertToBasketItem } from './utils/brokerPublisher';
 if (isPublisherSupported(broker)) { ... }
 ```
+
+---
+
+## 10. v5.3.0 Sync — Changes Since 2026-04-01
+
+The 2026-04-20 sync pulled AlphaB2B v3.8.0 + v3.8.1 fixes and new features into this repo. Summary by area:
+
+### 10.1 New utilities
+
+| Module | Purpose |
+|--------|---------|
+| `src/utils/basketUtils.js` | F&O symbol parsing, lot-size helpers, `netBasketTrades()` with closure + rejected handling |
+| `src/utils/rebalanceDiffUtils.js` | `computeRebalanceDiff`, `computeRowsDiff` (added/removed/increased/decreased between rebalances) |
+| `src/utils/symbolNormalizer.js` | Normalize NSE/BSE symbols across broker quirks |
+| `src/utils/marketDataLTP.js` | Unified LTP resolution across WebSocket + cache + snapshot |
+| `src/utils/brokerPublisher.js` | Kite / Fyers publisher SDK batch construction |
+| `src/utils/formatCurrency.js` | INR formatter (web parity) |
+| `src/config/brokerRegistry.js` | Broker metadata (logos, display names, broker constants) |
+
+### 10.2 New contexts
+
+| Context | Purpose |
+|---------|---------|
+| `src/context/MultiBrokerContext.js` | Per-broker holdings / funds / status map |
+| `src/context/MarketDataContext.js` | Real-time market data subscriptions |
+
+### 10.3 New hooks
+
+| Hook | Purpose |
+|------|---------|
+| `src/hooks/useMultiBrokerHoldings.js` | Aggregated holdings across connected brokers |
+| `src/hooks/useSymbolSearch.js` | Broker-aware symbol search |
+
+### 10.4 New screens & flows
+
+| Area | Files |
+|------|-------|
+| `src/screens/Broker/` | `BrokerAuthScreen`, `BrokerCredentialScreen`, `BrokerSelectionScreen` — modal-free broker connect |
+| `src/screens/Invest/` | `InvestFlowScreen` — amount-first investment flow |
+| `src/screens/Rebalance/` | `CurrentHoldingsScreen`, `ExecutionStatusScreen`, `RebalanceReviewScreen` — full-screen rebalance path |
+| `src/screens/Home/TradePnLScreen.js` | Per-trade P&L detail |
+
+### 10.5 New services
+
+| Service | Purpose |
+|---------|---------|
+| `src/services/ModelPortfolioService.js` | MP list / details / perf API wrapper |
+| `src/services/OrderService.js` | Order-list / order-detail API wrapper (complements `BrokerOrderBookAPI`) |
+
+### 10.6 New components
+
+| Component | Purpose |
+|-----------|---------|
+| `BrokerConnectionModal/AxisConnectModal.js` | Axis Securities SSO modal (full 14-broker support) |
+| `BrokerConnectionModal/EgressIpCallout.js` | ICICI / Breeze egress-IP whitelist guidance |
+| `UIComponents/BrokerConnectionUI/DhanOAuthUI.js` | Dhan partner-OAuth UI shell |
+| `components/GttDetailsModal.js` + `GttSuccessModal.js` | GTT order details + success state |
+| `components/ManualSellModal.js` | Manual-sell entry for closure positions |
+| `components/ReviewBrokerRecordsModal.js` | Show broker-side records for reconciliation |
+| `components/FloatingAcceptRebalanceButton.js` | Bottom-floating CTA in rebalance scene |
+
+### 10.7 Cart / Trade-intent state separation (Option B)
+
+Pre-5.3.0, `stockDetails` was used as both cart state AND trade-intent state — causing "Trade Now" on a single card to leak the full cart into the review modal. v5.3.0 splits them cleanly:
+
+- **`cartContainer`** — the cart. Written by `updateCartStates()`. Read by bottom-bar counter, Select-All, etc.
+- **`stockDetails`** — the trade-intent payload. Written only at trade-intent boundaries (single "Trade Now" or bottom-bar "Trade (N)"). Read by `ReviewTradeModal`.
+
+`syncCartWithStockDetails` effect no longer writes `stockDetails`; it populates `cartContainer` + `stocksWithoutSource` on mount/tab-change. `stockDetails` stays empty until the user triggers a trade-intent action. Mirrors web `NewStockCard.js:561-587` + `StockRecommendation.js:544`.
+
+### 10.8 Session-expiry reconnect (UX)
+
+`src/screens/Home/ManageConnectionsModal.js` now surfaces an amber "Session Expired" badge next to any broker with `connected_brokers[].status === 'expired' | 'error'`. Reconnect button dispatches directly to the per-broker modal via `ModalManager` — no picker detour. `BROKER_MODAL_KEY_MAP` translates backend broker names to ModalManager switch keys (`ICICI Direct → ICICI`, `Hdfc Securities → HDFC`, etc.). All 13 OAuth brokers now route through `ModalManager`.
+
+`TokenExpireBrokerModal` now lists Axis Securities in its `OAUTH_BROKERS` set — prior versions left Axis users stuck with a blank modal.
+
+### 10.9 ProcessTrades web-parity fixes
+
+- **GTT payload** — per-trade leg structure (`Symbol` → `tradingSymbol`, etc.); legs live inside trade objects, not at payload top level
+- **Case-insensitive rejection detection** — `REJECTED_ORDER_STATUSES` set covers 9 variants (`REJECTED`/`Rejected`/`rejected`, `CANCELLED`/…, `FAILURE`/…)
+- **HTTP 401/403 detection** — `err.sessionExpired = true` routes through `onSessionExpired` callback (matches web's axios error handling)
+- **TPIN modal keyword filter dropped** — `detectEdisFailures` now returns every rejected SELL regardless of message text (web parity)
+- **Kotak / Motilal / AliceBlue credentials** — `consumerKey`/`consumerSecret`/`apiKey` now AES-decrypted on the way out
+
+### 10.10 RGX-specific preservations
+
+The sync preserved every existing RGX divergence:
+
+- `'common'` / `'prod'` fallbacks in `X-Advisor-Subdomain` headers → replaced with `getAdvisorSubdomain()` (resolves to `rgxresearch`)
+- WebSocket URLs remain `server.ccxtWs.*` / `server.brokerAuth.*` (centralized in `serverConfig.js`)
+- Advisor tag remains dynamic `REACT_APP_ADVISOR_SPECIFIC_TAG` (not hardcoded `ARFS`)
+- UI colors sourced from `Config.js` `rgxresearch` variant (red basket, blue theme) — not alphab2b's purple
+- `storageUtils.js` 3-key schema retained
+- Deep-link scheme stays `rgxapp://`
+- Broker redirect URL stays `https://equitypro.co.in/stock-recommendation` via env var
+
+### 10.11 Breaking change — ICICI Option B
+
+Existing ICICI users on this app must update the Redirect URL in their ICICI dev dashboard from the mobile app URL to `https://ccxt.alphaquark.in/icici/auth-callback/rgxresearch` before they can reconnect. If they land on the legacy URL, the modal surfaces a guided error with the correct URL. See `docs/BROKER_CONNECTION.md#icici-direct--option-b-migration-breaking-v530`.

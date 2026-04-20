@@ -37,6 +37,7 @@ const StockAdviceContent = React.memo(
     setisBasket,
     stocksWithoutSource,
     handleTradeBasket,
+    handleCancelBasket,
     fullsetBasketData,
     setbasketId,
     setbasketName,
@@ -295,6 +296,7 @@ const StockAdviceContent = React.memo(
               setbasketId={setbasketId}
               setbasketName={setbasketName}
               handleTradeBasket={handleTradeBasket}
+              onCancelBasket={handleCancelBasket}
               fullsetBasketData={fullsetBasketData}
               setStockDetails={setBasketData}
               handleTradeNow={handleTradeNow}
@@ -360,6 +362,11 @@ const StockAdviceContent = React.memo(
               profitTarget={item?.profitTarget}
               cancel={item?.cancel}
               edit={item?.edit}
+              tradePlaceStatus={item?.trade_place_status}
+              rejectionMessage={item?.orderStatusMessage || item?.message_aq}
+              planName={item?.trade_given_by_fileName || item?.group}
+              advisedPriceByAdvisor={item?.price_when_send_advice}
+              positionStatus={item?.positionStatus}
             />
           </View>
         );
@@ -730,12 +737,12 @@ const StockAdviceContent = React.memo(
                 style={[
                   styles.Addbutton,
                   { backgroundColor: mainColor },
-                  stockDetails.length === 0 && styles.disabledButton,
+                  cartContainer.length === 0 && styles.disabledButton,
                 ]}
                 onPress={handleTradeNow}
-                disabled={stockDetails.length === 0 || !planList}>
+                disabled={cartContainer.length === 0 || !planList}>
                 <Text style={styles.addButtonText}>
-                  Trade ({stockDetails.length})
+                  Trade ({cartContainer.length})
                 </Text>
               </TouchableOpacity>
             </View>

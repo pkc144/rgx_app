@@ -52,8 +52,11 @@ const UpstoxHelpContent = ({expanded, onExpandChange}) => {
           <>
             <Text style={styles.instruction}>
               3. Click on the "New App" button. Fill in the "App Name" field
-              with "EquityPro" or a name of your choice. Enter the "Redirect
-              URL" as{' '}
+              with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of your choice. Paste your
+              dedicated static IP (claimed in the IP-whitelist panel above)
+              into the "Allowed IPs" field — Upstox rejects every order from
+              a non-whitelisted IP with UDAPI1154 "static IP mismatch", so
+              this step is mandatory. Enter the "Redirect URL" as{' '}
               <Text
                 onPress={() => Linking.openURL(brokerConnectRedirectURL)}
                 style={styles.link}>

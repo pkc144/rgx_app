@@ -25,39 +25,28 @@ describe('rebalanceHelpers', () => {
   // ─── isFundsErrorOrMissing ───
 
   describe('isFundsErrorOrMissing', () => {
-    test('null funds + connected → funds_fetch_failed', () => {
-      const result = isFundsErrorOrMissing(null, 'connected');
-      expect(result.isError).toBe(true);
-      expect(result.reason).toBe('funds_fetch_failed');
+    test('null funds + connected → true', () => {
+      expect(isFundsErrorOrMissing(null, 'connected')).toBe(true);
     });
 
-    test('null funds + not connected → not_connected', () => {
-      const result = isFundsErrorOrMissing(null, 'disconnected');
-      expect(result.isError).toBe(true);
-      expect(result.reason).toBe('not_connected');
+    test('null funds + not connected → false', () => {
+      expect(isFundsErrorOrMissing(null, 'disconnected')).toBe(false);
     });
 
-    test('status 1 → token_expired', () => {
-      const result = isFundsErrorOrMissing({status: 1}, 'connected');
-      expect(result.isError).toBe(true);
-      expect(result.reason).toBe('token_expired');
+    test('status 1 + connected → true', () => {
+      expect(isFundsErrorOrMissing({status: 1}, 'connected')).toBe(true);
     });
 
-    test('status 2 → backend_error', () => {
-      const result = isFundsErrorOrMissing({status: 2}, 'connected');
-      expect(result.isError).toBe(true);
-      expect(result.reason).toBe('backend_error');
+    test('status 2 + connected → true', () => {
+      expect(isFundsErrorOrMissing({status: 2}, 'connected')).toBe(true);
     });
 
-    test('status 0 → no error', () => {
-      const result = isFundsErrorOrMissing({status: 0, data: {availablecash: 10000}}, 'connected');
-      expect(result.isError).toBe(false);
-      expect(result.reason).toBeNull();
+    test('status 0 + connected → false', () => {
+      expect(isFundsErrorOrMissing({status: 0, data: {availablecash: 10000}}, 'connected')).toBe(false);
     });
 
-    test('valid funds object with no status → no error', () => {
-      const result = isFundsErrorOrMissing({data: {availablecash: 5000}}, 'connected');
-      expect(result.isError).toBe(false);
+    test('valid funds object with no status + connected → false', () => {
+      expect(isFundsErrorOrMissing({data: {availablecash: 5000}}, 'connected')).toBe(false);
     });
   });
 

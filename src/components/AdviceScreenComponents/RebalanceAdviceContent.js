@@ -19,7 +19,6 @@ import axios from 'axios';
 import server from '../../utils/serverConfig';
 import LottieView from 'lottie-react-native';
 import RebalanceCard from '../../UIComponents/RebalanceAdvicesUI/RebalanceCard'; // Assuming you have this component
-import RebalanceModal from './RebalanceModal';
 import {fetchFunds} from '../../FunctionCall/fetchFunds';
 import StockCardLoading from './StockCardLoading';
 import IIFLReviewTradeModal from '../IIFLReviewTradeModal';
@@ -35,6 +34,7 @@ import {FyersTpinModal} from '../DdpiModal';
 import Config from 'react-native-config';
 import {OtherBrokerModel} from '../DdpiModal';
 import {generateToken} from '../../utils/SecurityTokenManager';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 const RebalanceAdviceContent = React.memo(
   ({
     type,
@@ -91,7 +91,9 @@ const RebalanceAdviceContent = React.memo(
     setLatestRebalanceData,
     setuserExecution,
     setmatchingFailedTrades,
-    setRepairmessageModal
+    setRepairmessageModal,
+    selectedOption,
+    setSelectedOption
   }) => {
     const {
       modelPortfolioStrategyfinal,
@@ -254,11 +256,19 @@ const RebalanceAdviceContent = React.memo(
         //  console.log('sorted',sortedRebalances[0]);
         if (!latest) return null;
 
-        const userExecution = latest?.subscriberExecutions?.find(
-          execution =>
-            execution?.user_email === userEmail &&
-            (!broker || execution?.user_broker === broker),
-        );
+        const userExecutionsFiltered =
+          latest?.subscriberExecutions?.filter(
+            execution => execution?.user_email === userEmail,
+          ) || [];
+
+        const userExecution =
+          userExecutionsFiltered.find(
+            ex => broker && ex?.user_broker === broker,
+          ) ||
+          userExecutionsFiltered.find(
+            ex => ex?.user_broker === 'DummyBroker',
+          ) ||
+          (!broker ? userExecutionsFiltered[0] : undefined);
         const matchingFailedTrades = modelPortfolioRepairTrades?.find(
           trade =>
             trade.modelId === latest?.model_Id &&
@@ -304,7 +314,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -340,7 +350,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -376,7 +386,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -407,7 +417,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -487,11 +497,21 @@ const RebalanceAdviceContent = React.memo(
               setOpenTokenExpireModel={setOpenTokenExpireModel}
               setModelPortfolioModelId={setModelPortfolioModelId}
               setStoreModalName={setStoreModalName}
-              userExecution={item?.latestRebalance?.subscriberExecutions?.find(
-                execution =>
-                  execution?.user_email === userEmail &&
-                  (!broker || execution?.user_broker === broker),
-              )}
+              userExecution={(() => {
+                const execFiltered =
+                  item?.latestRebalance?.subscriberExecutions?.filter(
+                    execution => execution?.user_email === userEmail,
+                  ) || [];
+                return (
+                  execFiltered.find(
+                    ex => broker && ex?.user_broker === broker,
+                  ) ||
+                  execFiltered.find(
+                    ex => ex?.user_broker === 'DummyBroker',
+                  ) ||
+                  (!broker ? execFiltered[0] : undefined)
+                );
+              })()}
               brokerStatus={userDetails?.connect_broker_status}
               showstatusModal={showstatusModal}
               setShowstatusModal={setShowstatusModal}
@@ -502,6 +522,8 @@ const RebalanceAdviceContent = React.memo(
               setuserExecution={setuserExecution}
               setmatchingFailedTrades={setmatchingFailedTrades}
               userExecutionFinal={userExecution}
+              selectedOption={selectedOption}
+              setSelectedOption={setSelectedOption}
             />
           )}
         </View>
@@ -586,53 +608,6 @@ const RebalanceAdviceContent = React.memo(
           />
         </View>
 
-        {openRebalanceModal ? (
-          //   console.log('kokkk'),
-          <RebalanceModal
-            userEmail={userEmail}
-            visible={openRebalanceModal}
-            setOpenRebalanceModal={setOpenRebalanceModal}
-            data={modelPortfolioStrategy}
-            calculatedPortfolioData={calculatedPortfolioData}
-            broker={broker}
-            apiKey={apiKey}
-            userDetails={userDetails}
-            jwtToken={jwtToken}
-            secretKey={secretKey}
-            clientCode={clientCode}
-            sid={sid}
-            setShowFyersTpinModal={setShowFyersTpinModal}
-            viewToken={viewToken}
-            serverId={serverId}
-            setBrokerModel={setBrokerModel}
-            setOpenSucessModal={setOpenSucessModal}
-            setOrderPlacementResponse={setOrderPlacementResponse}
-            modelPortfolioModelId={modelPortfolioModelId}
-            setOpenTokenExpireModel={setOpenTokenExpireModel}
-            modelPortfolioRepairTrades={modelPortfolioRepairTrades}
-            getRebalanceRepair={getRebalanceRepair}
-            storeModalName={storeModalName}
-            setIsReturningFromOtherBrokerModal={
-              setIsReturningFromOtherBrokerModal
-            }
-            isReturningFromOtherBrokerModal={isReturningFromOtherBrokerModal}
-            funds={funds}
-            getModelPortfolioStrategyDetails={getModelPortfolioStrategyDetails}
-            setShowOtherBrokerModel={setShowOtherBrokerModel}
-            setShowDhanTpinModel={setShowDhanTpinModel}
-            setShowAngleOneTpinModel={setShowAngleOneTpinModel}
-            tradeType={tradeType}
-            edisStatus={edisStatus}
-            dhanEdisStatus={dhanEdisStatus}
-            selectNonBroker={selectNonBroker}
-            setShowDdpiModal={setShowDdpiModal}
-            brokerStatus={userDetails?.connect_broker_status}
-            onModifyInvestment={() => {
-              setOpenRebalanceModal(false);
-              setShowstatusModal(true);
-            }}
-          />
-        ) : null}
 
         {openSuccessModal && (
           <RecommendationSuccessModal

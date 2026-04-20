@@ -76,6 +76,26 @@ const KotakModal = ({
     getUserDeatils();
   }, [userEmail, server.server.baseUrl]);
 
+  // Pre-fill mobile number on reconnect — matches web 933e9a4.
+  // Reads from connected_brokers[broker=Kotak].mobileNumber (primary)
+  // with fallback to the legacy top-level phone_number field.
+  // Strips the '+91' prefix so the <TextInput> only holds 10 digits
+  // (updateKotakSecretKey re-adds '+91' before sending to the backend).
+  useEffect(() => {
+    if (!userDetails) return;
+    const kotakSlot = Array.isArray(userDetails.connected_brokers)
+      ? userDetails.connected_brokers.find(b => b.broker === 'Kotak')
+      : null;
+    const saved = kotakSlot?.mobileNumber || userDetails.phone_number || '';
+    const digits = String(saved).replace(/^\+91/, '').replace(/\D/g, '');
+    if (/^\d{10}$/.test(digits) && !mobileNumber) {
+      setMobileNumber(digits);
+    }
+    // Intentionally depend on userDetails only — don't overwrite user
+    // edits in-progress.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userDetails]);
+
   const userId = userDetails && userDetails._id;
 
   const [helpVisible, setHelpVisible] = useState(false);
@@ -84,7 +104,19 @@ const KotakModal = ({
     setHelpVisible(true);
   };
 
+  // Egress-IP gate state. `egressReady` is set true by <EgressIpCallout />
+  // only when the user has claimed a dedicated IP AND ticked the
+  // acknowledgment. `unmetAck` flashes the checkbox red for 2.5s if the
+  // user taps Connect without ticking. Matches web behaviour
+  // (prod-alphaquark-github/src/Home/BrokerConnection/Kotak/KotakConnection.js).
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
+
   const updateKotakSecretKey = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
     setIsLoading(true);
 
     // Input validation
@@ -186,6 +218,10 @@ const KotakModal = ({
   };
 
   const submitOtp = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
     setIsLoading(true);
     let data = {
       uid: userId,
@@ -305,6 +341,13 @@ const KotakModal = ({
       submitOtp={submitOtp}
       OpenHelpModal={OpenHelpModal}
       isLoading={isLoading}
+      egressUserId={userId}
+      egressUserEmail={userEmail}
+      egressReady={egressReady}
+      setEgressReady={setEgressReady}
+      unmetAck={unmetAck}
+      setUnmetAck={setUnmetAck}
+      configData={configData}
     />
   );
 };

@@ -1,4 +1,4 @@
-import {useState, useCallback, useEffect} from 'react';
+import {useState, useCallback, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,8 @@ import RebalanceChangeDetailModal from '../../components/RebalanceChangeDetailMo
 import PendingOrdersModal from '../../components/ModelPortfolioComponents/PendingOrdersModal';
 import {cancelOrder} from '../../services/BrokerOrderBookAPI';
 import {useTrade} from '../../screens/TradeContext';
+import {isFundsErrorOrMissing} from '../../utils/rebalanceHelpers';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 const RebalanceCard = ({
   openRebalModal,
@@ -97,7 +99,7 @@ const RebalanceCard = ({
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -138,6 +140,8 @@ const RebalanceCard = ({
   const navigation = useNavigation();
   const [allRebalanceHoldingData, setallRebalanceHoldingData] = useState(null);
   const [isChangeModal, setisChangeModal] = useState(false);
+  // Flag to bypass repair shortcut for fresh rebalances (matching web skipRepairRef)
+  const skipRepairRef = useRef(false);
   const showToast = (message1, type, message2) => {
     Toast.show({
       type: type,
@@ -194,12 +198,31 @@ const RebalanceCard = ({
 
   const handleCheckStatus = async () => {
     try {
+      // Refresh broker status before checking (matching web)
+      const freshStatus = await refreshBrokerStatus();
+      const currentBrokerStatus = freshStatus?.brokerStatus || brokerStatus;
+
+      if (freshStatus?.broker === undefined || currentBrokerStatus !== 'connected') {
+        if (setBrokerModel) {
+          setBrokerModel(true);
+        }
+        return;
+      }
+
+      // Check funds validity (matching web)
+      if (isFundsErrorOrMissing(funds, currentBrokerStatus)) {
+        if (setOpenTokenExpireModel) {
+          setOpenTokenExpireModel(true);
+        }
+        return;
+      }
+
       const response = await axios.get(
         `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${userEmail}/${modelName}`,
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -223,8 +246,12 @@ const RebalanceCard = ({
       if (setApiResponseData) {
         setApiResponseData(response.data);
       }
+      // Filter out zero-quantity holdings (matching web)
+      const nonZeroHoldings = orderResults.filter(
+        h => Number(h.quantity || 0) > 0,
+      );
       if (setStockDataForModal) {
-        setStockDataForModal(orderResults);
+        setStockDataForModal(nonZeroHoldings);
       }
     } catch (error) {
       console.warn('Error fetching stock data:', error?.message);
@@ -265,7 +292,7 @@ const RebalanceCard = ({
 
   const requestHeaders = {
     'Content-Type': 'application/json',
-    'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+    'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
     'aq-encrypted-key': generateToken(
       Config.REACT_APP_AQ_KEYS,
       Config.REACT_APP_AQ_SECRET,
@@ -456,12 +483,17 @@ const RebalanceCard = ({
     }
   };
 
+  // If there's no execution record for this broker, don't show rebalance actions.
+  // Prevents undefined status from incorrectly triggering repair flows.
+  const hasExecutionRecord = !!userExecution;
   // If the user executed with a different broker than the currently connected one,
   // treat it as not executed so they can re-execute with the new broker
-  const brokerMatchesExecution = !userExecution?.user_broker || userExecution?.user_broker === broker;
-  const isRebalanceExecuted = userExecution?.status === 'executed' && brokerMatchesExecution;
-  const isPartiallyExecuted = userExecution?.status === 'partial' && brokerMatchesExecution;
-  const isPendingVerification = userExecution?.status === 'pending' && brokerMatchesExecution;
+  const brokerMatchesExecution = !userExecution?.user_broker ||
+    userExecution?.user_broker === broker ||
+    (!broker && userExecution?.user_broker === 'DummyBroker');
+  const isRebalanceExecuted = hasExecutionRecord && userExecution?.status === 'executed' && brokerMatchesExecution;
+  const isPartiallyExecuted = hasExecutionRecord && userExecution?.status === 'partial' && brokerMatchesExecution;
+  const isPendingVerification = hasExecutionRecord && userExecution?.status === 'pending' && brokerMatchesExecution;
 
   const handleAcceptClick = async () => {
     try {
@@ -470,13 +502,15 @@ const RebalanceCard = ({
         setModelPortfolioModelId(data.model_Id);
       }
       setmatchfailed(matchingFailedTrades || null);
-      if (repair && userExecution?.status !== 'toExecute') {
+      // When skipRepairRef is set, bypass repair path for fresh rebalance (matching web)
+      if (repair && userExecution?.status !== 'toExecute' && !skipRepairRef.current) {
         setStoreModalName(modelName);
         setCurrentStep(2);
         setLoading(true);
         await handleCheckStatus();
         setLoading(false);
       } else {
+        skipRepairRef.current = false;
         setShowCheckboxModal(true);
         setStoreModalName(modelName);
       }
@@ -533,7 +567,7 @@ const RebalanceCard = ({
       const currentBroker = freshStatus?.broker || broker;
       const currentBrokerStatus = freshStatus?.brokerStatus || brokerStatus;
 
-      if (currentBrokerStatus === 'Disconnected' || !currentBroker) {
+      if (currentBrokerStatus !== 'connected' || !currentBroker) {
         setShowCheckboxModal(false);
         setCurrentStep(2);
         if (setBrokerModel) {
@@ -570,11 +604,11 @@ const RebalanceCard = ({
             isRebalanceExecuted
               ? ['#9CA3AF', '#6B7280']
               : isPartiallyExecuted
-                ? ['#E8976B', '#DE8846']
+                ? ['#2a2a2a', '#DE8846']
                 : isPendingVerification
-                  ? ['#DDB65D', '#D4A843']
+                  ? ['#2a2a2a', '#D4A843']
                   : repair && userExecution?.status !== 'toExecute'
-                    ? [gradient1, '#dc4108ff']
+                    ? ['#2a2a2a', '#DE8846']
                     : [gradient1, gradient2]
           }
           start={{x: 0, y: 1}}
@@ -682,7 +716,7 @@ const RebalanceCard = ({
           {isPartiallyExecuted && (
             <View style={{alignItems: 'center', marginBottom: 4, marginTop: 4}}>
               <View style={{backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12}}>
-                <Text style={{color: 'rgba(255,255,255,0.9)', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
+                <Text style={{color: '#DE8846', fontSize: 12, fontFamily: 'Satoshi-Medium'}}>
                   Partially Executed
                 </Text>
               </View>
@@ -717,7 +751,7 @@ const RebalanceCard = ({
             </TouchableOpacity>
             <TouchableOpacity
               onPress={isPendingVerification ? handlePendingRefresh : handleChangeCheck}
-              disabled={pendingRefreshLoading || isRebalanceExecuted}
+              disabled={pendingRefreshLoading || isRebalanceExecuted || !hasExecutionRecord}
               style={[
                 styles.button,
                 isPendingVerification && {borderWidth: 1, borderColor: '#EAB308'},
@@ -735,15 +769,17 @@ const RebalanceCard = ({
                     alignSelf: 'center',
                   }}>
                   <Text style={[styles.buttonText, {color: isRebalanceExecuted ? '#6B7280' : gradient2}]}>
-                    {isRebalanceExecuted
+                    {!hasExecutionRecord
+                      ? 'No rebalance pending'
+                      : isRebalanceExecuted
                       ? 'Rebalance Accepted'
                       : isPartiallyExecuted
                         ? 'Retry Rebalance'
                         : isPendingVerification
                           ? 'Check Order Status'
                           : repair && userExecution?.status !== 'toExecute'
-                            ? 'View/action on updates'
-                            : 'View and act'}
+                            ? 'Repair Portfolio'
+                            : 'Accept Rebalance'}
                   </Text>
                 </View>
               )}

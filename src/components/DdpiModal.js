@@ -73,9 +73,12 @@ export default function DdpiModal({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.advisorTag || '',
+            'aq-encrypted-key': configData?.aqEncryptedKey || '',
           },
           body: JSON.stringify({
             accessToken: userDetails?.jwtToken,
+            userEmail: userDetails?.email,
           }),
         },
       );
@@ -123,7 +126,11 @@ export default function DdpiModal({
           },
         },
       );
-      if (getUserDetails) getUserDetails();
+      // Await the user-details refresh before closing/reopening so the
+      // next modal reads the post-PUT is_authorized_for_sell=true
+      // instead of stale false. Without await, a fast reopened
+      // rebalance modal re-triggers this DDPI prompt (web e73bd81).
+      if (getUserDetails) await getUserDetails();
       setIsOpen(false);
       setShowTpinConfirmation(false);
       setTpinCompleted(false);
@@ -1061,7 +1068,7 @@ export function AngleOneTpinModal({
       <input type="hidden" name="ReqId" value="${edisData?.ReqId || ''}" />
       <input type="hidden" name="Version" value="1.1" />
       <input type="hidden" name="TransDtls" value="${edisData?.TransDtls || ''}" />
-      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL || 'https://equitypro.co.in'}/stock-recommendation" />
+      <input type="hidden" name="returnURL" value="${Config.REACT_APP_WEBSITE_URL || 'https://prod.alphaquark.in'}/stock-recommendation" />
       <input id="submitBtn" type="submit" />
     </form>
   </body>
@@ -1101,7 +1108,11 @@ export function AngleOneTpinModal({
           },
         },
       );
-      if (getUserDetails) getUserDetails();
+      // Await the user-details refresh before closing/reopening so the
+      // next modal reads the post-PUT is_authorized_for_sell=true
+      // instead of stale false. Without await, a fast reopened
+      // rebalance modal re-triggers this DDPI prompt (web e73bd81).
+      if (getUserDetails) await getUserDetails();
       setIsOpen(false);
       setShowTpinConfirmation(false);
       setTpinCompleted(false);
@@ -1321,7 +1332,11 @@ export function DhanTpinModal({
           },
         },
       );
-      if (getUserDetails) getUserDetails();
+      // Await the user-details refresh before closing/reopening so the
+      // next modal reads the post-PUT is_authorized_for_sell=true
+      // instead of stale false. Without await, a fast reopened
+      // rebalance modal re-triggers this DDPI prompt (web e73bd81).
+      if (getUserDetails) await getUserDetails();
       setIsOpen(false);
       setShowTpinConfirmation(false);
       setTpinCompleted(false);
@@ -1814,7 +1829,7 @@ export function OtherBrokerModel({
         '3.Select Authorize with T-PIN.',
         '4.Click Continue to CDSL.',
         '5.Enter your T-PIN (or generate a new one if needed) and verify it, then enter the OTP for authentication.',
-        `6.Once verified, return to the ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'EquityPro'} platform and place your sell order.`,
+        `6.Once verified, return to the ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'} platform and place your sell order.`,
       ],
     },
     'Kotak Securities': {
@@ -1833,7 +1848,7 @@ export function OtherBrokerModel({
         '3.Click Raise eDIS Request, select stock(s), and submit for authorization.',
         '4.Accept the Terms and Conditions, click **Authorize Now, and use **Forgotten TPIN if needed.',
         '5.Complete authorization on CDSL by entering your TPIN and OTP. ',
-        `6.After successful authorization, click OK and retry the sell order on ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'EquityPro'}.`,
+        `6.After successful authorization, click OK and retry the sell order on ${Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}.`,
       ],
     },
     AliceBlue: {
@@ -1880,7 +1895,11 @@ export function OtherBrokerModel({
           },
         },
       );
-      if (getUserDetails) getUserDetails();
+      // Await the user-details refresh before closing/reopening so the
+      // next modal reads the post-PUT is_authorized_for_sell=true
+      // instead of stale false. Without await, a fast reopened
+      // rebalance modal re-triggers this DDPI prompt (web e73bd81).
+      if (getUserDetails) await getUserDetails();
     } catch (error) {
       console.error('Error updating EDIS status:', error);
     }
@@ -1940,7 +1959,11 @@ export function OtherBrokerModel({
           },
         },
       );
-      if (getUserDetails) getUserDetails();
+      // Await the user-details refresh before closing/reopening so the
+      // next modal reads the post-PUT is_authorized_for_sell=true
+      // instead of stale false. Without await, a fast reopened
+      // rebalance modal re-triggers this DDPI prompt (web e73bd81).
+      if (getUserDetails) await getUserDetails();
     } catch (error) {
       console.error('Error updating EDIS status:', error);
     }
@@ -2510,7 +2533,11 @@ export function FyersTpinModal({isOpen, setIsOpen, userDetails, reopenRebalanceM
           },
         },
       );
-      if (getUserDetails) getUserDetails();
+      // Await the user-details refresh before closing/reopening so the
+      // next modal reads the post-PUT is_authorized_for_sell=true
+      // instead of stale false. Without await, a fast reopened
+      // rebalance modal re-triggers this DDPI prompt (web e73bd81).
+      if (getUserDetails) await getUserDetails();
       setIsOpen(false);
       setShowTpinConfirmation(false);
       setTpinCompleted(false);

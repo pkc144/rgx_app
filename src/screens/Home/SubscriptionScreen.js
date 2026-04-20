@@ -98,7 +98,29 @@ const SubscriptionScreen = () => {
         }
       }
 
-      // First API call
+      // Step 1: Remove broker connection via Node backend (clears credentials + connected_brokers)
+      if (currentBroker && currentBroker !== 'DummyBroker') {
+        try {
+          await axios.delete(
+            `${server.server.baseUrl}api/user/brokers/${encodeURIComponent(currentBroker)}`,
+            {
+              params: { email: userEmail },
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            },
+          );
+        } catch (removeErr) {
+          console.warn('[Disconnect] removeBrokerConnection failed (continuing):', removeErr.message);
+        }
+      }
+
+      // Step 2: Set no-broker-required flag (sets connect_broker_status: Disconnected, user_broker: "")
       await axios.put(
         `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
         {
@@ -135,7 +157,7 @@ const SubscriptionScreen = () => {
         data: JSON.stringify(newBrokerData),
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -173,7 +195,7 @@ const SubscriptionScreen = () => {
       await axios.get(url, {
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -486,6 +508,16 @@ const SubscriptionScreen = () => {
           setBroker(switchedBroker);
           fetchBrokerStatusModal();
           getAllFunds();
+        }}
+        onReconnect={(expiredBroker) => {
+          console.log('[ManageConnections] Reconnect requested for:', expiredBroker);
+          // No optimistic setBroker(expiredBroker) here — it created stale
+          // state (broker='Dhan' locally but userDetails.user_broker='Groww'
+          // from backend) whenever the user aborted the per-broker modal.
+          // Per-broker modals' success path already calls
+          // fetchBrokerStatusModal + getUserDeatils, which sets broker and
+          // userDetails atomically from the same backend response.
+          fetchBrokerStatusModal();
         }}
       />
     </View>

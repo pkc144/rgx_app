@@ -493,7 +493,6 @@ const BespokePerformanceScreen = ({route}) => {
         userDetails?.jwtToken,
         userDetails?.secretKey,
         userDetails?.sid,
-        userDetails?.viewToken,
         userDetails?.serverId,
         userEmail,
       );

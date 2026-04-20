@@ -21,6 +21,7 @@ import AliceBlueConnect from '../components/BrokerConnectionModal/AliceBlueConne
 import FyersConnect from '../components/BrokerConnectionModal/FyersConnect';
 import KotakModal from '../components/BrokerConnectionModal/KotakModal';
 import GrowwConnectModal from '../components/BrokerConnectionModal/GrowwConnectModal';
+import AxisConnectModal from '../components/BrokerConnectionModal/AxisConnectModal';
 
 
 const ModalManager = () => {
@@ -95,6 +96,12 @@ const ModalManager = () => {
         return <KotakModal {...commonProps} />;
       case 'Groww':
         return <GrowwConnectModal {...commonProps} />;
+      case 'IIFL':
+      case 'IIFL Securities':
+        return <IIFLModal {...commonProps} />;
+      case 'Axis':
+      case 'Axis Securities':
+        return <AxisConnectModal {...commonProps} />;
       default:
         return null;
     }

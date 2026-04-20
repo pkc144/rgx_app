@@ -16,12 +16,39 @@ import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import { useTrade } from '../TradeContext';
+import useModalStore from '../../GlobalUIModals/modalStore';
+import { registerCallback } from '../../utils/brokerAuth';
+
+const EXPIRED_STATUSES = ['expired', 'error'];
+
+const isExpiredStatus = (status) =>
+  typeof status === 'string' && EXPIRED_STATUSES.includes(status.toLowerCase());
+
+// Backend `connected_brokers[].broker` → ModalManager switch key. Keep in
+// sync with src/GlobalUIModals/ModalManager.js. Brokers not listed here
+// fall back to the onReconnect parent callback.
+const BROKER_MODAL_KEY_MAP = {
+  'Angel One': 'Angel One',
+  'Zerodha': 'Zerodha',
+  'Upstox': 'Upstox',
+  'Kotak': 'Kotak',
+  'Dhan': 'Dhan',
+  'Fyers': 'Fyers',
+  'AliceBlue': 'AliceBlue',
+  'Groww': 'Groww',
+  'ICICI Direct': 'ICICI',
+  'Hdfc Securities': 'HDFC',
+  'Motilal Oswal': 'Motilal',
+  'Axis Securities': 'Axis Securities',
+  'IIFL Securities': 'IIFL',
+};
 
 const ManageConnectionsModal = ({
   visible,
   onClose,
   onConnectionRemoved,
   onBrokerSwitched,
+  onReconnect,
 }) => {
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState([]);
@@ -55,12 +82,14 @@ const ManageConnectionsModal = ({
       );
 
       if (response.data?.data?.connected_brokers) {
-        // Transform to our format
         const brokers = response.data.data.connected_brokers.map(b => ({
           broker: b.broker,
           connected_at: b.connected_at,
+          status: b.status,
+          token_expire: b.token_expire,
           is_active: b.broker === currentBroker,
           has_credentials: true,
+          is_expired: isExpiredStatus(b.status),
         }));
         setConnections(brokers);
       } else {
@@ -163,6 +192,30 @@ const ManageConnectionsModal = ({
     }
   };
 
+  const handleReconnect = async (brokerName) => {
+    const modalKey = BROKER_MODAL_KEY_MAP[brokerName];
+    onClose?.();
+    if (!modalKey) {
+      // Broker not registered in ModalManager — let the parent handle it
+      // (e.g., open BrokerSelectionModal as a fallback).
+      onReconnect?.(brokerName);
+      return;
+    }
+    // Angel One needs a fresh OAuth nonce registered before the modal opens.
+    // Matches BrokerSelectionModal.handleBrokerSelect (line 240-242).
+    if (brokerName === 'Angel One') {
+      try {
+        await registerCallback('angelone', '/stock-recommendation');
+      } catch (err) {
+        console.warn('[ManageConnections] Angel One nonce registration failed:', err);
+      }
+    }
+    // Notify the parent first so it can refresh any state it owns, then
+    // dispatch to the global ModalManager to render the per-broker modal.
+    onReconnect?.(brokerName);
+    useModalStore.getState().openModal(modalKey);
+  };
+
   const renderConnection = ({ item }) => (
     <View style={styles.connectionItem}>
       <View style={styles.connectionInfo}>
@@ -172,14 +225,28 @@ const ManageConnectionsModal = ({
             <Text style={styles.activeBadgeText}>Active</Text>
           </View>
         )}
-        {item.has_credentials && !item.is_active && (
+        {item.is_expired && (
+          <View style={styles.expiredBadge}>
+            <Text style={styles.expiredBadgeText}>Session Expired</Text>
+          </View>
+        )}
+        {item.has_credentials && !item.is_active && !item.is_expired && (
           <View style={styles.credentialsBadge}>
             <Text style={styles.credentialsBadgeText}>Stored Credentials</Text>
           </View>
         )}
       </View>
       <View style={styles.actionButtons}>
-        {!item.is_active && (
+        {item.is_expired && (
+          <TouchableOpacity
+            style={styles.reconnectBtn}
+            onPress={() => handleReconnect(item.broker)}
+            disabled={removing === item.broker || switching === item.broker}
+          >
+            <Text style={styles.reconnectBtnText}>Reconnect</Text>
+          </TouchableOpacity>
+        )}
+        {!item.is_active && !item.is_expired && (
           <TouchableOpacity
             style={[styles.switchBtn, switching === item.broker && styles.switchBtnDisabled]}
             onPress={() => handleSwitch(item.broker)}
@@ -350,6 +417,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#92400e',
     fontWeight: '500',
+  },
+  expiredBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+  },
+  expiredBadgeText: {
+    fontSize: 12,
+    color: '#92400e',
+    fontWeight: '600',
+  },
+  reconnectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f59e0b',
+  },
+  reconnectBtnText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
   },
   actionButtons: {
     flexDirection: 'row',

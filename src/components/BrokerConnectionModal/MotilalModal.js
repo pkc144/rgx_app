@@ -102,6 +102,7 @@ const MotilalModal = ({
         'https://',
         '',
       )}`,
+      user_broker: 'Motilal Oswal',
     };
     axios
       .put(`${server.server.baseUrl}api/motilal-oswal/update-key`, data, {

@@ -6,6 +6,7 @@ import server from '../../utils/serverConfig';
 import RebalanceAdviceContent from '../AdviceScreenComponents/RebalanceAdviceContent';
 
 import {getAuth} from '@react-native-firebase/auth';
+import {useNavigation} from '@react-navigation/native';
 
 import IIFLReviewTradeModal from '../IIFLReviewTradeModal';
 
@@ -45,6 +46,7 @@ import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import CommonInformationModal from './RepairConfimationModal';
 
 const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
   const [isDatafetching, setisDatafetching] = useState(true);
   const [showIIFLModal, setShowIIFLModal] = useState(false);
@@ -160,7 +162,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -238,7 +240,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
 
     const allRebalances = matchingPortfolioItem?.model?.rebalanceHistory || [];
 
-    const sortedRebalances = allRebalances?.sort(
+    const sortedRebalances = [...allRebalances].sort(
       (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
     );
     const latest = sortedRebalances[0];
@@ -257,13 +259,49 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const [matchfailed, setmatchfailed] = useState(null);
   const [showstatusModal, setShowstatusModal] = useState(false);
   const [stockDataForModal, setStockDataForModal] = useState([]);
-  // console.log('store Modal Name-------------', storeModalName);
+
+  // Track if broker modal was opened during rebalance flow — when broker connects
+  // after auth modal, auto-continue to Step 2 (matching web ConnectBroker behavior)
+  const wasBrokerModalOpenForRebalance = useRef(false);
+  useEffect(() => {
+    if (brokerModel && storeModalName) {
+      wasBrokerModalOpenForRebalance.current = true;
+    }
+  }, [brokerModel, storeModalName]);
+
+  useEffect(() => {
+    if (
+      wasBrokerModalOpenForRebalance.current &&
+      !brokerModel &&
+      brokerStatus === 'connected' &&
+      !showstatusModal &&
+      !openRebalanceModal &&
+      storeModalName
+    ) {
+      // Broker was just connected after being opened from rebalance flow
+      wasBrokerModalOpenForRebalance.current = false;
+      // Auto-continue: refresh user, fetch holdings, show Step 2
+      (async () => {
+        try {
+          await getUserDeatils();
+          await getAllFunds();
+          await fetchHoldingsAndShowStatus();
+        } catch (err) {
+          console.error('Auto-continue after broker connect error:', err);
+        }
+      })();
+    }
+  }, [brokerModel, brokerStatus, showstatusModal, openRebalanceModal]);
+
+  // "Continue without connecting broker" — matching web RebalanceCard.js handleAcceptRebalanceWithoutBroker:
+  // Save preference, fetch holdings, show MPStatusModal (Step 2). Do NOT call rebalance/calculate yet.
+  // MPStatusModal's "Continue" will call handleAcceptRebalance → rebalance/calculate → Step 3.
   const handleAcceptRebalanceWithoutBroker = async () => {
-    console.log('Continue without broker - saving no-broker preference and calling rebalance/calculate');
+    console.log('Continue without broker - saving preference, then showing holdings (Step 2)');
     setStoreModalName(storeModalName);
 
     try {
-      // Save no-broker preference (matches web version)
+      // Step 1: Save no-broker preference (matching web connectBroker.js)
       await axios.put(
         `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
         {
@@ -273,7 +311,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -282,70 +320,88 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
         },
       );
 
-      // Close broker modal, set non-broker flag, then call handleAcceptRebalance
+      // Step 2: Close broker modal, set non-broker flag
       setBrokerModel(false);
       setSelectNonBroker(true);
 
-      // Directly call rebalance/calculate with DummyBroker payload
-      // (matching web version's handleContinueWithoutBroker flow)
-      setLoading(true);
-      let payload = {
-        userEmail: userEmail,
-        userBroker: "DummyBroker",
-        modelName: storeModalName?.trim(),
-        advisor: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
-        model_id: modelPortfolioModelId,
-        userFund: "0",
-        flag: selectedOption === "option1" ? 1 : 0,
-      };
+      // Step 3: Refresh user details so broker becomes DummyBroker
+      await getUserDeatils();
 
-      let config = {
-        method: "post",
-        url: `${server.ccxtServer.baseUrl}rebalance/calculate`,
-        data: JSON.stringify(payload),
-        headers: {
-          "Content-Type": "application/json",
-          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
-          "aq-encrypted-key": generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-      };
-
-      console.log("Rebalance Calculate Payload (without broker):", JSON.stringify(payload));
-
-      const response = await axios.request(config);
-      console.log("Rebalance Calculate Response (without broker):", JSON.stringify(response.data));
-
-      const { buy, sell } = response.data;
-      const updatedStockTypeAndSymbol = [
-        ...(buy || []).map((item) => ({
-          Symbol: item.symbol,
-          Type: "BUY",
-          Exchange: item.exchange,
-          Quantity: item.quantity,
-        })),
-        ...(sell || []).map((item) => ({
-          Symbol: item.symbol,
-          Type: "SELL",
-          Exchange: item.exchange,
-          Quantity: item.quantity,
-        })),
-      ];
-
-      setStockTypeAndSymbol(updatedStockTypeAndSymbol);
-      setCalculatedPortfolioData(response.data);
-      setLoading(false);
-      setOpenRebalanceModal(true);
-      setModelObjectId(modelPortfolioModelId);
+      // Step 4: Fetch current holdings and show MPStatusModal (matching web)
+      await fetchHoldingsAndShowStatus();
     } catch (error) {
       console.error('Continue without broker error:', error.message);
       if (error.response) {
         console.error('Response:', error.response.status, error.response.data);
       }
-      setLoading(false);
+      setBrokerModel(false);
     }
+  };
+
+  // "Broker Connected - Continue" — called when user connects a broker via the modal
+  // Refresh user details, fetch holdings, show MPStatusModal (Step 2).
+  const handleBrokerConnectedContinue = async () => {
+    console.log('Broker connected - refreshing user, then showing holdings (Step 2)');
+    setStoreModalName(storeModalName);
+
+    try {
+      setBrokerModel(false);
+
+      // Refresh user details to pick up the newly connected broker
+      await getUserDeatils();
+      await getAllFunds();
+
+      // Fetch holdings and show MPStatusModal
+      await fetchHoldingsAndShowStatus();
+    } catch (error) {
+      console.error('Broker connected continue error:', error.message);
+      setBrokerModel(false);
+    }
+  };
+
+  // Shared helper: fetch holdings from rebalance/user-portfolio/latest → show MPStatusModal (Step 2)
+  // Matches web RebalanceCard.js handleAcceptRebalanceWithoutBroker lines 835-873
+  const fetchHoldingsAndShowStatus = async () => {
+    try {
+      const effectiveModelName = storeModalName;
+      const response = await axios.get(
+        `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${encodeURIComponent(userEmail)}/${encodeURIComponent(effectiveModelName)}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+          timeout: 15000,
+        },
+      );
+
+      const userNetPfModel = response.data?.data?.user_net_pf_model;
+      let orderResults = [];
+      if (Array.isArray(userNetPfModel) && userNetPfModel.length > 0) {
+        const latestPortfolio = [...userNetPfModel].sort(
+          (a, b) => new Date(b.execDate) - new Date(a.execDate),
+        )[0];
+        orderResults = latestPortfolio?.order_results || [];
+      } else if (userNetPfModel?.order_results) {
+        orderResults = userNetPfModel.order_results;
+      }
+
+      setApiResponseData(response.data);
+      const nonZeroHoldings = orderResults.filter(
+        h => Number(h.quantity || 0) > 0,
+      );
+      setStockDataForModal(nonZeroHoldings);
+    } catch (error) {
+      console.warn('Error fetching holdings for MPStatusModal:', error?.message);
+    }
+
+    // Show MPStatusModal (Step 2)
+    setCurrentStep(2);
+    setShowstatusModal(true);
   };
 
   const handleCheckStatus = async () => {
@@ -355,7 +411,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -399,7 +455,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -473,7 +529,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         data: JSON.stringify(payload),
         headers: {
           "Content-Type": "application/json",
-          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           "aq-encrypted-key": generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET
@@ -493,7 +549,22 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
             return;
           }
           if (isSubscriptionAmountError(errorMsg)) {
-            Alert.alert('Update Investment', errorMsg, [{text: 'OK'}]);
+            Alert.alert(
+              'Update Investment',
+              'Your subscription amount is not set or may have been cleared. Would you like to update it now?',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {
+                  text: 'Update',
+                  onPress: () => {
+                    navigation.navigate('AfterSubscriptionScreen', {
+                      fileName: storeModalName,
+                      openModifyInvestment: true,
+                    });
+                  },
+                },
+              ],
+            );
             setLoading(false);
             return;
           }
@@ -506,14 +577,19 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
 
         const { buy, sell } = response.data;
 
-        // Check portfolio shortfall (matching prod)
+        // Portfolio shortfall is INFORMATIONAL ONLY — never a blocker.
+        // Backend `check_total_value` (rebalancing.py:1826) is a post-hoc
+        // advisory; trades come from `calculate_subsequent_buy_sell`
+        // independently. 0 trades alongside this means the share counts
+        // already match the model — the market value just dropped.
         const shortfall = checkPortfolioShortfall(response.data);
-        if (shortfall.isShortfall && !shortfall.hasTrades) {
-          Alert.alert('Portfolio Shortfall',
-            `Current value ₹${shortfall.currentValue} is below required ₹${shortfall.requiredAmount}`,
-            [{text: 'OK'}]);
-          setLoading(false);
-          return;
+        if (shortfall.isShortfall) {
+          Alert.alert(
+            'Market Value Below Locked Investment',
+            `Your portfolio is worth ₹${shortfall.currentValue?.toLocaleString?.() || shortfall.currentValue}, below the ₹${shortfall.requiredAmount?.toLocaleString?.() || shortfall.requiredAmount} you locked in for this model. This is informational only — your share counts still match the model and rebalance can proceed.`,
+            [{text: 'OK'}]
+          );
+          // Fall through — do not block.
         }
 
         const updatedStockTypeAndSymbol = [
@@ -568,7 +644,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         data: JSON.stringify(payload),
         headers: {
           "Content-Type": "application/json",
-          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           "aq-encrypted-key": generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -594,14 +670,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
     }
 
     // Check funds using prod-consistent helper
-    const fundsCheck = isFundsErrorOrMissing(funds, brokerStatus);
-    if (fundsCheck.isError && fundsCheck.reason === 'token_expired') {
-      setOpenTokenExpireModel(true);
-      setLoading(false);
-    } else if (fundsCheck.isError && fundsCheck.reason === 'backend_error') {
-      setOpenTokenExpireModel(true);
-      setLoading(false);
-    } else if (fundsCheck.isError && fundsCheck.reason === 'funds_fetch_failed') {
+    if (isFundsErrorOrMissing(funds, brokerStatus)) {
       setOpenTokenExpireModel(true);
       setLoading(false);
     } else if ((matchingFailedTrades ? "repair" : null) && userExecution?.status !== "toExecute") {
@@ -646,7 +715,7 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         data: JSON.stringify(payload),
         headers: {
           "Content-Type": "application/json",
-          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
+          "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           "aq-encrypted-key": generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET
@@ -666,7 +735,22 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
             return;
           }
           if (isSubscriptionAmountError(errorMsg)) {
-            Alert.alert('Update Investment', errorMsg, [{text: 'OK'}]);
+            Alert.alert(
+              'Update Investment',
+              'Your subscription amount is not set or may have been cleared. Would you like to update it now?',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {
+                  text: 'Update',
+                  onPress: () => {
+                    navigation.navigate('AfterSubscriptionScreen', {
+                      fileName: storeModalName,
+                      openModifyInvestment: true,
+                    });
+                  },
+                },
+              ],
+            );
             setLoading(false);
             return;
           }
@@ -679,14 +763,16 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
 
         const { buy, sell } = response.data;
 
-        // Check portfolio shortfall (matching prod)
+        // Portfolio shortfall is INFORMATIONAL ONLY — never a blocker.
+        // See sibling handler above for full rationale.
         const shortfall = checkPortfolioShortfall(response.data);
-        if (shortfall.isShortfall && !shortfall.hasTrades) {
-          Alert.alert('Portfolio Shortfall',
-            `Current value ₹${shortfall.currentValue} is below required ₹${shortfall.requiredAmount}`,
-            [{text: 'OK'}]);
-          setLoading(false);
-          return;
+        if (shortfall.isShortfall) {
+          Alert.alert(
+            'Market Value Below Locked Investment',
+            `Your portfolio is worth ₹${shortfall.currentValue?.toLocaleString?.() || shortfall.currentValue}, below the ₹${shortfall.requiredAmount?.toLocaleString?.() || shortfall.requiredAmount} you locked in for this model. This is informational only — your share counts still match the model and rebalance can proceed.`,
+            [{text: 'OK'}]
+          );
+          // Fall through — do not block.
         }
 
         // Empty trades: still open modal so it can show "Portfolio Already Aligned" UI
@@ -810,10 +896,8 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           setOpenTokenExpireModel={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
           withoutBroker={false}
-          handleAcceptRebalance={handleAcceptRebalance}
-          handleAcceptRebalanceWithoutBroker={
-            handleAcceptRebalanceWithoutBroker
-          }
+          handleAcceptRebalanceWithoutBroker={handleAcceptRebalanceWithoutBroker}
+          handleBrokerConnectedContinue={handleBrokerConnectedContinue}
         />
       )}
 

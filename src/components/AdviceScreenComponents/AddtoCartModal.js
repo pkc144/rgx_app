@@ -56,7 +56,7 @@ import FyersConnect from '../BrokerConnectionModal/FyersConnect';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useModal} from '../ModalContext';
 import MotilalModal from '../BrokerConnectionModal/MotilalModal';
-import {getAdvisorSubdomain} from '../utils/variantHelper';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import BrokerSelectionModal from '../BrokerSelectionModal';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
 import CartFullAmountText from './DynamicText/CartFullAmountText';
@@ -126,7 +126,7 @@ const AddToCartModal = ({
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -625,6 +625,7 @@ const AddToCartModal = ({
       return {
         trades: cartItems,
         user_broker: broker,
+        user_email: userEmail,
         accessToken: jwtToken,
       };
     };
@@ -724,7 +725,7 @@ const AddToCartModal = ({
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,

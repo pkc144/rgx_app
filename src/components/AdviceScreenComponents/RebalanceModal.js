@@ -28,6 +28,7 @@ import {
   buildBrokerPayloadFields,
   defaultDecrypt,
   isBrokerAuthError,
+  detectTransientOrderWindowError,
 } from '../../utils/rebalanceHelpers';
 import useModalStore from '../../GlobalUIModals/modalStore';
 const { height: screenHeight } = Dimensions.get('window');
@@ -38,7 +39,9 @@ import Toast from 'react-native-toast-message';
 import debounce from 'lodash.debounce';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import { convertResponse } from '../../utils/tradeUtils';
+import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
 
 const RebalanceModal = ({
   userEmail,
@@ -111,6 +114,85 @@ const RebalanceModal = ({
   const [htmlContent, setHtmlContent] = useState('');
   const [zerodhaStatus, setZerodhaStatus] = useState(null);
   const [zerodhaRequestType, setZerodhaRequestType] = useState(null);
+
+  // Publisher order-book polling fallback (matching web pattern)
+  // When Zerodha/Fyers WebView callback doesn't fire, poll the broker's
+  // order book to detect when new orders appear.
+  const POLL_INTERVAL_MS = 5000;
+  const POLL_TIMEOUT_MS = 90000;
+  const publisherProcessedRef = useRef(false);
+  const pollingIntervalRef = useRef(null);
+  const pollingTimeoutRef = useRef(null);
+  const baselineOrderIdsRef = useRef(new Set());
+
+  const stopOrderPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startOrderPolling = useCallback(async () => {
+    // Capture baseline order book before user places orders in WebView
+    try {
+      const { fetchOrderBook } = require('../../services/BrokerOrderBookAPI');
+      const baseline = await fetchOrderBook(broker, {clientCode, apiKey, jwtToken, secretKey, sid, serverId}, configData);
+      const orders = baseline?.data || baseline || [];
+      baselineOrderIdsRef.current = new Set(
+        (Array.isArray(orders) ? orders : []).map(o => o.orderId || o.order_id).filter(Boolean),
+      );
+    } catch (err) {
+      console.warn('[Publisher Polling] Failed to fetch baseline orders:', err);
+    }
+
+    pollingIntervalRef.current = setInterval(async () => {
+      if (publisherProcessedRef.current) {
+        stopOrderPolling();
+        return;
+      }
+      try {
+        const { fetchOrderBook } = require('../../services/BrokerOrderBookAPI');
+        const current = await fetchOrderBook(broker, {clientCode, apiKey, jwtToken, secretKey, sid, serverId}, configData);
+        const currentOrders = current?.data || current || [];
+        const newOrders = (Array.isArray(currentOrders) ? currentOrders : []).filter(o => {
+          const id = o.orderId || o.order_id;
+          return id && !baselineOrderIdsRef.current.has(id);
+        });
+
+        if (newOrders.length > 0 && !publisherProcessedRef.current) {
+          console.log(`[Publisher Polling] Detected ${newOrders.length} new orders — triggering post-order flow`);
+          stopOrderPolling();
+          publisherProcessedRef.current = true;
+          setWebView(false);
+          setZerodhaStatus('success');
+          setZerodhaRequestType('rebalance');
+        }
+      } catch (err) {
+        // Polling errors are non-fatal
+      }
+    }, POLL_INTERVAL_MS);
+
+    // Timeout: stop after 90s
+    pollingTimeoutRef.current = setTimeout(() => {
+      if (!publisherProcessedRef.current) {
+        console.warn('[Publisher Polling] Timed out after 90s');
+        stopOrderPolling();
+        publisherProcessedRef.current = true;
+        setWebView(false);
+        setZerodhaStatus('success');
+        setZerodhaRequestType('rebalance');
+      }
+    }, POLL_TIMEOUT_MS);
+  }, [broker, clientCode, apiKey, jwtToken, secretKey, sid, serverId, configData, stopOrderPolling]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => stopOrderPolling();
+  }, [stopOrderPolling]);
   console.log("Calculated Portfolio Data---", calculatedPortfolioData);
 
   // Parse skipped stocks message
@@ -218,57 +300,56 @@ const RebalanceModal = ({
         : [];
   }
 
-  const [marketPrices, setMarketPrices] = useState({});
+  // Real-time prices via WebSocket (matching web app pattern)
+  const wsSymbols = visible ? dataArray : [];
+  const { getLTPForSymbol: wsGetLTP } = useWebSocketCurrentPrice(wsSymbols);
 
-  const fetchMarketPrices = async symbolsData => {
-    try {
-      const data = JSON.stringify({
-        Orders: symbolsData.map(item => ({
-          exchange: item.exchange || 'NSE', // Use the exchange from the item
-          segment: '',
-          tradingSymbol: item.symbol,
-        })),
-      });
-
-      console.log('data', data);
-      const config = {
-        method: 'post',
-        url: `${server.ccxtServer.baseUrl}angelone/market-data`,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-        data,
-      };
-
-      const response = await axios.request(config);
-      const pricesMap = {};
-      response?.data?.data?.fetched?.forEach(item => {
-        pricesMap[item.tradingSymbol] = item.ltp;
-      });
-
-      setMarketPrices(pricesMap);
-    } catch (error) {
-      console.error('Error fetching market prices:', error);
-    }
-  };
+  // REST fallback for initial load (WebSocket may take a moment to connect)
+  const [restPrices, setRestPrices] = useState({});
   useEffect(() => {
-    if (visible && dataArray.length > 0) {
-      // Pass the full dataArray items with exchange info
-      fetchMarketPrices(dataArray);
-    }
+    if (!visible || dataArray.length === 0) return;
+    const fetchInitialPrices = async () => {
+      try {
+        const response = await axios.post(
+          `${server.ccxtServer.baseUrl}angelone/market-data`,
+          {
+            Orders: dataArray.map(item => ({
+              exchange: item.exchange || 'NSE',
+              segment: '',
+              tradingSymbol: item.symbol,
+            })),
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        );
+        const pricesMap = {};
+        response?.data?.data?.fetched?.forEach(item => {
+          pricesMap[item.tradingSymbol] = item.ltp;
+        });
+        setRestPrices(pricesMap);
+      } catch (error) {
+        console.error('Error fetching initial market prices:', error);
+      }
+    };
+    fetchInitialPrices();
   }, [visible]);
 
-  // Utility to get the last traded price for a symbol
+  // Unified LTP getter: prefer WebSocket (real-time), fall back to REST
   const getLTPForSymbol = useCallback(
     symbol => {
-      return marketPrices[symbol] ?? null;
+      const wsPrice = wsGetLTP(symbol);
+      if (wsPrice && wsPrice > 0) return wsPrice;
+      return restPrices[symbol] ?? null;
     },
-    [marketPrices],
+    [wsGetLTP, restPrices],
   );
 
   const initializedRef = useRef(false);
@@ -282,14 +363,14 @@ const RebalanceModal = ({
       dataArray.length > 0
     ) {
       // Initialize as soon as market prices are available, or fallback to rebalance prices
-      if (Object.keys(marketPrices).length > 0) {
+      if (Object.keys(restPrices).length > 0) {
         initializeEditableData();
       } else if (dataArray.some(item => item.rebalancePrice)) {
         // Use rebalance prices from API response as fallback
         initializeEditableData();
       }
     }
-  }, [visible, marketPrices, isBrokerDisconnected, dataArray]);
+  }, [visible, restPrices, isBrokerDisconnected, dataArray]);
 
   // Auto-mark "already aligned" as executed in DB for DummyBroker
   // Mirrors the same flow as DummyBrokerHoldingConfirmation:
@@ -312,7 +393,7 @@ const RebalanceModal = ({
 
     const requestHeaders = {
       'Content-Type': 'application/json',
-      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
       'aq-encrypted-key': generateToken(
         Config.REACT_APP_AQ_KEYS,
         Config.REACT_APP_AQ_SECRET,
@@ -390,7 +471,7 @@ const RebalanceModal = ({
 
     setEditableData(initialData);
     initializedRef.current = true;
-  }, [dataArray, getLTPForSymbol, marketPrices]);
+  }, [dataArray, getLTPForSymbol, restPrices]);
 
   // NEW: Function to open DummyBroker confirmation modal
 
@@ -418,7 +499,24 @@ const RebalanceModal = ({
     setShowDummyBrokerModal(false);
   };
 
-  const stockDetails = convertResponse(dataArray, broker);
+  const rawStockDetails = convertResponse(dataArray, broker);
+
+  // Filter out SELL actions for stocks not in user's holdings (matching web heldSymbols filter)
+  const stockDetails = (() => {
+    const userHoldings = calculatedPortfolioData?.userHoldings || calculatedPortfolioData?.user_net_pf_model;
+    if (!Array.isArray(userHoldings) || userHoldings.length === 0) return rawStockDetails;
+    const heldSymbols = new Set();
+    userHoldings.forEach(h => {
+      const sym = h?.symbol || h?.tradingSymbol || '';
+      const qty = h?.quantity || h?.qty || 0;
+      if (sym && qty > 0) heldSymbols.add(sym.toUpperCase());
+    });
+    if (heldSymbols.size === 0) return rawStockDetails;
+    return rawStockDetails.filter(item => {
+      if ((item.transactionType || '').toUpperCase() !== 'SELL') return true;
+      return heldSymbols.has((item.tradingSymbol || item.symbol || '').toUpperCase());
+    });
+  })();
 
   // --- Zerodha Publisher Flow Functions ---
 
@@ -572,7 +670,11 @@ const RebalanceModal = ({
 
       const htmlForm = generateHtmlForm(basket, zerodhaApiKey);
       setHtmlContent(htmlForm);
+      publisherProcessedRef.current = false;
       setWebView(true);
+
+      // Start order-book polling fallback (matching web pattern)
+      startOrderPolling();
     } catch (error) {
       console.error('Failed to handle Zerodha redirect:', error);
       setLoading(false);
@@ -601,6 +703,10 @@ const RebalanceModal = ({
   };
 
   const checkZerodhaStatus = async () => {
+    // Stop polling — normal WebView callback is proceeding
+    stopOrderPolling();
+    publisherProcessedRef.current = true;
+
     const { zerodhaStockDetails, zerodhaAdditionalPayload } =
       await fetchZerodhaData();
 
@@ -635,6 +741,7 @@ const RebalanceModal = ({
             modelName: zerodhaAdditionalPayload.modelName,
             advisor: zerodhaAdditionalPayload.advisor,
             unique_id: zerodhaAdditionalPayload.unique_id,
+            caPendingInfo: calculatedPortfolioData?.caPendingInfo || [],
           },
           { headers: requestHeaders }
         );
@@ -643,8 +750,9 @@ const RebalanceModal = ({
 
         const orderResults = recordResponse.data.response || recordResponse.data.results || [];
 
-        // Update subscriber execution status (matching prod)
+        // Update subscriber execution status (matching web app)
         const successStatuses = ['complete', 'executed', 'traded'];
+        const pendingStatuses = ['open', 'pending', 'transit', 'placed', 'trigger pending', 'after market order req received'];
         const pubSuccessCount = orderResults.filter(r =>
           successStatuses.includes((r.orderStatus || '').toLowerCase()),
         ).length;
@@ -654,7 +762,10 @@ const RebalanceModal = ({
         } else if (pubSuccessCount > 0) {
           executionStatus = 'partial';
         } else {
-          executionStatus = 'pending';
+          const hasPendingOrders = orderResults.some(r =>
+            pendingStatuses.includes((r.orderStatus || '').toLowerCase()),
+          );
+          executionStatus = hasPendingOrders ? 'pending' : 'toExecute';
         }
 
         try {
@@ -821,6 +932,7 @@ const RebalanceModal = ({
         unique_id: additionalPayload.unique_id,
         returnDateTime: istDatetime,
         trades: stockDetails,
+        caPendingInfo: calculatedPortfolioData?.caPendingInfo || [],
       };
 
       const response = await axios.post(
@@ -880,9 +992,10 @@ const RebalanceModal = ({
         { headers: requestHeaders },
       );
 
-      // Update subscriber execution status
+      // Update subscriber execution status (matching web app)
       if (checkData && checkData.length > 0) {
         const successStatuses = ['complete', 'executed', 'traded'];
+        const pendingStatuses = ['open', 'pending', 'transit', 'placed', 'trigger pending', 'after market order req received'];
         const pubSuccessCount = checkData.filter(r =>
           successStatuses.includes((r.orderStatus || '').toLowerCase()),
         ).length;
@@ -892,7 +1005,10 @@ const RebalanceModal = ({
         } else if (pubSuccessCount > 0) {
           executionStatus = 'partial';
         } else {
-          executionStatus = 'pending';
+          const hasPendingOrders = checkData.some(r =>
+            pendingStatuses.includes((r.orderStatus || '').toLowerCase()),
+          );
+          executionStatus = hasPendingOrders ? 'pending' : 'toExecute';
         }
 
         try {
@@ -1123,6 +1239,8 @@ const RebalanceModal = ({
       ...getBasePayload(),
       ...getBrokerSpecificPayload(),
       ...getAdditionalPayload(),
+      // Include CA pending info for partial trade recording (matching web)
+      caPendingInfo: calculatedPortfolioData?.caPendingInfo || [],
     };
 
     console.log('[RebalanceModal] Final payload trades count:', payload.trades?.length);
@@ -1288,6 +1406,55 @@ const RebalanceModal = ({
             ? count + 1
             : count;
         }, 0);
+
+        // Detect all orders failed with rich error data from backend (matching web)
+        const backendOrderErrors = response?.data?.orderErrors || [];
+        const backendFundsRequired = response?.data?.fundsRequired;
+        const allOrdersFailed = (checkData || []).every(order => {
+          const s = (order?.orderStatus || '').toUpperCase();
+          return s === 'REJECTED' || s === 'CANCELLED' || s === 'FAILURE' || s === 'FAILED';
+        });
+
+        // Transient service-window short-circuit: if every failed row is a
+        // known broker maintenance-window error (e.g. Upstox UDAPI100074
+        // between 00:00–05:30 IST), show a soft toast and close the modal
+        // instead of the all-failed modal. Broker session is fine — just
+        // retry after the window reopens.
+        const transientServiceWindowMsg = detectTransientOrderWindowError(response?.data);
+        if (transientServiceWindowMsg) {
+          Toast.show({
+            type: 'info',
+            text1: 'Broker service window',
+            text2:
+              transientServiceWindowMsg ||
+              `${broker} order placement is temporarily unavailable. Try again during the broker's service hours.`,
+            visibilityTime: 8000,
+          });
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          getRebalanceRepair();
+          getModelPortfolioStrategyDetails();
+          return;
+        }
+
+        if (allOrdersFailed && backendOrderErrors.length > 0) {
+          // Show success modal with failure details (matches web behavior)
+          setOrderPlacementResponse(checkData);
+          setOpenSucessModal(true);
+          setOpenRebalanceModal(false);
+          setLoading(false);
+          if (backendFundsRequired) {
+            Toast.show({
+              type: 'error',
+              text1: 'Insufficient Funds',
+              text2: `Amount needed: \u20B9${parseFloat(backendFundsRequired).toFixed(2)}. Please add funds and retry.`,
+              visibilityTime: 6000,
+            });
+          }
+          getRebalanceRepair();
+          getModelPortfolioStrategyDetails();
+          return;
+        }
 
         // Check for CDSL/EDIS/TPIN error messages in rejected orders
         const hasCdslError = (checkData || []).some((order) => {
@@ -1737,6 +1904,31 @@ const RebalanceModal = ({
                           {parseFloat(minInvestment).toLocaleString('en-IN')}
                         </Text>
                       )}
+                    </View>
+                  )}
+
+                  {/* CA Pending Info Warning (split settlement) */}
+                  {calculatedPortfolioData?.caPendingInfo?.length > 0 && (
+                    <View style={[styles.warningContainer, {borderLeftColor: '#F97316', borderLeftWidth: 4, backgroundColor: '#FFF7ED'}]}>
+                      <View style={styles.warningHeader}>
+                        <Text style={{fontSize: 14}}>⏳</Text>
+                        <Text style={[styles.warningTitle, {color: '#9A3412'}]}>
+                          Split Settlement Pending
+                        </Text>
+                      </View>
+                      <Text style={[styles.warningText, {color: '#9A3412'}]}>
+                        The following stocks have a recent split, but your broker hasn't credited all shares yet.
+                      </Text>
+                      {calculatedPortfolioData.caPendingInfo.map((item, index) => (
+                        <View key={`ca-${index}`} style={{flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingHorizontal: 8, borderBottomWidth: index < calculatedPortfolioData.caPendingInfo.length - 1 ? 1 : 0, borderBottomColor: '#FED7AA'}}>
+                          <Text style={{fontSize: 12, fontFamily: 'Poppins-Medium', color: '#9A3412', flex: 1}}>{item.symbol}</Text>
+                          <Text style={{fontSize: 11, color: '#EA580C', flex: 1, textAlign: 'center'}}>Expected: {item.expected_qty}</Text>
+                          <Text style={{fontSize: 11, color: '#16A34A', flex: 1, textAlign: 'right'}}>Can sell: {item.sell_qty_possible}</Text>
+                        </View>
+                      ))}
+                      <Text style={{fontSize: 10, color: '#EA580C', marginTop: 8, fontFamily: 'Poppins-Regular'}}>
+                        We'll sell {calculatedPortfolioData.caPendingInfo.reduce((sum, item) => sum + (item.sell_qty_possible || 0), 0)} shares now. The remaining will be marked for "Repair" — you can sell them once your broker credits the split shares.
+                      </Text>
                     </View>
                   )}
 

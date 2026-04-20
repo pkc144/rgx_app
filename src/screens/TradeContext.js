@@ -112,10 +112,6 @@ export const TradeProvider = ({children}) => {
     loadStoredData();
   }, [loadStoredData]);
 
-  const advisortag = configData?.config?.REACT_APP_ADVISOR_TAG;
-  const advisorspecific = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
-  const showAdviceStatusDays = adviceShowDays;
-
   const fetchAdviceShowDays = useCallback(async () => {
     try {
       const subdomain =
@@ -135,7 +131,7 @@ export const TradeProvider = ({children}) => {
           },
         },
       );
-      const days = Number(response.data?.adviceShowLatestDays);
+      const days = Number(response.data?.data?.adviceShowLatestDays);
       if (days && days >= 1 && days <= 365) {
         setAdviceShowDays(days);
       }
@@ -149,6 +145,10 @@ export const TradeProvider = ({children}) => {
       fetchAdviceShowDays();
     }
   }, [configData, fetchAdviceShowDays]);
+
+  const advisortag = configData?.config?.REACT_APP_ADVISOR_TAG;
+  const advisorspecific = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
+  const showAdviceStatusDays = adviceShowDays;
 
   const [modelPortfolioStrategyfinal, setModelPortfolioStrategyfinal] =
     useState([]);
@@ -398,7 +398,7 @@ export const TradeProvider = ({children}) => {
         const response = await axios.get(requesturl, {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -498,7 +498,19 @@ const getAllTrades = async () => {
 
     const flattenResponse = response => {
       const rawTrades = response?.data?.trades ?? [];
-      
+
+      // Collect all symbols that are legs of any basket — prevents duplicate
+      // standalone cards when the same symbol appears both as a basket leg
+      // and as a separate recommendation.
+      const basketLegSymbols = new Set();
+      rawTrades.forEach(item => {
+        if (item?.basket_advice && item.basket_advice.length > 0) {
+          item.basket_advice.forEach(advice => {
+            if (advice.Symbol) basketLegSymbols.add(advice.Symbol);
+          });
+        }
+      });
+
       return rawTrades.flatMap(item => {
         // BASKET STRUCTURE: Has basket_advice array with trades
         if (item?.basket_advice && item?.basket_advice.length > 0) {
@@ -585,6 +597,8 @@ const getAllTrades = async () => {
         }
 
         // REGULAR TRADES: Not a basket
+        // Exclude if this symbol is already a leg of a basket (prevents duplicate cards)
+        if (basketLegSymbols.has(item?.Symbol)) return [];
         if (!isValidSymbolExpiry(item?.Symbol, item?.Exchange)) {
           return [];
         }
@@ -620,7 +634,6 @@ const getAllTrades = async () => {
         }
 
         // REGULAR TRADES: Process normally
-        // Skip model portfolio trades (they have model_id)
         // REJECTED
         if (
           isRejectedStatus(trade?.trade_place_status) &&
@@ -633,13 +646,11 @@ const getAllTrades = async () => {
           acc.rejected.push(trade);
         }
 
-        // RECOMMENDED
+        // RECOMMENDED — only active recommendations; rejected bespoke lives
+        // exclusively in acc.rejected and is surfaced via the Rejected tab.
         if (
-          (trade?.trade_place_status === 'recommend' &&
-            tradeDate >= cutoffDate) ||
-          (isRejectedStatus(trade?.trade_place_status) &&
-            !trade?.model_id &&
-            tradeDate >= cutoffDate)
+          trade?.trade_place_status === 'recommend' &&
+          tradeDate >= cutoffDate
         ) {
           acc.recommended.push(trade);
         }
@@ -965,13 +976,11 @@ const getAllTrades = async () => {
     }
 
     const {
-      user_broker,
       clientCode,
       apiKey,
       jwtToken,
       secretKey,
       sid,
-      viewToken,
       serverId,
     } = userDetails;
 
@@ -983,9 +992,8 @@ const getAllTrades = async () => {
         jwtToken,
         secretKey,
         sid,
-        viewToken,
         serverId,
-        configData,
+        userEmail,
       );
       console.log("Fetched Funds-----",fetchedFunds);
       if (fetchedFunds) {
@@ -1239,7 +1247,19 @@ const getAllTrades = async () => {
       getAllNotifcations();
       getModelPortfolioStrategyDetails();
     }
-  }, [userEmail, configData, adviceShowDays]);
+  }, [userEmail, configData]);
+
+  // Re-fetch only trades when adviceShowDays changes (don't re-trigger everything)
+  const adviceShowDaysInitialized = useRef(false);
+  useEffect(() => {
+    if (!adviceShowDaysInitialized.current) {
+      adviceShowDaysInitialized.current = true;
+      return; // Skip first run — already fetched above
+    }
+    if (userEmail && configData) {
+      getAllTrades();
+    }
+  }, [adviceShowDays]);
 
   // for broker specigfic Holdings
   const [BrokerHoldingsData, setBrokerHoldingsData] = useState([]);
@@ -1359,7 +1379,7 @@ const getAllTrades = async () => {
         url: `${server.ccxtServer.baseUrl}angelone/market-data`,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,

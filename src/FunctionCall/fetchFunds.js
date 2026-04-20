@@ -1,128 +1,118 @@
 import axios from 'axios';
-import CryptoJS from 'react-native-crypto-js';
 import server from '../utils/serverConfig';
-import Config from 'react-native-config';
 import {generateToken} from '../utils/SecurityTokenManager';
-import {useTrade} from '../screens/TradeContext';
-const checkValidApiAnSecret = details => {
-  if (!details) return null;
-  try {
-    const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');
-    const Key = bytesKey.toString(CryptoJS.enc.Utf8);
+import Config from 'react-native-config';
+import {getAdvisorSubdomain} from '../utils/variantHelper';
 
-    if (Key) {
-      return Key;
-    } else {
-      throw new Error('Decryption failed or invalid key.');
-    }
-  } catch (error) {
-    console.error('Error during decryption:', error.message);
-    return null;
-  }
-};
-// console.log('brokerrriiiiiiiiii--099999999999');
 export const fetchFunds = async (
   broker,
   clientCode,
-  apiKey,
+  apiKey, // kept for backward compatibility but not used
   jwtToken,
-  secretKey,
+  secretKey, // kept for backward compatibility but not used
   sid,
-  viewToken,
   serverId,
-  configData,
+  userEmail,
 ) => {
   if (!broker) {
     return null;
   }
 
   let data, url;
-  const angelApi = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
-  console.log('brokeerrrr:', broker);
+
+  // Server fetches apiKey/secretKey from DB using userEmail.
+  // We only pass accessToken, userEmail, and broker-specific identifiers.
   switch (broker) {
     case 'IIFL Securities':
-      // IIFL backend endpoints are currently unavailable (404)
-      console.warn('[fetchFunds] IIFL Securities integration is temporarily unavailable');
-      return {status: 2, data: null, message: 'IIFL Securities integration is temporarily unavailable'};
-    case 'ICICI Direct':
-      if (!apiKey || !jwtToken || !secretKey) return;
+      if (!jwtToken) return;
       data = JSON.stringify({
-        apiKey: checkValidApiAnSecret(apiKey),
         accessToken: jwtToken,
-        secretKey: checkValidApiAnSecret(secretKey),
+        userEmail,
+      });
+      url = `${server.ccxtServer.baseUrl}iifl/funds`;
+      break;
+    case 'ICICI Direct':
+      if (!jwtToken) return;
+      data = JSON.stringify({
+        accessToken: jwtToken,
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}icici/funds`;
       break;
     case 'Upstox':
-      if (!apiKey || !jwtToken || !secretKey) return;
+      if (!jwtToken) return;
       data = JSON.stringify({
-        apiKey: checkValidApiAnSecret(apiKey),
         accessToken: jwtToken,
-        apiSecret: checkValidApiAnSecret(secretKey),
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}upstox/funds`;
       break;
     case 'Angel One':
-      //console.log('AngelOne funds Details:',angelApi,jwtToken);
       if (!jwtToken) return;
       data = JSON.stringify({
-        apiKey: angelApi,
         accessToken: jwtToken,
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}angelone/funds`;
+      break;
+    case 'Motilal Oswal':
+      if (!jwtToken) return;
+      data = JSON.stringify({
+        clientCode: clientCode,
+        accessToken: jwtToken,
+        userEmail,
+      });
+      url = `${server.ccxtServer.baseUrl}motilal-oswal/funds`;
       break;
     case 'Zerodha':
       if (!jwtToken) return;
       data = JSON.stringify({
-        apiKey: configData?.config?.REACT_APP_ZERODHA_API_KEY,
         accessToken: jwtToken,
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}zerodha/funds`;
       break;
     case 'Hdfc Securities':
-      // console.log('api:', checkValidApiAnSecret(apiKey), 'jwt:', jwtToken);
-      if (!apiKey || !jwtToken) return;
+      if (!jwtToken) return;
       data = JSON.stringify({
-        apiKey: checkValidApiAnSecret(apiKey),
         accessToken: jwtToken,
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}hdfc/funds`;
       break;
     case 'Kotak':
-      if (!jwtToken || !apiKey || !secretKey || !sid) return;
+      if (!jwtToken) return;
       data = JSON.stringify({
-        consumerKey: checkValidApiAnSecret(apiKey),
-        consumerSecret: checkValidApiAnSecret(secretKey),
         accessToken: jwtToken,
         sid,
         serverId: serverId ? serverId : '',
+        userEmail,
       });
-      // console.log('dataaaa:', data);
       url = `${server.ccxtServer.baseUrl}kotak/funds`;
       break;
     case 'Dhan':
-      //  console.log('Client:',clientCode,'JWT:',jwtToken);
-      if (!clientCode || !jwtToken) return;
+      if (!jwtToken) return;
       data = JSON.stringify({
         clientId: clientCode,
         accessToken: jwtToken,
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}dhan/funds`;
       break;
+    case 'Groww':
+      if (!jwtToken) return;
+      data = JSON.stringify({
+        accessToken: jwtToken,
+        userEmail,
+      });
+      url = `${server.ccxtServer.baseUrl}groww/funds`;
+      break;
     case 'AliceBlue':
-      console.log(
-        'ClientCode:',
-        clientCode,
-        'jwt:',
-        jwtToken,
-        'apiKey:',
-        apiKey,
-      );
-      if (!clientCode || !jwtToken) return;
+      if (!jwtToken) return;
       data = JSON.stringify({
         clientId: clientCode,
-        apiKey: apiKey,
         accessToken: jwtToken,
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}aliceblue/funds`;
       break;
@@ -131,39 +121,29 @@ export const fetchFunds = async (
       data = JSON.stringify({
         clientId: clientCode,
         accessToken: jwtToken,
+        userEmail,
       });
       url = `${server.ccxtServer.baseUrl}fyers/funds`;
       break;
-    case 'Groww':
+    case 'Axis Securities':
       if (!jwtToken) return;
       data = JSON.stringify({
         accessToken: jwtToken,
-      });
-      url = `${server.ccxtServer.baseUrl}groww/funds`;
-      break;
-    case 'Motilal Oswal':
-      if (!jwtToken) return;
-
-      const cleanToken = jwtToken.replace(/^Bearer\s+/i, ''); // removes 'Bearer ' if present
-
-      data = JSON.stringify({
-        apiKey: checkValidApiAnSecret(apiKey),
         clientCode: clientCode,
-        accessToken: cleanToken, // use the cleaned token
+        userEmail,
       });
-      url = `${server.ccxtServer.baseUrl}motilal-oswal/funds`;
+      url = `${server.ccxtServer.baseUrl}axis/funds`;
       break;
-
     default:
-      return; // If the broker is not recognized
+      return;
   }
 
   try {
-    // console.log('datA:',data,'url:',url,checkValidApiAnSecret(apiKey),);
     const response = await axios.post(url, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain,
+        'X-Advisor-Subdomain':
+          Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -173,7 +153,6 @@ export const fetchFunds = async (
 
     return response.data;
   } catch (error) {
-    console.error(error.response);
-    return null;
+    return error?.response?.data;
   }
 };

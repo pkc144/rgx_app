@@ -10,7 +10,28 @@ import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
 
-const ALICEBLUE_APPCODE_URL = 'https://ant.aliceblueonline.com/?appcode=7WMf5NotZe';
+// Route through CCXT backend (matching web's handleAliceBlueConnect) so origin
+// is stored in MongoDB for multi-site callback routing. The CCXT server
+// redirects to AliceBlue and then back to `${origin}${returnPath}` with the
+// OAuth result params, which the WebView nav handler below intercepts.
+const buildAliceBlueAuthUrl = () => {
+  const raw =
+    Config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+    `https://${getAdvisorSubdomain()}.alphaquark.in/stock-recommendation`;
+  let origin = raw;
+  let returnPath = '/stock-recommendation';
+  try {
+    const parsed = new URL(raw);
+    origin = parsed.origin;
+    returnPath = parsed.pathname || '/stock-recommendation';
+  } catch (e) {
+    // Fall through to defaults if REACT_APP_BROKER_CONNECT_REDIRECT_URL
+    // isn't a valid absolute URL on this build.
+  }
+  return `${server.ccxtServer.baseUrl}aliceblue/login?origin=${encodeURIComponent(
+    origin,
+  )}&returnPath=${encodeURIComponent(returnPath)}`;
+};
 
 const AliceBlueConnect = ({
   isVisible,
@@ -204,7 +225,7 @@ const AliceBlueConnect = ({
     <AliceBlueConnectUI
       isVisible={isVisible}
       onClose={onClose}
-      authUrl={ALICEBLUE_APPCODE_URL}
+      authUrl={buildAliceBlueAuthUrl()}
       handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
       loading={loading}
     />

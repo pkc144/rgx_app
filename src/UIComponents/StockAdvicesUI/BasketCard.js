@@ -31,6 +31,7 @@ const BasketCard = ({
   handleTradeBasket,
   setOpenTokenExpireModel,
   setOpenBrokerModel,
+  onCancelBasket,
 }) => {
   console.log("Basket i Have ------",basket);
   const [showMore, setShowMore] = useState(false);
@@ -391,19 +392,34 @@ const BasketCard = ({
     );
   };
 
-  // Determine gradient colors based on basket type
+  // Determine gradient colors based on basket type.
+  // Regular state pulls from the active variant's basket1/basket2 tokens
+  // (RGX: red; alphab2b default: purple) so theming survives this sync.
   const getGradientColors = () => {
     if (isExpired) return ['rgba(100, 100, 100, 1)', 'rgba(150, 150, 150, 1)']; // Gray for expired
     if (isClosureBasket) return ['rgba(139, 0, 0, 1)', 'rgba(200, 50, 50, 1)']; // Red for closure
-    return ['rgba(15, 62, 0, 1)', 'rgba(41, 164, 0, 1)']; // Green for regular
+    const b1 = configData?.config?.basket1 || '#000C18';
+    const b2 = configData?.config?.basket2 || '#002C59';
+    return [b1, b2, b1];
   };
+
+  const isRegularBasket = !isExpired && !isClosureBasket;
 
   return (
     <LinearGradient
       colors={getGradientColors()}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={styles.card}
+      style={[
+        styles.card,
+        isRegularBasket && {
+          borderWidth: 1,
+          borderColor:
+            configData?.config?.basketsymbolbg
+              ? `${configData.config.basketsymbolbg}4D` // 30% alpha (hex 0x4D)
+              : 'rgba(30, 159, 64, 0.3)',
+        },
+      ]}
     >
       <View style={styles.contentContainer}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -498,31 +514,42 @@ const BasketCard = ({
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.acceptButton,
-            (isExpired || isCheckingReconciliation) && styles.acceptButtonDisabled
-          ]}
-          onPress={handleTradeNowBasket}
-          disabled={isExpired || isCheckingReconciliation}
-        >
-          {isCheckingReconciliation ? (
-            <>
-              <ActivityIndicator size="small" color="rgba(41, 164, 0, 1)" style={{marginRight: 8}} />
-              <Text style={styles.acceptButtonText}>Checking orders...</Text>
-            </>
-          ) : (
-            <>
-              <Text style={[
-                styles.acceptButtonText,
-                isExpired && styles.acceptButtonTextDisabled
-              ]}>
-                {isExpired ? 'Basket Expired' : (isClosureBasket ? 'Close Positions' : 'View More Detail/Trade')}
-              </Text>
-              {!isExpired && <ArrowRight size={12} color={isClosureBasket ? 'rgba(139, 0, 0, 1)' : 'rgba(41, 164, 0, 1)'} />}
-            </>
+        <View style={{flexDirection: 'row', gap: 8}}>
+          {onCancelBasket && !isExpired && !basket?.cancel && !basket?.closurestatus && (
+            <TouchableOpacity
+              style={styles.rejectButton}
+              onPress={() => onCancelBasket(basket?.basketId)}
+            >
+              <Text style={styles.rejectButtonText}>Reject</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.acceptButton,
+              {flex: 1},
+              (isExpired || isCheckingReconciliation) && styles.acceptButtonDisabled,
+            ]}
+            onPress={handleTradeNowBasket}
+            disabled={isExpired || isCheckingReconciliation}
+          >
+            {isCheckingReconciliation ? (
+              <>
+                <ActivityIndicator size="small" color="rgba(41, 164, 0, 1)" style={{marginRight: 8}} />
+                <Text style={styles.acceptButtonText}>Checking orders...</Text>
+              </>
+            ) : (
+              <>
+                <Text style={[
+                  styles.acceptButtonText,
+                  isExpired && styles.acceptButtonTextDisabled,
+                ]}>
+                  {isExpired ? 'Basket Expired' : (isClosureBasket ? 'Close Positions' : 'Accept Basket')}
+                </Text>
+                {!isExpired && <ArrowRight size={12} color={isClosureBasket ? 'rgba(139, 0, 0, 1)' : 'rgba(41, 164, 0, 1)'} />}
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
 
         {/* Pending Order Warning Modal */}
         <PendingOrderWarningModal
@@ -670,6 +697,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 6,
     fontSize: 9,
+  },
+  rejectButton: {
+    borderWidth: 1,
+    borderColor: '#D97706',
+    backgroundColor: 'rgba(217, 119, 6, 0.15)',
+    borderRadius: 4,
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rejectButtonText: {
+    color: '#D97706',
+    fontFamily: 'Poppins-Medium',
+    fontSize: 12,
+    paddingTop: 2,
   },
   acceptButton: {
     borderWidth: 1,

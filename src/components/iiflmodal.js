@@ -96,13 +96,14 @@ const IIFLModal = ({isVisible, onClose}) => {
       const response = await axios.post(
         `${server.ccxtServer.baseUrl}/iifl/login/client`,
         {
+          user_email: userEmail,
           auth_token: authCode,
           client_code: clientId,
         },
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,

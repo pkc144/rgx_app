@@ -58,6 +58,7 @@ import { useSocialProof } from '../../components/SocialProofProvider';
 import { useTrade } from '../TradeContext';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { useConfig } from '../../context/ConfigContext';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import APP_VARIANTS from '../../utils/Config';
 import Icon1 from 'react-native-vector-icons/Fontisto';
 import moment from 'moment';
@@ -158,7 +159,7 @@ const HomeScreen = ({ }) => {
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -184,11 +185,11 @@ const HomeScreen = ({ }) => {
   }, [modelPortfolioStrategyfinal]);
 
 
-  const filteredAndSortedStrategies = modelPortfolioStrategyfinal
-    ?.sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated))
-    ?.map(ele => {
+  const filteredAndSortedStrategies = [...(modelPortfolioStrategyfinal || [])]
+    .sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated))
+    .map(ele => {
       const allRebalances = ele?.model?.rebalanceHistory || [];
-      const sortedRebalances = allRebalances?.sort(
+      const sortedRebalances = [...allRebalances].sort(
         (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
       );
       const latest = sortedRebalances[0];
@@ -198,11 +199,20 @@ const HomeScreen = ({ }) => {
       // Find execution for this user AND current broker
       // A user may execute the same rebalance with multiple brokers,
       // so we check broker match to allow re-execution with a different broker
-      const userExecution = latest?.subscriberExecutions?.find(
-        execution =>
-          execution?.user_email === userEmail &&
-          (!broker || execution?.user_broker === broker),
-      );
+      // Also match DummyBroker executions when broker is not connected
+      const userExecutionsFiltered =
+        latest?.subscriberExecutions?.filter(
+          execution => execution?.user_email === userEmail,
+        ) || [];
+
+      const userExecution =
+        userExecutionsFiltered.find(
+          ex => broker && ex?.user_broker === broker,
+        ) ||
+        userExecutionsFiltered.find(
+          ex => ex?.user_broker === 'DummyBroker',
+        ) ||
+        (!broker ? userExecutionsFiltered[0] : undefined);
 
       const matchingFailedTrades = modelPortfolioRepairTrades?.find(
         trade =>
@@ -211,11 +221,18 @@ const HomeScreen = ({ }) => {
       );
 
       //  console.log('mathcignL',modelPortfolioRepairTrades);
+      // Get user's latest investment amount from subscription_amount_raw
+      const rawAmounts = ele?.subscription_amount_raw;
+      const latestInvestment = Array.isArray(rawAmounts) && rawAmounts.length > 0
+        ? [...rawAmounts].sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))[0]?.amount
+        : null;
+
       return {
         ...ele,
         latestRebalance: latest,
         hasFailedTrades: matchingFailedTrades,
         matchingFailedTrades,
+        userInvestmentAmount: latestInvestment,
       };
     })
     ?.filter(ele => ele !== null);
@@ -247,7 +264,7 @@ const HomeScreen = ({ }) => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -440,6 +457,7 @@ const HomeScreen = ({ }) => {
             image,
             description,
           );
+          break;
         case 'New Rebalance':
           handleRebalanceNotification(title, body, notificationType);
           break;
@@ -958,7 +976,7 @@ const HomeScreen = ({ }) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1089,7 +1107,7 @@ const HomeScreen = ({ }) => {
                 {selectedVariant === 'arfs' ? (
                   <>
                     <Text style={styles.headerText}>SMARTER INVESTING</Text>
-                    <Text style={styles.headerText}>WITH ARFS</Text>
+                    <Text style={styles.headerText}>WITH {(configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || configData?.appName || getAdvisorSubdomain()).toUpperCase()}</Text>
                     <View
                       style={{
                         flexDirection: 'row',
@@ -1238,10 +1256,93 @@ const HomeScreen = ({ }) => {
   const [hasMPData, setHasMPData] = useState(false);
   const [hasBespokeData, setHasBespokeData] = useState(false);
 
+  // Whether user has active recommendations or rebalances
+  const hasActiveContent = filteredAndSortedStrategies.length > 0 || stockRecoNotExecutedfinal?.length > 0;
+
   // Data for All Tab
+  // If user has active subscriptions (recos/rebalances), show those first, plans after.
+  // Otherwise show plans first to encourage subscription.
   const allTabData = [
 
-    ...(configData?.config.REACT_APP_MODEL_PORTFOLIO_STATUS === true
+    // ── Active content first (only when user has subscriptions) ──
+    ...(hasActiveContent && filteredAndSortedStrategies.length > 0
+      ? [
+        {
+          key: 'RebalanceAdvicesTop',
+          component: (
+            <View>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  marginVertical: 10,
+                  alignItems: 'center',
+                  marginHorizontal: 15,
+                }}>
+                <View>
+                  <Text style={styles.StockTitle}>
+                    Portfolio Recommendations
+                  </Text>
+                  <Text style={styles.StockTitlebelow}>
+                    Model Portfolio Active Rebalances
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSeeAllMP(true)}
+                  style={styles.viewAll}>
+                  <Text style={styles.viewAllText}>View All</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ marginLeft: 14 }}>
+                <RebalanceAdvices userEmail={userEmail} type={'home'} />
+              </View>
+            </View>
+          ),
+        },
+      ]
+      : []),
+
+    ...(hasActiveContent && stockRecoNotExecutedfinal?.length > 0
+      ? [
+        {
+          key: 'StockAdvicesTop',
+          component: (
+            <View style={{ marginTop: 10 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  marginVertical: 10,
+                  alignItems: 'center',
+                  marginHorizontal: 15,
+                }}>
+                <View>
+                  <Text style={styles.StockTitle}>Recommendations</Text>
+                  <Text style={styles.StockTitlebelow}>
+                    Bespoke Active Recommendations
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSeeAllBespoke(true)}
+                  style={styles.viewAll}>
+                  <Text style={styles.viewAllText}>View All</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ marginLeft: 2 }}>
+                <StockAdvices
+                  userEmail={userEmail}
+                  type={'home'}
+                  tradeButtonColor="#3E3EFC"
+                />
+              </View>
+            </View>
+          ),
+        },
+      ]
+      : []),
+
+    // ── Plans section (hidden when user has active subscriptions) ──
+    ...(!hasActiveContent && config?.modelPortfolioEnabled === true
       ? [
         {
           key: 'AllPlanDetailsmp',
@@ -1278,7 +1379,7 @@ const HomeScreen = ({ }) => {
         },
       ]
       : []),
-    ...(configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true
+    ...(!hasActiveContent && configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true
       ? [
         {
           key: 'AllPlanDetailsbespoke',
@@ -1317,7 +1418,8 @@ const HomeScreen = ({ }) => {
       ]
       : []),
 
-    ...(filteredAndSortedStrategies.length > 0
+    // Rebalance advices (only if not already shown at top)
+    ...(!hasActiveContent && filteredAndSortedStrategies.length > 0
       ? [
         {
           key: 'RebalanceAdvices',
@@ -1395,40 +1497,45 @@ const HomeScreen = ({ }) => {
         </>
       ),
     },
-    {
-      key: 'StockAdvices',
-      component: (
-        <View style={{ marginTop: 10 }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              marginVertical: 10,
-              alignItems: 'center',
-              marginHorizontal: 15,
-            }}>
-            <View>
-              <Text style={styles.StockTitle}>Recommendations</Text>
-              <Text style={styles.StockTitlebelow}>
-                Bespoke Active Recommendations
-              </Text>
+    // Bespoke recommendations (only if not already shown at top)
+    ...(!hasActiveContent
+      ? [
+        {
+          key: 'StockAdvices',
+          component: (
+            <View style={{ marginTop: 10 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  marginVertical: 10,
+                  alignItems: 'center',
+                  marginHorizontal: 15,
+                }}>
+                <View>
+                  <Text style={styles.StockTitle}>Recommendations</Text>
+                  <Text style={styles.StockTitlebelow}>
+                    Bespoke Active Recommendations
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSeeAllBespoke(true)}
+                  style={styles.viewAll}>
+                  <Text style={styles.viewAllText}>View All</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ marginLeft: 2 }}>
+                <StockAdvices
+                  userEmail={userEmail}
+                  type={'home'}
+                  tradeButtonColor="#3E3EFC"
+                />
+              </View>
             </View>
-            <TouchableOpacity
-              onPress={() => setSeeAllBespoke(true)}
-              style={styles.viewAll}>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ marginLeft: 2 }}>
-            <StockAdvices
-              userEmail={userEmail}
-              type={'home'}
-              tradeButtonColor="#3E3EFC"
-            />
-          </View>
-        </View>
-      ),
-    },
+          ),
+        },
+      ]
+      : []),
     {
       key: 'KnowledgeHub',
       component: (
@@ -1453,6 +1560,7 @@ const HomeScreen = ({ }) => {
     extrapolate: 'clamp',
   });
   const [seeAllBespoke, setSeeAllBespoke] = useState(false);
+  const [bespokeListTab, setBespokeListTab] = useState('active'); // 'active' | 'rejected'
   const [seeAllBespokeplan, setSeeAllBespokeplan] = useState(false); // Toggle between full HomeScreen and StockAdvices
   const [seeAllMP, setSeeAllMP] = useState(false);
   const [seeAllMPplan, setSeeAllMPplan] = useState(false);
@@ -1563,7 +1671,37 @@ const HomeScreen = ({ }) => {
               </TouchableOpacity>
               <Text style={styles.StockTitle}>Recommendations</Text>
             </View>
-            <StockAdvices userEmail={userEmail} type={'All'} />
+            <View style={styles.bespokeTabRow}>
+              {['active', 'rejected'].map(tab => {
+                const isActive = bespokeListTab === tab;
+                return (
+                  <TouchableOpacity
+                    key={tab}
+                    onPress={() => setBespokeListTab(tab)}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.bespokeTabPill,
+                      {
+                        backgroundColor: isActive
+                          ? config?.mainColor || '#0056B7'
+                          : '#F4F4F4',
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.bespokeTabPillText,
+                        {color: isActive ? '#fff' : '#808080'},
+                      ]}>
+                      {tab === 'active' ? 'Active' : 'Rejected'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <StockAdvices
+              userEmail={userEmail}
+              type={bespokeListTab === 'rejected' ? 'OSrejected' : 'All'}
+            />
           </View>
         )}
 
@@ -1984,6 +2122,25 @@ const styles = StyleSheet.create({
     alignContent: 'center',
     alignItems: 'center',
     marginHorizontal: 15,
+  },
+  bespokeTabRow: {
+    flexDirection: 'row',
+    marginHorizontal: 15,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  bespokeTabPill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 2,
+    height: 40,
+  },
+  bespokeTabPillText: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Medium',
   },
   headerContainer: {
     flexDirection: 'column',

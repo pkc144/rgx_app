@@ -4,6 +4,160 @@ All notable changes to the RGX Research Mobile App (EquityPro) are documented he
 
 ---
 
+## [5.3.1] - 2026-04-20 — Follow-up sync from AlphaB2B v3.8.2–v3.8.9
+
+Pulls in 8 more AlphaB2B release tags that landed after the v5.3.0 cut. All behavioural, not just docs.
+
+### Fixed — WebSocket LTP stream now delivers prices (was silently returning 0 for every symbol)
+
+`src/FunctionCall/useWebSocketCurrentPrice.js` fully rewritten to match web's `MarketDataContext.js`:
+- Server: `https://ccxtprod.alphaquark.in` (same host as REST calls) instead of `wss://ccxt.alphaquark.in`
+- Namespace: `/ltp` instead of default `/`
+- Handshake: emits `subscribe_me` with `{userEmail, dbName}` on connect
+- Subscribe: batched `POST ${ccxtUrl}/subscribe-array` instead of per-symbol `/websocket/subscribe`
+- Events: both `ltp_update` (primary) and `market_data` (alt payload)
+- Added queueing for pre-connect subscriptions + re-subscribe on reconnect
+
+Public hook surface (`{ltp, getLTPForSymbol}`) unchanged — all 7 callers (`AfterSubscriptionScreen`, `ModelPFCard`, `PortfolioScreen`, `MPStatusModal`, `RebalanceModal`, `MPReviewTradeModal`, `UserStrategySubscribeModal`) work without changes. Prices now populate on every screen.
+
+`dbName` resolves via `Config.REACT_APP_HEADER_NAME || Config.REACT_APP_URL || Config.REACT_APP_ADVISOR_SUBDOMAIN || getAdvisorSubdomain()` (RGX fallback added).
+
+### Fixed — `user_email` at top level of process-trades payloads (B1)
+
+`StockAdvices.js`, `AddtoCartModal.js`, `IgnoreTradesScreen.js` — added top-level `user_email: userEmail` to `gttPayload` / `basePayload` / cart-path `getOrderPayload`. Required by the ccxt-india egress request hook to resolve the customer's whitelisted IPv6. Without this fix, basket/bespoke orders from those three flows fail on whitelist-required brokers (Upstox) with `UDAPI1154 — static IP does not match request origin IP` even when the customer's IPv6 was correctly provisioned.
+
+### Fixed — `user_email` in OAuth finish-connection endpoints (B2)
+
+Added top-level `user_email` to 10 callsites across Zerodha/Upstox/Fyers/IIFL finish-connection POSTs:
+- `ZerodhaConnectModal.js`, `ZerodhaConnectUI.js`, `HelpUI/ZerodhaConnectModal.js` (5 `/zerodha/gen-access-token` sites)
+- `upstoxModal.js` (`/upstox/gen-access-token`)
+- `FyersConnect.js` + `BrokerCredentialScreen.js` Fyers branch (`/fyers/gen-access-token`)
+- `iiflmodal.js`, `iiflproceedmodal.js` (`/iifl/login/client`)
+
+Without this, post-OAuth token exchange binds the shared static IPv4 instead of the customer's route64 IPv6 — ICICI returns status:500 in an HTTP 200 body, Upstox returns UDAPI1154, and the success dialog never fires.
+
+### Changed — Groww migrated from partner OAuth to API-Key + API-Secret + IP whitelist
+
+Groww deprecated partner-API order placement in 2026-04. The only supported path is now user-created approval-mode keys at https://groww.in/trade-api/api-keys with a per-customer Route64 IPv6 whitelisted against those keys.
+
+- **`GrowwConnectModal.js`** — full rewrite. Dropped the InAppBrowser OAuth flow. New flow: `EgressIpCallout` at top (gates submit via `egressReady` + `unmetAck`), 4-step scrollable instructions, two TextInputs for API Key + API Secret. `handleSubmit` AES-encrypts both with `'ApiKeySecret'` and POSTs `{uid, user_email, user_broker: 'Groww', apiKey, secretKey}` to `${server}api/groww/update-key`. Amber note explains Groww's **daily approval requirement** — access tokens reset at 6 AM IST.
+- **`EgressIpCallout.js`** — added `'groww'` to `WHITELIST_BROKERS`, dev-portal URL, whitelist hint.
+- **`TokenExpireBrokerModal.js`** — removed `'Groww'` from `OAUTH_BROKERS`, added dedicated `handleGrowwReconnect` that dispatches `useModalStore.getState().openModal('Groww')` so expired Groww users see the new credential form.
+- **`brokerRegistry.js`** — Groww `authType: OAUTH → CREDENTIAL`, added `fields: [{apiKey}, {secretKey}]`.
+
+Existing Groww users on partner OAuth tokens keep working until expiry (~24h), then flow through the new form on reconnect.
+
+### Fixed — DDPI authorize-for-sell race (await getUserDetails before reopening rebalance modal)
+
+`src/components/DdpiModal.js` — added `await` to all 6 `handleProceed`-style callers: `handleProceed` (main DdpiModal), `AngleOneTpinModal.handleProceed`, `DhanTpinModal.handleProceed`, `OtherBrokerModel.handleContinue` (Add-to-Cart flow), `OtherBrokerModel.handleAcceptRebalance` (rebalance flow), `FyersTpinModal.handleProceed`. Previously fire-and-forget — reopened modal read stale userDetails (`is_authorized_for_sell=false`) and re-triggered DDPI right after user ticked Authorize for Sell.
+
+### Changed — Per-broker polish
+
+- **Kotak mobile pre-fill on reconnect** (`KotakModal.js`): reads `connected_brokers[broker=Kotak].mobileNumber` (fallback to `phone_number`), strips `+91`, pre-fills 10-digit input so returning users don't retype it.
+- **Motilal server-IPv4 static callout** (`MotilalConnectUI.js`): replaced the broker's `<EgressIpCallout>` with an inline static callout (IP `72.61.251.253` + Copy + acknowledgment checkbox + red-flash). Motilal is IPv4-only; all calls route through the server's shared static IPv4.
+- **Upstox Help step 3**: "Allowed IPs" instruction added before the Redirect URL text (`UDAPI1154` avoidance).
+- **HDFC Help step 4**: "Allowed IPs" instruction added for InvestRight.
+- **ICICI Help step 2**: "IP Whitelist" instruction added for Breeze.
+
+### Preserved — RGX brokerAuth.js (not overwritten)
+
+`src/utils/brokerAuth.js` was NOT replaced with alphab2b's version — RGX's file has different multi-tenant OAuth routing (`BROKER_REGISTER_ORIGIN = https://${getAdvisorSubdomain()}.alphaquark.in`, `rgxapp://` deep-link scheme, centralized `server.brokerAuth.*` URLs). The alphab2b Groww-specific config changes to `brokerAuth.js` don't apply — RGX's version doesn't have per-broker config entries. Groww migration works through `GrowwConnectModal.js` + `brokerRegistry.js` + `TokenExpireBrokerModal.js` without touching `brokerAuth.js`.
+
+---
+
+## [5.3.0] - 2026-04-20 — Web-parity sync from AlphaB2B v3.8.0 + v3.8.1
+
+Large sync pulling all AlphaB2B changes from 2026-04-08 through 2026-04-20 into RGX.
+RGX-specific divergences preserved: `rgxresearch` subdomain (via `getAdvisorSubdomain()`),
+RGX UI colors and branding (via `Config.js` variants), 3-key storage schema,
+centralized `serverConfig.ccxtWs` / `serverConfig.brokerAuth`.
+
+### Added
+
+- **Transient broker error handling** (`src/utils/rebalanceHelpers.js`): Added `TRANSIENT_NON_AUTH_BROKER_ERROR_CODES`, `isTransientFundsError` / `isTransientBrokerError`, `detectTransientOrderWindowError`. Upstox `UDAPI100072` / `UDAPI100074` maintenance-window errors (00:00–05:30 IST) no longer force re-OAuth; rebalance/MP flows show a soft toast instead.
+- **`basketUtils.js`**: ported `parseFnOSymbol`, `adjustForLotSize`, `getLotsCount`, `formatQuantityWithLots`, `buildBasket`, `separateByTransactionType`, `calculateBasketValue`, `validateBasket`, `parseExpiryFromSymbol`, `isBasketExpired`, `netBasketTrades`.
+- **`rebalanceDiffUtils.js`**: new file with `computeRebalanceDiff`, `computeRowsDiff`, `summarizeRebalanceDiff` for showing added/removed/increased/decreased stocks between consecutive rebalance snapshots.
+- **Axis Securities full support**: added `src/assets/axis.png`, `AxisConnectModal.js`, tile in `BrokerSelectionModal.brokersmain`, `case 'Axis Securities'` in `ModalManager.js`, and `'Axis Securities'` in `TokenExpireBrokerModal.OAUTH_BROKERS`.
+- **alphab2b-only features ported**:
+  - `src/config/brokerRegistry.js`
+  - `src/hooks/` (`useMultiBrokerHoldings.js`, `useSymbolSearch.js`)
+  - `src/screens/Broker/` (`BrokerAuthScreen`, `BrokerCredentialScreen`, `BrokerSelectionScreen`)
+  - `src/screens/Invest/` (`InvestFlowScreen`)
+  - `src/screens/Rebalance/` (`CurrentHoldingsScreen`, `ExecutionStatusScreen`, `RebalanceReviewScreen`)
+  - `src/screens/Home/TradePnLScreen.js`
+  - `src/context/MarketDataContext.js`, `MultiBrokerContext.js`
+  - `src/services/ModelPortfolioService.js`, `OrderService.js`
+  - `src/components/GttDetailsModal.js`, `GttSuccessModal.js`, `ManualSellModal.js`, `ReviewBrokerRecordsModal.js`, `FloatingAcceptRebalanceButton.js`
+  - `src/components/BrokerConnectionModal/EgressIpCallout.js`
+  - `src/UIComponents/BrokerConnectionUI/DhanOAuthUI.js`
+  - `src/utils/formatCurrency.js`, `symbolNormalizer.js`, `marketDataLTP.js`, `brokerPublisher.js`
+- **Bespoke Recommendations → Rejected tab** (`HomeScreen.js`): Active/Rejected tab switcher on "View All".
+- **StockCard `OSrejected` state** (`UIComponents/StockAdvicesUI/StockCard.js`): Ignore + Trade Now buttons replace Add-to-Cart + Retry for rejected bespoke trades.
+- **Research Report PDF download** (`ResearchReportScreen.js`): replaced broken WebView PDF render with `RNFS.downloadFile` + toast on complete.
+- **Manage Connections session expiry** (`ManageConnectionsModal.js`): amber "Session Expired" badge + Reconnect button per expired broker; `BROKER_MODAL_KEY_MAP` dispatches directly to the per-broker modal via `ModalManager`.
+
+### Changed
+
+- **`isFundsErrorOrMissing` returns boolean** (`rebalanceHelpers.js`): was `{isError, reason}` object, now `boolean`. Caller in `RebalanceAdvices.js` and test files updated.
+- **`checkPortfolioShortfall` uses message regex** (was numeric comparison): aligned with web — message-based detection (`less than required minimum`) plus regex extracts `required minimum amount (N)`.
+- **`isBrokerAuthError` keyword set expanded**: now catches `please login`, `please re-login`, `login required`, `error: 401`, `401 unauthorized`, `token expired`. Fixes dead-end "Unable to Rebalance" on Groww / upstream broker 401s.
+- **`isSubscriptionAmountError` keywords aligned to web**: now matches `subscription_amount_raw`, `subscription amount`, `not set or has been cleared`.
+- **`isLowAllowedBalanceError` narrowed**: dropped `insufficient` / `not enough funds`; only `low allowed balance` matches (web parity).
+- **`ProcessTrades.js` GTT payload**: per-trade leg structure with field transforms (`Symbol` → `tradingSymbol`, etc.), numeric `parseFloat` cast, quantity from `stock.quantity`. Replaces the old top-level `payload.entryLeg/leg1/leg2`.
+- **`ProcessTrades.js` case-insensitive rejection detection**: added `REJECTED_ORDER_STATUSES` set covering 9 variants (`REJECTED`/`Rejected`/`rejected`, `CANCELLED`/…, `FAILURE`/…).
+- **`ProcessTrades.js` HTTP 401/403 + network-error detection**: tagged `err.sessionExpired = true` routes through `onSessionExpired` callback, matching web.
+- **`ProcessTrades.js` drop EDIS keyword filter**: `detectEdisFailures` now returns every rejected SELL regardless of error-message wording (matches web's explicit "don't rely on CDSL keyword detection" stance). Trade-off: TPIN modal may fire on market-hours / fund failures too.
+- **`ProcessTrades.js` credentials** — Kotak now sends `consumerKey`/`consumerSecret` (decrypted) + `viewToken`; Motilal + AliceBlue `apiKey` now decrypted.
+- **`fetchFunds.js` userEmail pattern**: server fetches apiKey/secretKey from DB using userEmail; callers updated (`TradeContext`, `MPPerformanceScreen`, `BespokePerformanceScreen`, `UserStrategySubscribeModal`). IIFL Securities re-enabled (backend-gated). Motilal `Bearer ` stripping removed. Axis Securities case added. Error path returns `error?.response?.data`.
+- **Motilal `update-key` payload**: added `user_broker: 'Motilal Oswal'` (web parity).
+- **Upstox `update-key` payload**: added `user_broker: 'Upstox'`.
+- **HDFC `access-token` body**: added `user_email`. HDFC `update-key` body: added `user_broker: 'Hdfc Securities'`.
+- **AliceBlue authUrl**: swapped hardcoded `ant.aliceblueonline.com` for `buildAliceBlueAuthUrl()` — constructs `${ccxtServer}aliceblue/login?origin=…&returnPath=…` (MongoDB origin tracking).
+- **ICICI Option B (breaking)**: removed client-side `apisession → customer-details → connect-broker` chain. WebView only intercepts the final `REACT_APP_BROKER_CONNECT_REDIRECT_URL` redirect after CCXT's server-side `/icici/auth-callback/{subdomain}` finishes the handshake. `ICICIHelpContent.js` updated with new required Redirect URL `{ccxtServer}icici/auth-callback/{REACT_APP_HEADER_NAME}`. **Migration required**: existing ICICI users must update the Redirect URL in their ICICI dev dashboard.
+- **Axis response parsing** (`AxisConnectModal.js`): reads nested `.data.data` envelope, unwraps `authToken.token` / `refreshToken.token`, adds `metadata?.accounts?.[0]?.subAccountId` fallback.
+- **Cart/Trade-intent separation (Option B)** — `StockAdvices.js`, `StockAdviceContent.js`, `ReviewTradeModal.js`, `StockCard.js`:
+  - `cartContainer` holds the cart; `stockDetails` holds the trade-intent payload. They no longer share writes.
+  - "Trade Now" on a single stock no longer leaks full cart into the review modal.
+  - Bottom-bar "Trade (N)" counter now reads `cartContainer.length`.
+  - "Scale quantities by amount" reads from `useLTPStore` (not dead `getLastKnownPrice`) and uses equal-budget allocation (matches the Note text).
+  - Limit-price preserved on cart refresh via `POST api/cart/update` with regex-validated decimal string.
+- **Rebalance flow web-parity** — `RebalanceCard.js`, `RebalanceModal.js`, `RebalanceAdvices.js`, `MPReviewTradeModal.js`:
+  - Pre-flight broker + funds check before `handleCheckStatus`.
+  - Zero-quantity holdings filter + `skipRepairRef` for fresh rebalance.
+  - `caPendingInfo` in process-trade payload (split-settlement tracking).
+  - Sell-against-holdings filter prevents selling stocks user doesn't own.
+  - `allOrdersFailed` detection from `orderErrors` / `fundsRequired`.
+  - `detectTransientOrderWindowError` wired at both RebalanceModal and MPReviewTradeModal all-orders-failed sites — swaps the internal-failure modal for a soft "Broker service window" toast.
+  - Publisher timeout fallback (90s Zerodha WebView).
+  - Subscription amount error now navigates to AfterSubscriptionScreen with modify-investment option.
+- **MP Performance fixes** (`AfterSubscriptionScreen.js`):
+  - Portfolio Distribution tab passes `type="MPPerformanceScreen"` to `DistributionGrid` (removes duplicate inner tab bar).
+  - Holdings table rebuilt to 6-column detailed layout (Stock / Current / Avg.Buy / Returns / Weight / Shares) inside horizontal ScrollView.
+  - Row renderer shows literal `N/A` for missing LTP (matches web `tableData`) — no silent fallback to `avgBuyPrice` as "current".
+- **Portfolio top card** (`PortfolioScreen.js`): `planSummary` useMemo aggregates invested/current/returns client-side from `planHoldings` when All Holdings + plan is selected.
+- **Plans tab visibility** (`ModelPortfolioScreen.js`): driven purely by `config.bespokePlansEnabled` / `config.modelPortfolioEnabled` feature flags (defaulting to enabled). Tabs no longer collapse to single-pill when list is empty.
+- **TradeContext fixes**: `fetchAdviceShowDays` now reads `response.data?.data?.adviceShowLatestDays` (was `response.data?.adviceShowLatestDays` — returned `undefined`). `'common'` subdomain fallback replaced with `getAdvisorSubdomain()`.
+- **BasketCard palette** (`UIComponents/StockAdvicesUI/BasketCard.js`): regular-state gradient switched to dark navy (`#000C18 → #002C59 → #000C18`) with translucent green accent border (matches web).
+
+### Fixed
+
+- **Groww 401 → "Unable to Rebalance" dead-end**: expanded `isBrokerAuthError` keywords now route broker-forwarded 401s into `TokenExpireBrokerModal` for reconnection.
+- **Broker header / Funds Info card mismatch on aborted Reconnect**: dropped optimistic `setBroker(expiredBroker)` in `SubscriptionScreen.onReconnect`. Header now stays in sync with `user_broker` until the per-broker modal's `PUT /api/user/connect-broker` settles.
+- **Axis missing from reconnect modal**: added `'Axis Securities'` to `TokenExpireBrokerModal.OAUTH_BROKERS`.
+- **Duplicate tab bar on MP Performance Portfolio Distribution tab**: pass `type="MPPerformanceScreen"` to `DistributionGrid` so it hides its own inner tab switcher.
+- **MP Performance current price fallback to avg**: added `hasValidPrice` gate; `tableData.currentPrice` and `returns` emit `'N/A'` string instead of silently echoing `avgBuyPrice`.
+- **Bottom-bar Trade (N) stuck at 0 after Add to Cart**: counter reads `cartContainer.length` (not stale `stockDetails.length`).
+- **"Scale quantities by amount" no-op**: rewrote `handleFixSize` to read LTP from `useLTPStore.getState().ltps[symbol]` and use equal-budget allocation per stock (matches Note label).
+- **"Trade Now" leaking cart items into review modal**: Option-B split — `updateCartStates` only writes `cartContainer`; trade-intent path populates `stockDetails` fresh.
+- **ICICI client-side customer-details flow brittle under backend restructure**: moved to server-side CCXT `auth-callback` (Option B). Help content updated with new Redirect URL.
+- **AliceBlue origin-tracking missing**: now routes through `ccxt/aliceblue/login?origin=…&returnPath=…` so backend can stamp the originating subdomain.
+
+### Disabled
+
+- **IIFL Securities** — backend gates availability. Mobile now calls through (matches web); backend 404s if unavailable.
+
+---
+
 ## [5.2.4] - 2026-04-01
 
 ### Fixed

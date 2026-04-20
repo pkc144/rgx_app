@@ -9,6 +9,8 @@ import {
   Animated,
   RefreshControl,
   SafeAreaView,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import PortfolioCard from './PortFolioCard';
@@ -18,7 +20,7 @@ import axios from 'axios';
 import server from '../../utils/serverConfig';
 import CryptoJS from 'react-native-crypto-js';
 import ModelPFCard from './ModelPFCard';
-import formatCurrency from '../../utils/formatcurrency';
+import formatCurrency from '../../utils/formatCurrency';
 import Config from 'react-native-config';
 import HoldingScoreModal from './HoldingScoreModal';
 import {useTrade} from '../TradeContext';
@@ -28,8 +30,14 @@ import PortfolioPositionText from '../../components/AdviceScreenComponents/Dynam
 import HoldingDynamicText from '../../components/AdviceScreenComponents/DynamicText/HoldingDynamicText';
 import RenderEmptyMessage from './EmptyMessageCard';
 import {useConfig} from '../../context/ConfigContext';
+import {useNavigation} from '@react-navigation/native';
+import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
+import portfolioEvents, {PORTFOLIO_EVENTS} from '../../utils/portfolioEvents';
+import {isOrderRejected, isOrderSuccess, isOrderPending} from '../../utils/orderStatusUtils';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 const PortfolioScreen = () => {
+  const navigation = useNavigation();
   const {
     userDetails,
     getUserDeatils,
@@ -78,7 +86,7 @@ const PortfolioScreen = () => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -87,7 +95,11 @@ const PortfolioScreen = () => {
           },
         )
         .then(res => {
-          setModelPortfolioStrategy(res?.data?.subscribedPortfolios);
+          const portfolios = res?.data?.subscribedPortfolios || [];
+          const publishedPortfolios = portfolios.filter(
+            portfolio => !portfolio.draft,
+          );
+          setModelPortfolioStrategy(publishedPortfolios);
         })
         .catch(err => console.log(err));
     }
@@ -109,7 +121,7 @@ const PortfolioScreen = () => {
       url: `${server.ccxtServer.baseUrl}rebalance/get-repair`,
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -144,7 +156,7 @@ const PortfolioScreen = () => {
   const getAllPositionsData = () => {
     const headers = {
       'Content-Type': 'application/json',
-      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
       'aq-encrypted-key': generateToken(
         Config.REACT_APP_AQ_KEYS,
         Config.REACT_APP_AQ_SECRET,
@@ -304,7 +316,7 @@ const PortfolioScreen = () => {
           url: `${server.ccxtServer.baseUrl}iifl/margin`,
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -331,7 +343,7 @@ const PortfolioScreen = () => {
           url: `${server.ccxtServer.baseUrl}icici/funds`,
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -358,7 +370,7 @@ const PortfolioScreen = () => {
           url: `${server.ccxtServer.baseUrl}upstox/funds`,
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -384,7 +396,7 @@ const PortfolioScreen = () => {
           url: `${server.ccxtServer.baseUrl}zerodha/funds`,
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -417,7 +429,7 @@ const PortfolioScreen = () => {
           url: `${server.ccxtServer.baseUrl}kotak/funds`,
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -443,7 +455,7 @@ const PortfolioScreen = () => {
           url: `${server.ccxtServer.baseUrl}funds`,
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -467,7 +479,7 @@ const PortfolioScreen = () => {
       url: `${server.server.baseUrl}api/portfolio/specific-user?email=${userEmail}`,
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -489,12 +501,267 @@ const PortfolioScreen = () => {
   };
 
   const [selectedInnerTab, setSelectedInnerTab] = useState(0);
-  const profitAndLoss = Number.parseFloat(
-    allHoldingsData?.totalprofitandloss,
-  ).toFixed(2);
-  const pnlPercentage = Number.parseFloat(
-    allHoldingsData?.totalpnlpercentage,
-  ).toFixed(2);
+
+  // Client-side MP P&L aggregation (matching web app behavior)
+  const [mpHoldings, setMpHoldings] = useState([]);
+  const [mpHoldingsLoaded, setMpHoldingsLoaded] = useState(false);
+
+  const {getLTPForSymbol} = useWebSocketCurrentPrice(
+    mpHoldings.map(h => ({symbol: h.symbol, exchange: h.exchange || 'NSE'})),
+  );
+
+  const fetchAllMPHoldings = async () => {
+    if (!userEmail || !modelPortfolioStrategy?.length) return;
+    try {
+      const allHoldings = [];
+      for (const portfolio of modelPortfolioStrategy) {
+        const modelName = portfolio?.model_name;
+        if (!modelName) continue;
+        try {
+          const response = await axios.get(
+            `${server.server.baseUrl}api/model-portfolio-db-update/subscription-raw-amount?email=${encodeURIComponent(userEmail)}&modelName=${encodeURIComponent(modelName)}&user_broker=${encodeURIComponent(broker || '')}`,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+              },
+            },
+          );
+          const data = response.data?.data;
+          const latestExec = [...(data?.user_net_pf_model || [])].sort(
+            (a, b) => new Date(b.execDate) - new Date(a.execDate),
+          )[0];
+          const orderResults = latestExec?.order_results || [];
+          const validOrders = orderResults.filter(order => {
+            if (isOrderSuccess(order.orderStatus) || isOrderPending(order.orderStatus)) {
+              return Number(order.quantity || 0) > 0;
+            }
+            return !isOrderRejected(order.orderStatus) &&
+              (order.orderStatus || '').toLowerCase() !== 'unplaced' &&
+              Number(order.quantity || 0) > 0;
+          });
+          validOrders.forEach(order => {
+            allHoldings.push({
+              symbol: order.symbol || order.tradingSymbol,
+              exchange: order.exchange || 'NSE',
+              quantity: Number(order.quantity || 0),
+              avgPrice: Number(order.averagePrice || 0),
+            });
+          });
+        } catch (err) {
+          console.log(`Holdings fetch error for ${modelName}:`, err.message);
+        }
+      }
+      setMpHoldings(allHoldings);
+      setMpHoldingsLoaded(true);
+    } catch (err) {
+      console.log('MP holdings aggregation error:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    if (userEmail && configData && modelPortfolioStrategy?.length > 0) {
+      fetchAllMPHoldings();
+    }
+  }, [userEmail, configData, modelPortfolioStrategy]);
+
+  // Re-fetch on HOLDINGS_REFRESH event (after execution)
+  useEffect(() => {
+    const unsub = portfolioEvents.on(PORTFOLIO_EVENTS.HOLDINGS_REFRESH, () => {
+      setMpHoldingsLoaded(false);
+      fetchAllMPHoldings();
+    });
+    return unsub;
+  }, [userEmail, configData, modelPortfolioStrategy]);
+
+  // Compute MP P&L client-side from holdings + LTP (matching web BrokerHoldingsCards.js)
+  const mpSummary = React.useMemo(() => {
+    if (!mpHoldingsLoaded || mpHoldings.length === 0) return null;
+    const validHoldings = mpHoldings.filter(h => {
+      const ltp = getLTPForSymbol(h.symbol);
+      return ltp !== null && ltp !== 0;
+    });
+    if (validHoldings.length === 0) return null;
+
+    const totalInvested = validHoldings.reduce(
+      (sum, h) => sum + h.avgPrice * h.quantity, 0,
+    );
+    const totalCurrent = validHoldings.reduce((sum, h) => {
+      const ltp = getLTPForSymbol(h.symbol);
+      const price = (ltp !== null && ltp !== 0) ? Number(ltp) : h.avgPrice;
+      return sum + price * h.quantity;
+    }, 0);
+    const totalReturns = totalCurrent - totalInvested;
+    const returnsPercentage = totalInvested > 0
+      ? (totalReturns / totalInvested) * 100
+      : 0;
+
+    return {totalInvested, totalCurrent, totalReturns, returnsPercentage};
+  }, [mpHoldings, mpHoldingsLoaded, getLTPForSymbol]);
+
+  // Plan holdings for All Holdings tab (matching web app behavior)
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [planHoldings, setPlanHoldings] = useState([]);
+  const [planHoldingsLoading, setPlanHoldingsLoading] = useState(false);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
+
+  const fetchPlanHoldings = async (planName, brokerName) => {
+    if (!planName || !userEmail) return;
+    setPlanHoldingsLoading(true);
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+      };
+
+      // Fetch from both endpoints in parallel (matching web app & AfterSubscriptionScreen)
+      // 1. CCXT server — has the correct, up-to-date user_net_pf_model
+      // 2. Backend — has subscription metadata
+      const [portfolioResponse, subscriptionResponse] = await Promise.allSettled([
+        axios.get(
+          `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${encodeURIComponent(userEmail)}/${encodeURIComponent(planName)}`,
+          {headers},
+        ),
+        axios.get(
+          `${server.server.baseUrl}api/model-portfolio-db-update/subscription-raw-amount?email=${encodeURIComponent(userEmail)}&modelName=${encodeURIComponent(planName)}&user_broker=${encodeURIComponent(brokerName || '')}`,
+          {headers},
+        ),
+      ]);
+
+      const portfolioData = portfolioResponse.status === 'fulfilled'
+        ? portfolioResponse.value?.data?.data
+        : null;
+      const subscriptionData = subscriptionResponse.status === 'fulfilled'
+        ? subscriptionResponse.value?.data?.data
+        : null;
+
+      // Normalize user_net_pf_model to always be an array (matching web)
+      if (portfolioData?.user_net_pf_model && !Array.isArray(portfolioData.user_net_pf_model)) {
+        portfolioData.user_net_pf_model = [portfolioData.user_net_pf_model];
+      }
+
+      // Merge: CCXT's user_net_pf_model takes priority (matching web & AfterSubscriptionScreen)
+      const data = {
+        ...subscriptionData,
+        user_net_pf_model: portfolioData?.user_net_pf_model || subscriptionData?.user_net_pf_model || [],
+      };
+
+      let sourceEntries = null;
+      if (data?.user_net_pf_model?.length > 0) {
+        sourceEntries = [...data.user_net_pf_model].sort(
+          (a, b) => new Date(b.execDate) - new Date(a.execDate),
+        );
+      } else if (data?.user_net_pf_updated?.length > 0) {
+        sourceEntries = [...data.user_net_pf_updated].sort(
+          (a, b) => new Date(b.execDate) - new Date(a.execDate),
+        );
+      }
+      if (sourceEntries) {
+        const latestEntry = sourceEntries[0];
+        if (latestEntry?.order_results?.length > 0) {
+          const rejectedStatuses = ['rejected', 'failure', 'cancelled', 'failed', 'unplaced'];
+          const holdings = latestEntry.order_results
+            .filter(order => {
+              const status = (order.orderStatus || '').toLowerCase();
+              if (rejectedStatuses.includes(status)) return false;
+              return Number(order.quantity || 0) > 0;
+            })
+            .map(order => ({
+              symbol: order.symbol || order.tradingsymbol || '',
+              exchange: order.exchange || 'NSE',
+              quantity: Number(order.quantity || 0),
+              avgPrice: Number(order.averagePrice || order.avgPrice || 0),
+              broker: order.user_broker || latestEntry.user_broker || data.user_broker || brokerName || '',
+              modelName: planName,
+            }));
+          setPlanHoldings(holdings);
+        } else {
+          setPlanHoldings([]);
+        }
+      } else {
+        setPlanHoldings([]);
+      }
+    } catch (error) {
+      console.error('Error fetching plan holdings:', error);
+      setPlanHoldings([]);
+    } finally {
+      setPlanHoldingsLoading(false);
+    }
+  };
+
+  // Auto-select first plan when strategies load
+  useEffect(() => {
+    if (modelPortfolioStrategy?.length > 0 && !selectedPlan) {
+      setSelectedPlan(modelPortfolioStrategy[0].model_name);
+    }
+  }, [modelPortfolioStrategy]);
+
+  // Fetch plan holdings when plan or broker changes
+  useEffect(() => {
+    if (selectedPlan && selectedInnerTab === 0) {
+      fetchPlanHoldings(selectedPlan, broker);
+    }
+  }, [selectedPlan, broker]);
+
+  // Client-side plan summary — mirrors mpSummary but scoped to the selected
+  // plan so the top card matches the plan-filtered Holdings list below it.
+  // planHoldings' symbols are a subset of mpHoldings (both sourced from MP
+  // strategies), so the existing WebSocket LTP subscription covers them.
+  const planSummary = React.useMemo(() => {
+    if (!planHoldings || planHoldings.length === 0) return null;
+    const validHoldings = planHoldings.filter(h => {
+      const ltp = getLTPForSymbol(h.symbol);
+      return ltp !== null && ltp !== 0;
+    });
+    if (validHoldings.length === 0) return null;
+
+    const totalInvested = validHoldings.reduce(
+      (sum, h) => sum + h.avgPrice * h.quantity, 0,
+    );
+    const totalCurrent = validHoldings.reduce((sum, h) => {
+      const ltp = getLTPForSymbol(h.symbol);
+      const price = (ltp !== null && ltp !== 0) ? Number(ltp) : h.avgPrice;
+      return sum + price * h.quantity;
+    }, 0);
+    const totalReturns = totalCurrent - totalInvested;
+    const returnsPercentage = totalInvested > 0
+      ? (totalReturns / totalInvested) * 100
+      : 0;
+
+    return {totalInvested, totalCurrent, totalReturns, returnsPercentage};
+  }, [planHoldings, getLTPForSymbol]);
+
+  // Switch between broker data, plan data, and MP data based on tab/plan state
+  const isMP = selectedInnerTab === 1;
+  const usePlanSummary = !isMP && selectedPlan && planSummary;
+  const profitAndLoss = isMP
+    ? (mpSummary?.totalReturns ?? 0).toFixed(2)
+    : usePlanSummary
+      ? planSummary.totalReturns.toFixed(2)
+      : Number.parseFloat(allHoldingsData?.totalprofitandloss || 0).toFixed(2);
+  const pnlPercentage = isMP
+    ? (mpSummary?.returnsPercentage ?? 0).toFixed(2)
+    : usePlanSummary
+      ? planSummary.returnsPercentage.toFixed(2)
+      : Number.parseFloat(allHoldingsData?.totalpnlpercentage || 0).toFixed(2);
+  // Override allHoldingsData for PortfolioCard to match the list below it
+  const effectiveHoldingsData = isMP && mpSummary
+    ? {
+        totalinvvalue: mpSummary.totalInvested,
+        totalholdingvalue: mpSummary.totalCurrent,
+        totalprofitandloss: mpSummary.totalReturns,
+        totalpnlpercentage: mpSummary.returnsPercentage,
+      }
+    : usePlanSummary
+    ? {
+        totalinvvalue: planSummary.totalInvested,
+        totalholdingvalue: planSummary.totalCurrent,
+        totalprofitandloss: planSummary.totalReturns,
+        totalpnlpercentage: planSummary.returnsPercentage,
+      }
+    : allHoldingsData;
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const processedData =
@@ -502,17 +769,18 @@ const PortfolioScreen = () => {
     modelPortfolioStrategy
       .map((ele, i) => {
         const allRebalances = ele?.model?.rebalanceHistory || [];
-        const sortedRebalances = allRebalances?.sort(
+        const sortedRebalances = [...allRebalances].sort(
           (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
         );
-        const latest = sortedRebalances[0];
+        const latest = sortedRebalances[0] || null;
 
-        if (!latest) return null;
-        const matchingFailedTrades = modelPortfolioRepairTrades?.find(
-          trade =>
-            trade.modelId === latest?.model_Id &&
-            trade.failedTrades.length !== 0,
-        );
+        const matchingFailedTrades = latest
+          ? modelPortfolioRepairTrades?.find(
+              trade =>
+                trade.modelId === latest?.model_Id &&
+                trade.failedTrades.length !== 0,
+            )
+          : null;
 
         return {
           key: i,
@@ -531,6 +799,9 @@ const PortfolioScreen = () => {
       getAllPositionsData();
       getAllBrokerSpecificHoldings();
       getAllHoldingsData();
+      if (selectedPlan) {
+        fetchPlanHoldings(selectedPlan, broker);
+      }
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -578,7 +849,7 @@ const PortfolioScreen = () => {
       url: `${server.server.baseUrl}api/admin/plan/${advisorTag}/model portfolio/${userEmail}`,
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -886,7 +1157,7 @@ const PortfolioScreen = () => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1198,7 +1469,7 @@ const PortfolioScreen = () => {
             <View>
               <PortfolioCard
                 Loading={Loading}
-                allHoldingsData={allHoldingsData}
+                allHoldingsData={effectiveHoldingsData}
                 formatCurrency={formatCurrency}
                 profitAndLoss={profitAndLoss}
                 pnlPercentage={pnlPercentage}
@@ -1207,8 +1478,7 @@ const PortfolioScreen = () => {
               />
               <View style={{marginHorizontal: 0}}>
                 <View style={styles.toggleBtnContainer}>
-                  {configData?.config?.REACT_APP_MODEL_PORTFOLIO_STATUS ===
-                  true ? (
+                  {config?.modelPortfolioEnabled === true ? (
                     <TouchableOpacity
                       style={[
                         styles.toggleBtnButton,
@@ -1245,22 +1515,100 @@ const PortfolioScreen = () => {
                           ? styles.toggleBtnSelectedText
                           : styles.toggleBtnUnselectedText,
                       ]}>
-                      Bespoke Plans
+                      All Holdings
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
+{selectedInnerTab === 1 && (
+  <TouchableOpacity
+    onPress={() => navigation.navigate('TradePnLScreen')}
+    style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginHorizontal: 16,
+      marginTop: 8,
+      paddingVertical: 8,
+      backgroundColor: mainColor,
+      borderRadius: 8,
+    }}>
+    <Text style={{color: '#fff', fontSize: 12, fontFamily: 'Poppins-Medium'}}>📊 View Trade P&L Report</Text>
+  </TouchableOpacity>
+)}
+
+{selectedInnerTab === 0 && (
+<>
+{/* Plan & Broker Selector */}
+{modelPortfolioStrategy?.length > 0 && (
+  <View style={styles.planSelectorRow}>
+    <TouchableOpacity
+      style={styles.planDropdown}
+      onPress={() => setShowPlanPicker(true)}
+      activeOpacity={0.7}
+    >
+      <Text style={styles.planDropdownLabel}>Plan</Text>
+      <Text style={styles.planDropdownValue} numberOfLines={1}>
+        {selectedPlan || 'Select Plan'}
+      </Text>
+      <Text style={styles.planDropdownArrow}>&#9660;</Text>
+    </TouchableOpacity>
+    <View style={styles.brokerBadge}>
+      <Text style={styles.planDropdownLabel}>Broker</Text>
+      <Text style={styles.brokerBadgeValue} numberOfLines={1}>
+        {broker || 'Not Connected'}
+      </Text>
+    </View>
+  </View>
+)}
+
+{/* Plan Picker Modal */}
+<Modal
+  visible={showPlanPicker}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setShowPlanPicker(false)}
+>
+  <TouchableOpacity
+    style={styles.pickerOverlay}
+    activeOpacity={1}
+    onPress={() => setShowPlanPicker(false)}
+  >
+    <View style={styles.pickerContainer}>
+      <Text style={styles.pickerTitle}>Select Plan</Text>
+      {modelPortfolioStrategy.map((item, index) => (
+        <TouchableOpacity
+          key={item.model_name || index}
+          style={[
+            styles.pickerItem,
+            selectedPlan === item.model_name && [styles.pickerItemSelected, {backgroundColor: mainColor}],
+          ]}
+          onPress={() => {
+            setSelectedPlan(item.model_name);
+            setShowPlanPicker(false);
+          }}
+        >
+          <Text style={[
+            styles.pickerItemText,
+            selectedPlan === item.model_name && styles.pickerItemTextSelected,
+          ]}>
+            {item.model_name}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  </TouchableOpacity>
+</Modal>
+
 <View style={styles.tabContainer}>
-
-
                   <TouchableOpacity
                     style={[styles.tabButton, tabIndex === 2 && styles.activeTab]}
                     onPress={() => setTabIndex(2)}
                   >
                     <View style={{ flexDirection: "row" }}>
-                      <Text style={[styles.tabText, tabIndex === 2 && styles.activeTabText]}>All Holdings</Text>
-                      {BrokerHoldingsData?.holding?.length > 0 && (
+                      <Text style={[styles.tabText, tabIndex === 2 && styles.activeTabText]}>Holdings</Text>
+                      {(selectedPlan ? planHoldings : BrokerHoldingsData?.holding)?.length > 0 && (
                         <View
                           style={{
                             backgroundColor: tabIndex === 2 ? "#C84444" : "grey",
@@ -1273,7 +1621,7 @@ const PortfolioScreen = () => {
                           }}
                         >
                           <Text style={styles.badgeText}>
-                            {BrokerHoldingsData && BrokerHoldingsData?.holding?.length}
+                            {selectedPlan ? planHoldings.length : BrokerHoldingsData?.holding?.length}
                           </Text>
                         </View>
                       )}
@@ -1304,6 +1652,8 @@ const PortfolioScreen = () => {
                     </View>
                   </TouchableOpacity>
                 </View>
+</>
+)}
               {selectedInnerTab === 1 ? (
                 <View
                   style={{
@@ -1379,9 +1729,15 @@ const PortfolioScreen = () => {
                 </SafeAreaView>
               ) : (
                 <SafeAreaView style={styles.containerfi}>
+                  {planHoldingsLoading && selectedPlan ? (
+                    <View style={{padding: 40, alignItems: 'center'}}>
+                      <ActivityIndicator size="large" color={mainColor} />
+                      <Text style={{marginTop: 12, color: '#666', fontFamily: 'Satoshi-Regular'}}>Loading holdings...</Text>
+                    </View>
+                  ) : (
                   <FlatList
                     style={styles.list}
-                    data={BrokerHoldingsData?.holding}
+                    data={selectedPlan ? planHoldings : BrokerHoldingsData?.holding}
                     refreshControl={
                       <RefreshControl
                         refreshing={refreshing}
@@ -1397,6 +1753,7 @@ const PortfolioScreen = () => {
                     }
                     scrollEventThrottle={16}
                   />
+                  )}
                 </SafeAreaView>
               )
             ) : (
@@ -1959,6 +2316,94 @@ const styles = StyleSheet.create({
   toggleBtnUnselectedText: {
     color: '#232323',
     fontWeight: '500',
+  },
+  planSelectorRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+    backgroundColor: '#fff',
+  },
+  planDropdown: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F4F8FE',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DBE7FF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  planDropdownLabel: {
+    fontSize: 11,
+    color: '#8899AA',
+    fontFamily: 'Satoshi-Medium',
+    marginRight: 6,
+  },
+  planDropdownValue: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1F2B38',
+    fontFamily: 'Satoshi-Bold',
+  },
+  planDropdownArrow: {
+    fontSize: 10,
+    color: '#8899AA',
+    marginLeft: 4,
+  },
+  brokerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F4F8FE',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DBE7FF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  brokerBadgeValue: {
+    fontSize: 13,
+    color: '#1F2B38',
+    fontFamily: 'Satoshi-Bold',
+    maxWidth: 100,
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pickerContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    width: '80%',
+    maxHeight: '60%',
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontFamily: 'Satoshi-Bold',
+    color: '#1F2B38',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  pickerItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  pickerItemSelected: {
+    backgroundColor: '#1264D4',
+  },
+  pickerItemText: {
+    fontSize: 14,
+    fontFamily: 'Satoshi-Medium',
+    color: '#333',
+  },
+  pickerItemTextSelected: {
+    color: '#fff',
   },
 });
 

@@ -9,6 +9,7 @@ import {
   Dimensions,
   Modal,
   TouchableWithoutFeedback,
+  TouchableOpacity,
   LayoutAnimation,
   SafeAreaView,
 } from 'react-native';
@@ -23,7 +24,7 @@ import useSymbolSubscription from './DynamicText/useSymbolSubscription';
 import Toast from 'react-native-toast-message';
 import { getAuth } from '@react-native-firebase/auth';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
-import { createPlaceOrderFunction } from '../../FunctionCall/createPlaceOrderFunction';
+import { createPlaceOrderFunction } from '../../utils/ProcessTrades';
 import ZerodhaReviewModal from '../ReviewZerodhaTradeModal';
 import CryptoJS from 'react-native-crypto-js';
 import IIFLReviewTradeModal from '../IIFLReviewTradeModal';
@@ -61,7 +62,7 @@ import notifee, { EventType } from '@notifee/react-native';
 
 import { generateToken } from '../../utils/SecurityTokenManager';
 import MotilalModal from '../BrokerConnectionModal/MotilalModal';
-import { getAdvisorSubdomain } from '../utils/variantHelper';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 const { height: screenHeight } = Dimensions.get('window');
 const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
@@ -239,6 +240,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   const connectZerodha = () => {
     if (zerodhaRequestToken !== null && !hasConnectedZerodha.current) {
       let data = JSON.stringify({
+        user_email: userEmail,
         apiKey: checkValidApiAnSecret(apiKey),
         apiSecret: checkValidApiAnSecret(secretKey),
         requestToken: zerodhaRequestToken,
@@ -250,7 +252,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -334,7 +336,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -443,7 +445,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         url: `${server.ccxtServer.baseUrl}${endpoint}/user-portfolio`,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -526,6 +528,17 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       return;
     }
 
+    // Zerodha: use Publisher flow (Kite basket) instead of direct API
+    if (broker === 'Zerodha') {
+      setLoading(false);
+      setOpenReviewTrade(false);
+      // Save stockDetails for checkZerodhaStatus callback
+      setZerodhaStockDetails(stockDetails);
+      await handleZerodhaRedirect();
+      setOpenZerodhaModel(true);
+      return;
+    }
+
     // Pre-order EDIS check for brokers without a dedicated EDIS API
     const allSellPre = stockDetails.every(s => s.transactionType === 'SELL');
     const isMixedPre = stockDetails.some(s => s.transactionType === 'BUY') &&
@@ -557,6 +570,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         const gttPayload = {
           trades,
           user_broker: broker,
+          user_email: userEmail,
         };
         switch (broker) {
           case 'Upstox':
@@ -574,6 +588,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       let basePayload = {
         trades,
         user_broker: broker, // Common fields
+        user_email: userEmail,
       };
 
       // Add basket info if available
@@ -761,7 +776,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           url: gttEndpoint,
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -796,7 +811,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         url: regularEndpoint,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -1161,7 +1176,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         url: `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -1260,7 +1275,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1323,26 +1338,49 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   };
 
   const handleLimitOrderInputChange = (symbol, value, tradeId) => {
-    if (!value || value === '') {
-      const newData = stockRecoNotExecuted.map(stock =>
-        stock.Symbol === symbol && stock.tradeId === tradeId
-          ? { ...stock, Price: '' }
-          : stock,
-      );
-      // console.log('newdata:',newData);
-      setStockRecoNotExecuted(newData);
-      setrecommendationStock(newData);
+    // Match web: accept up to 2 decimals, reject silently otherwise so the
+    // field behaves consistently. Keeps the value as a string so ₹123.45
+    // round-trips instead of being truncated by parseInt.
+    let formattedValue = value;
+    if (value) {
+      const regex = /^\d*\.?\d{0,2}$/;
+      if (!regex.test(value)) {
+        return;
+      }
+      formattedValue = value;
     } else {
-      // console.log('OP:',value);
-      const newData = stockRecoNotExecuted.map(stock =>
-        stock.Symbol === symbol && stock.tradeId === tradeId
-          ? { ...stock, Price: parseInt(value) }
-          : stock,
-      );
-      //  console.log('newdata:',newData);
-      setStockRecoNotExecuted(newData);
-      setrecommendationStock(newData);
+      formattedValue = '';
     }
+
+    const newData = stockRecoNotExecuted.map(stock =>
+      stock.Symbol === symbol && stock.tradeId === tradeId
+        ? { ...stock, Price: formattedValue }
+        : stock,
+    );
+    setStockRecoNotExecuted(newData);
+    setrecommendationStock(newData);
+
+    // Persist to cart so the limit price survives refresh / app restart
+    // (web does this in NewStockCard.handleLimitOrderInputChange).
+    axios
+      .post(
+        `${server.server.baseUrl}api/cart/update`,
+        { tradeId, price: formattedValue },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      )
+      .then(() => getCartAllStocks())
+      .catch(error => {
+        console.error('Error updating cart limit price:', error?.response?.data || error?.message);
+      });
   };
 
   const handleSelectAllStocks = async () => {
@@ -1408,7 +1446,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -1437,7 +1475,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -1490,15 +1528,42 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   const isMixed = hasSell && hasBuy;
 
   const handleTrade = async () => {
-    // await getCartAllStocks();
-    // console.log('HIIiiiiiiiiiiiiii', broker);
-    // eventEmitter.emit('OpenTradeModel');
     setTradeClickCount(prevCount => prevCount + 1);
     fetchCart();
+    // Stale-closure fix (2026-04-18): same as handleSingleSelectStock.
+    // Refetch userDetails and shadow `broker` / `brokerStatus` so the
+    // broker-palette gate at line 1556 doesn't fire when the user is
+    // actually connected but the initial context load hadn't completed
+    // at the time this handler was bound.
+    const _closureBroker = broker;
+    const _closureBrokerStatus = brokerStatus;
+    const freshUser = await getUserDeatils();
+    // eslint-disable-next-line no-shadow
+    const broker = freshUser?.user_broker ?? _closureBroker;
+    // eslint-disable-next-line no-shadow
+    const brokerStatus = freshUser?.connect_broker_status ?? _closureBrokerStatus;
+    // Populate stockDetails from cartContainer before opening the review
+    // modal. cartContainer is the live cart; stockDetails is the trade-intent
+    // payload ReviewTradeModal reads. We merge any existing stockDetails
+    // entries (which may carry in-flight quantity / price edits) on top of
+    // the cart so user edits are preserved. This bottom-bar "Trade (N)"
+    // path is how multi-select cart trades reach the review modal — since
+    // 2026-04-17 updateCartStates no longer writes stockDetails, so this
+    // sync must happen here explicitly.
+    const mergedTradeIntent = (cartContainer || []).map(cartItem => {
+      const edited = stockDetails.find(
+        s =>
+          s.tradingSymbol === cartItem.tradingSymbol &&
+          s.tradeId === cartItem.tradeId,
+      );
+      return edited ? {...cartItem, ...edited} : cartItem;
+    });
+    setStockDetails(mergedTradeIntent);
+
     const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
     const isMarketHours = IsMarketHours();
 
-    const currentBroker = userDetails?.user_broker;
+    const currentBroker = freshUser?.user_broker ?? userDetails?.user_broker;
     const currentBrokerRejectedCount = await getRejectedCount();
     if (isFundsEmpty) {
       setOpenTokenExpireModel(true);
@@ -1597,12 +1662,15 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   const handleTradeBasket = async () => {
     console.log('HIIiiiiiiiiiiiiii', broker);
 
+    // Broker check FIRST (matching web BasketModal.js)
+    if (brokerStatus !== 'connected') {
+      setBrokerModel(true);
+      return;
+    }
+
     const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
     if (isFundsEmpty) {
       setOpenTokenExpireModel(true);
-      return;
-    } else if (brokerStatus === null || brokerStatus === undefined) {
-      setBrokerModel(true);
       return;
     }
 
@@ -1757,52 +1825,50 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     setStocksWithoutSource(filteredStocks);
   };
 
-  //console.log('typeeeeeee=------ i get:---',type);
+  // On mount (and when `type` changes), hydrate React cart state from
+  // AsyncStorage. cartContainer drives UI (badges, "Trade (N)" count,
+  // isSelected). stocksWithoutSource drives the "Ignore Trades" screen's
+  // cart view. Both mirror the persistent cart.
+  //
+  // stockDetails is intentionally NOT set here — it's trade-intent state,
+  // populated explicitly by handleSingleSelectStock (single) or handleTrade /
+  // handleTradeNow1 (bottom-bar Trade (N)) at the moment the user asks to
+  // open the review modal. Matches web where the server cart and the
+  // modal's trade payload are separate concepts.
   useEffect(() => {
     const syncCartWithStockDetails = async () => {
       const localCart = await loadCartFromLocalStorage();
-      //  console.log('kkkk',localCart);
-      // If you want to merge latest fields from `stockDetails` into `localCart`, you can do:
-      const mergedCart = localCart.map(cartItem => {
-        const updatedStock = stockDetails.find(
-          stock =>
-            stock.tradeId === cartItem.tradeId &&
-            stock.symbol === cartItem.symbol,
-        );
-
-        return updatedStock ? { ...cartItem, ...updatedStock } : cartItem;
-      });
-
-      setStockDetails(mergedCart);
-      setStocksWithoutSource(mergedCart);
+      setCartContainer(localCart);
+      setStocksWithoutSource(localCart);
     };
 
     syncCartWithStockDetails();
   }, [type]);
 
+  // Mirrors the server/local cart into React state for UI display (badges,
+  // "Trade (N)" button count, isSelected flag on each card).
+  //
+  // IMPORTANT: this function only updates `cartContainer` — it does NOT touch
+  // `stockDetails`. `stockDetails` is the "trade-intent" state (what the user
+  // is about to submit in the ReviewTradeModal), a separate concept from the
+  // cart. Web does the same separation (web's cart is server-side via
+  // `/api/cart` and never pollutes local `stockDetails`).
+  //
+  // Trade-intent is set explicitly at each boundary:
+  //   - `handleSingleSelectStock`      → setStockDetails([newStock])   (single)
+  //   - `handleTrade` / `handleTradeNow1` → merge cartContainer + edits (Trade N)
+  //   - `handleRemoveAllSelectedStocks`  → setStockDetails([])
+  //   - `syncCartWithStockDetails` effect → initial mount populate
+  //
+  // Before 2026-04-17 this function ALSO wrote `setStockDetails(items)`,
+  // which caused a single Trade-Now click to open the review modal with
+  // EVERY item in the cart (including stale rejected trades) because
+  // `handleSelectStock('add')` runs before the subsequent
+  // `setStockDetails([newStock])` reset — the cart-sync write leaked into
+  // the modal render. See CHANGELOG 2026-04-17 "Trade Now modal shows
+  // extra cart items".
   const updateCartStates = useCallback(items => {
-    const startTime = Date.now();
-    console.log('items we get in container----', items);
-    // Measure time for setCartContainer
-    const cartContainerStart = Date.now();
     setCartContainer(items);
-    const cartContainerEnd = Date.now();
-    console.log(
-      `setCartContainer took ${cartContainerEnd - cartContainerStart} ms`,
-    );
-
-    // Measure time for setStockDetails
-    const stockDetailsStart = Date.now();
-    setStockDetails(items);
-    const stockDetailsEnd = Date.now();
-    console.log(
-      `setStockDetails took ${stockDetailsEnd - stockDetailsStart} ms`,
-    );
-
-    // Measure time for setCartCount
-
-    const endTime = Date.now();
-    console.log(`updateCartStates took ${endTime - startTime} ms in total`);
   }, []);
 
   //const cartItemsCallback = useCallback((items) => items, []);
@@ -2049,6 +2115,136 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   };
 
   const [stockTypeAndSymbol, setStockTypeAndSymbol] = useState([]);
+  const [pendingManualTrade, setPendingManualTrade] = useState(null);
+  const [showManualConfirm, setShowManualConfirm] = useState(false);
+  const [isManualConfirmLoading, setIsManualConfirmLoading] = useState(false);
+
+  // Auto-show confirm modal when broker modal closes with a pending trade (matching web)
+  const prevBrokerModel = useRef(brokerModel);
+  useEffect(() => {
+    if (prevBrokerModel.current === true && brokerModel === false && pendingManualTrade) {
+      setTimeout(() => setShowManualConfirm(true), 300);
+    }
+    prevBrokerModel.current = brokerModel;
+  }, [brokerModel, pendingManualTrade]);
+
+  // Reject/cancel a basket recommendation (matching web StockRecommendation.js)
+  const handleCancelBasket = async (basketId) => {
+    try {
+      await axios.put(
+        `${server.ccxtServer.baseUrl}comms/reco/cancel/${basketId}`,
+        {},
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      Toast.show({type: 'success', text1: 'Basket rejected successfully'});
+      await getAllTrades();
+    } catch (err) {
+      console.error('Error cancelling basket:', err);
+      Toast.show({type: 'error', text1: 'Failed to reject basket'});
+    }
+  };
+
+  // "Continue without broker" for bespoke — save preference, refresh as DummyBroker, then proceed
+  const handleContinueWithoutBrokerBespoke = async () => {
+    try {
+      // Step 1: Save no-broker preference (matching web connectBroker.js)
+      await axios.put(
+        `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
+        {userEmail: userEmail, noBrokerRequired: true},
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+
+      // Step 2: Refresh user details so broker becomes DummyBroker
+      await getUserDeatils();
+
+      // Step 3: Close broker modal and proceed
+      setBrokerModel(false);
+
+      // For basket orders, open review trade modal — DummyBroker handles placement
+      if (isBasket) {
+        setOpenReviewTrade(true);
+        return;
+      }
+
+      // For single bespoke trades, show manual confirmation
+      if (stockDetails.length === 0 && !pendingManualTrade) return;
+      setShowManualConfirm(true);
+    } catch (err) {
+      console.error('Error saving no-broker preference:', err);
+      Toast.show({type: 'error', text1: 'Failed to continue. Try again.'});
+      setBrokerModel(false);
+    }
+  };
+
+  const handleConfirmManuallyPlaced = async () => {
+    if (!pendingManualTrade && stockDetails.length === 0) return;
+    setIsManualConfirmLoading(true);
+    try {
+      // If single pending trade (from card action), mark just that one
+      // If batch (from continue without broker), mark all stockDetails
+      const tradesToMark = pendingManualTrade ? [pendingManualTrade] : stockDetails;
+
+      for (const trade of tradesToMark) {
+        await axios.put(
+          `${server.server.baseUrl}api/recommendation`,
+          {uid: trade._id || trade.tradeId, trade_place_status: 'manually_placed'},
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        );
+      }
+
+      // Build synthetic order response so the success modal shows status (matching web)
+      const syntheticResponse = tradesToMark.map(trade => ({
+        symbol: trade.Symbol || trade.tradingSymbol,
+        searchSymbol: trade.searchSymbol || trade.Symbol || trade.tradingSymbol,
+        transactionType: trade.Type || trade.transactionType,
+        quantity: trade.Quantity || trade.quantity,
+        orderType: trade.OrderType || trade.orderType || 'MARKET',
+        orderPlacement: 'success',
+        orderStatus: 'Placed',
+        message_aq: 'Manually placed',
+      }));
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+
+      setPendingManualTrade(null);
+      await Promise.all([
+        getAllTrades(),
+        getCartAllStocks(),
+      ]);
+    } catch (err) {
+      Toast.show({type: 'error', text1: 'Failed to save. Try again.'});
+    } finally {
+      setIsManualConfirmLoading(false);
+      setShowManualConfirm(false);
+    }
+  };
 
   const handleCloseDdpiModal = () => {
     setShowDdpiModal(false);
@@ -2091,25 +2287,48 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   }, [stockRecoNotExecuted]);
 
   const handleSingleSelectStock = async (symbol, tradeId, action) => {
-    await getUserDeatils();
+    // Stale-closure fix (2026-04-18): `broker` / `brokerStatus` from the
+    // top-level `useTrade()` destructure are captured at render time.
+    // If the user taps Trade Now before the initial `getUserDeatils()` in
+    // TradeContext has finished, the closure holds `null` for both, and
+    // the `!broker` check below would fire the broker-selection palette
+    // even when the user is actually connected.
+    //
+    // `getUserDeatils` updates context state AND returns the fresh user
+    // object (TradeContext.js:955). We shadow the closure bindings with
+    // the fresh values so every subsequent check in this function — the
+    // no-broker gate below AND the per-broker branches (Angel One,
+    // Dhan, Zerodha, etc.) further down — reads the current broker.
+    // Latent since commit aee4f10 added this await.
+    const _closureBroker = broker;
+    const _closureBrokerStatus = brokerStatus;
+    const freshUser = await getUserDeatils();
     await getRejectedCount();
+    // eslint-disable-next-line no-shadow
+    const broker = freshUser?.user_broker ?? _closureBroker;
+    // eslint-disable-next-line no-shadow
+    const brokerStatus = freshUser?.connect_broker_status ?? _closureBrokerStatus;
 
     const rejectedKey = `rejectedCount${broker}`;
     //const rejectedCountFromStorage = await AsyncStorage.getItem(rejectedKey);
     const currentBrokerRejectedCount = await getRejectedCount();
-    console.log('this hit---1');
     getAllFunds();
-    console.log('this not----2');
     const isMarketHours = IsMarketHours();
     const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
-    console.log("thos called ------jjjjjjjjjjj2", isFundsEmpty, funds, brokerStatus);
-    if (isFundsEmpty) {
-      console.log("thos called ------jjjjjjjjjjj1");
+
+    // Check order must match web: no broker → broker selection, then expired → token expire
+    if (!broker) {
+      // No broker connected at all → save pending trade and show broker selection (matching web)
+      const tradeToSave = recommendationStock.find(
+        item => item.Symbol === symbol && item.tradeId === tradeId,
+      );
+      if (tradeToSave) setPendingManualTrade(tradeToSave);
+      setBrokerModel(true);
+      return;
+    } else if (brokerStatus !== 'connected' || isFundsEmpty) {
+      // Broker set but session expired or funds empty → re-login to same broker
       setOpenTokenExpireModel(true);
       return;
-    } else if (brokerStatus === null || brokerStatus === undefined || brokerStatus !== 'connected' || brokerStatus === "Disconnected") {
-      console.log('here-----', brokerStatus);
-      setBrokerModel(true);
     } else {
       console.log('broker status--', brokerStatus);
       if (!isMarketHours) {
@@ -2130,7 +2349,6 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         console.error('Stock not found in recommendationStock.');
         return;
       }
-      // console.log('UpdatedStock:', updatedStock.Exchange);
       const newStock = {
         user_email: updatedStock.user_email,
         trade_given_by: updatedStock.trade_given_by,
@@ -2151,39 +2369,45 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         zerodhaTradeId: updatedStock.zerodhaTradeId,
       };
 
+      // Open the ReviewTradeModal for this ONE stock only. Defers the
+      // modal open to the next tick via setTimeout(…, 0) so React commits
+      // setStockDetails([newStock]) before ReviewTradeModal reads the
+      // stockDetails prop. Matches web NewStockCard.js:585-587 exactly —
+      // without the deferral, any prior setState that touched stockDetails
+      // (e.g. the old updateCartStates → setStockDetails(cart)) could
+      // leak into the modal render, causing "Trade Now on X" to open the
+      // review with every cart item instead of just X.
+      const openReviewForSingle = () => {
+        setStockDetails([newStock]);
+        setTimeout(() => setOpenReviewTrade(true), 0);
+      };
+
       // If stock is already selected
       if (isStockSelected) {
         const isBuyOrder = action.toUpperCase() === 'BUY';
         const isSellOrder = action.toUpperCase() === 'SELL';
-        // console.log('here i am');
         if (broker === 'Angel One') {
           if (isBuyOrder) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           } else if (isSellOrder) {
             if (!userDetails?.ddpi_enabled && !userDetails?.is_authorized_for_sell) {
               setShowAngleOneTpinModel(true);
             } else {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
+              openReviewForSingle();
             }
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         } else if (broker === 'Dhan') {
           if (isBuyOrder) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           } else if (isSellOrder) {
             if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
+              openReviewForSingle();
             } else if (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false)) {
               setShowDhanTpinModel(true);
             } else {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
+              openReviewForSingle();
             }
           }
         } else if (broker === 'Zerodha') {
@@ -2191,26 +2415,21 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
             item => item.exchange === 'NFO' || item.exchange === 'BFO',
           );
           if (isBuyOrder) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           } else if (isSellOrder && !allFNO) {
-            // If user has completed TPIN authorization or has active DDPI, proceed
             const canSellSingle = userDetails?.is_authorized_for_sell ||
               ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
             if (canSellSingle) {
               setShowDdpiModal(false);
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
+              openReviewForSingle();
             } else {
               setShowDdpiModal(true);
             }
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         } else {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         }
         return;
       }
@@ -2218,47 +2437,39 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       const isBuyOrder = action.toUpperCase() === 'BUY';
       const isSellOrder = action.toUpperCase() === 'SELL';
       await handleSelectStock(symbol, tradeId, 'add', 'handlesingle');
-      // Handling broker-specific logic
+      // Broker-specific auth gating before opening the review modal.
       if (broker === 'Zerodha') {
-        // If user has completed TPIN authorization or has active DDPI, proceed
         const canSellBatch = userDetails?.is_authorized_for_sell ||
           ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
         if (isSellOrder && !canSellBatch) {
           setShowDdpiModal(true);
         } else {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         }
       } else if (broker === 'Angel One') {
         if (isBuyOrder) {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         } else if (isSellOrder) {
           if (!userDetails?.ddpi_enabled && !userDetails?.is_authorized_for_sell) {
             setShowAngleOneTpinModel(true);
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         }
       } else if (broker === 'Dhan') {
         if (isBuyOrder) {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         } else if (isSellOrder) {
           if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           } else if (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false)) {
             setShowDhanTpinModel(true);
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         }
       } else {
-        setStockDetails([newStock]);
-        setOpenReviewTrade(true);
+        openReviewForSingle();
       }
     }
   };
@@ -2278,17 +2489,27 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   };
 
   const handleTradeNow1 = () => {
+    // Populate stockDetails from cartContainer (matches handleTrade; same
+    // rationale — cart/trade-intent separation as of 2026-04-17).
+    const mergedTradeIntent = (cartContainer || []).map(cartItem => {
+      const edited = stockDetails.find(
+        s =>
+          s.tradingSymbol === cartItem.tradingSymbol &&
+          s.tradeId === cartItem.tradeId,
+      );
+      return edited ? {...cartItem, ...edited} : cartItem;
+    });
+    setStockDetails(mergedTradeIntent);
+
     if (broker === 'Zerodha') {
-      console.log('broker:', broker);
-      setOpenReviewTrade(true); // Open the Zerodha modal only when broker is Zerodha and trade button is pressed
+      setOpenReviewTrade(true);
     } else {
       if (brokerStatus === null) {
         setBrokerModel(true);
       } else {
-        console.log('broker:', broker);
         setOpenReviewTrade(true);
       }
-    } // Set the state to open the modal
+    }
   };
 
   const openReviewModal = () => {
@@ -2309,7 +2530,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       url: `${server.server.baseUrl}api/recommendation`,
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -2805,6 +3026,7 @@ useEffect(() => {
         loading={loading}
         userEmail={userEmail}
         handleTradeBasket={handleTradeBasket}
+        handleCancelBasket={handleCancelBasket}
         getAllTrades={getAllTrades}
         handleSelectAllStocks={handleSelectAllStocks}
         handleRemoveAllSelectedStocks={handleRemoveAllSelectedStocks}
@@ -2892,6 +3114,58 @@ useEffect(() => {
         />
       )}
 
+      {/* Manual Trade Confirmation — shown after broker modal closes with pending trade (matching web) */}
+      <Modal
+        visible={showManualConfirm && (!!pendingManualTrade || stockDetails.length > 0)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowManualConfirm(false);
+          setPendingManualTrade(null);
+        }}
+      >
+        <View style={styles.manualConfirmOverlay}>
+          <View style={styles.manualConfirmContainer}>
+            <Text style={styles.manualConfirmTitle}>Confirm Manually Placed</Text>
+            <Text style={styles.manualConfirmSubtitle}>Have you manually placed {pendingManualTrade ? 'this trade' : 'these trades'}?</Text>
+            {pendingManualTrade ? (
+              <View style={styles.manualConfirmTradeInfo}>
+                <Text style={styles.manualConfirmTradeText}>
+                  {pendingManualTrade.Type || pendingManualTrade.transactionType}  ·  {pendingManualTrade.Symbol || pendingManualTrade.tradingSymbol}  ·  Qty: {pendingManualTrade.Quantity || pendingManualTrade.quantity}
+                </Text>
+              </View>
+            ) : stockDetails.length > 0 ? (
+              <View style={styles.manualConfirmTradeInfo}>
+                <Text style={styles.manualConfirmTradeText}>
+                  {stockDetails.length} trade{stockDetails.length !== 1 ? 's' : ''} selected
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.manualConfirmButtons}>
+              <TouchableOpacity
+                style={styles.manualConfirmNoBtn}
+                disabled={isManualConfirmLoading}
+                onPress={() => {
+                  setShowManualConfirm(false);
+                  setPendingManualTrade(null);
+                }}
+              >
+                <Text style={styles.manualConfirmNoBtnText}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.manualConfirmYesBtn}
+                disabled={isManualConfirmLoading}
+                onPress={handleConfirmManuallyPlaced}
+              >
+                <Text style={styles.manualConfirmYesBtnText}>
+                  {isManualConfirmLoading ? 'Saving...' : 'Yes, Placed'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {OpenTokenExpireModel && (
         <IIFLReviewTradeModal
           isVisible={OpenTokenExpireModel}
@@ -2944,6 +3218,7 @@ useEffect(() => {
           setShowBrokerModal={setBrokerModel}
           setOpenTokenExpireModel={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
+          handleAcceptRebalanceWithoutBroker={handleContinueWithoutBrokerBespoke}
         />
       )}
 
@@ -3166,6 +3441,74 @@ const styles = StyleSheet.create({
     height: 250,
     alignSelf: 'center',
     marginTop: 20,
+  },
+  manualConfirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  manualConfirmContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    width: '100%',
+    maxWidth: 340,
+    padding: 22,
+  },
+  manualConfirmTitle: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Bold',
+    color: '#1e293b',
+    marginBottom: 8,
+  },
+  manualConfirmSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Poppins-Regular',
+    color: '#475569',
+    marginBottom: 4,
+  },
+  manualConfirmTradeInfo: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 18,
+    marginTop: 6,
+  },
+  manualConfirmTradeText: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+    color: '#334155',
+  },
+  manualConfirmButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  manualConfirmNoBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+  },
+  manualConfirmNoBtnText: {
+    fontSize: 13,
+    fontFamily: 'Poppins-Medium',
+    color: '#475569',
+  },
+  manualConfirmYesBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+  },
+  manualConfirmYesBtnText: {
+    fontSize: 13,
+    fontFamily: 'Poppins-Medium',
+    color: '#fff',
   },
 });
 

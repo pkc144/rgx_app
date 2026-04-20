@@ -29,8 +29,10 @@ const {height: screenHeight} = Dimensions.get('window');
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../../screens/TradeContext';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
+import { detectTransientOrderWindowError } from '../../utils/rebalanceHelpers';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
 import { convertResponse } from '../../utils/tradeUtils';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import moment from 'moment';
 import useModalStore from '../../GlobalUIModals/modalStore';
 const MPReviewTradeModal = ({
@@ -480,6 +482,27 @@ const MPReviewTradeModal = ({
         const s = (order?.orderStatus || '').toUpperCase();
         return s === 'REJECTED' || s === 'CANCELLED' || s === 'FAILURE' || s === 'FAILED';
       });
+
+      // Transient service-window short-circuit: if every failed row is a
+      // documented broker maintenance-window error (e.g. Upstox
+      // UDAPI100074 between 00:00–05:30 IST), show a soft toast instead
+      // of the all-failed modal. Broker session is fine — just retry
+      // after the window reopens. Matches web UpdateRebalanceModal.
+      const transientServiceWindowMsg = detectTransientOrderWindowError(response?.data);
+      if (transientServiceWindowMsg) {
+        Toast.show({
+          type: 'info',
+          text1: 'Broker service window',
+          text2:
+            transientServiceWindowMsg ||
+            `${broker} order placement is temporarily unavailable. Try again during the broker's service hours.`,
+          visibilityTime: 8000,
+        });
+        await enrollStatusCheckQueue();
+        onCloseReviewTrade();
+        setLoading(false);
+        return;
+      }
 
       if (allOrdersFailed) {
         // All orders rejected — show results modal with rejection details, skip EDIS checks

@@ -42,23 +42,17 @@ describe('Integration: Rebalance Flow', () => {
 
   describe('funds validation before rebalance', () => {
     test('connected broker with valid funds -> proceed', () => {
-      const result = isFundsErrorOrMissing(
-        {status: 0, data: {availablecash: 100000}},
-        'connected',
-      );
-      expect(result.isError).toBe(false);
+      expect(
+        isFundsErrorOrMissing({status: 0, data: {availablecash: 100000}}, 'connected'),
+      ).toBe(false);
     });
 
     test('expired token -> block rebalance', () => {
-      const result = isFundsErrorOrMissing({status: 1}, 'connected');
-      expect(result.isError).toBe(true);
-      expect(result.reason).toBe('token_expired');
+      expect(isFundsErrorOrMissing({status: 1}, 'connected')).toBe(true);
     });
 
-    test('disconnected broker -> block rebalance', () => {
-      const result = isFundsErrorOrMissing(null, 'disconnected');
-      expect(result.isError).toBe(true);
-      expect(result.reason).toBe('not_connected');
+    test('disconnected broker -> do not treat as funds error (boolean helper)', () => {
+      expect(isFundsErrorOrMissing(null, 'disconnected')).toBe(false);
     });
   });
 
