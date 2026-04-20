@@ -93,6 +93,11 @@ const HDFCconnectModal = ({
 
   const userId = userDetails && userDetails._id;
 
+  // Egress-IP gate (see EgressIpCallout). HDFC requires a dedicated
+  // static IP whitelisted in InvestRight API app → Allowed IPs.
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
+
   // Step 1: Extract requestToken from callback URL
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
@@ -116,10 +121,10 @@ const HDFCconnectModal = ({
   const connectHdfc = () => {
     if (hdfcRequestToken !== null && apiKey && secretKey && !hasConnectedHdfc.current) {
       let data = JSON.stringify({
+        user_email: userEmail,
         apiKey: apiKey,
         apiSecret: secretKey,
         requestToken: hdfcRequestToken,
-        user_email: userEmail,
       });
       console.log('[HDFC] Exchanging request token for access token...');
       let config = {
@@ -234,6 +239,10 @@ const HDFCconnectModal = ({
   }, [isVisible]);
 
   const initiateAuth = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
     let data = JSON.stringify({
       uid: userId,
       apiKey: checkValidApiAnSecret(apiKey),
@@ -291,6 +300,13 @@ const HDFCconnectModal = ({
       handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
       helpVisible={helpVisible}
       setHelpVisible={setHelpVisible}
+      egressUserId={userId}
+      egressUserEmail={userEmail}
+      egressReady={egressReady}
+      setEgressReady={setEgressReady}
+      unmetAck={unmetAck}
+      setUnmetAck={setUnmetAck}
+      configData={configData}
     />
   );
 };

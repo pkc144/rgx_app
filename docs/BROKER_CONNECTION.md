@@ -170,6 +170,86 @@ Map from backend `connected_brokers[].broker` string → ModalManager switch key
 | `Axis Securities` | `Axis` |
 | all others | same as name |
 
+## EgressIpCallout — Per-Customer Static IP Gate (v5.3.1)
+
+SEBI compliance requires each client to have a dedicated static IP whitelisted against their broker app keys. `src/components/BrokerConnectionModal/EgressIpCallout.js` (706 lines) is the multi-state widget that handles this. Ported wholesale from alphab2b and wired into all 6 whitelist brokers.
+
+### 7 render states
+
+| State | Trigger | Shown to user |
+|-------|---------|---------------|
+| `loading` | Initial mount, hitting `GET /egress/me` | Spinner + "Checking your account" |
+| `error` | `/egress/me` network/5xx error | Red banner + Retry button |
+| `partner` | Broker isn't in `WHITELIST_BROKERS` | Nothing (component renders `null`, acknowledges through) |
+| `ipv4_provisioning` | Backend says user is on the shared IPv4 pool, about to rotate | Amber hard-block panel with SEBI rationale; no opt-out |
+| `unclaimed` | No IPv6 assigned yet | "Claim Dedicated IP" button → `POST /egress/claim` |
+| `claiming` | `/egress/claim` in flight | Spinner + disable |
+| `claimed` | IP assigned | IP shown + Copy button + numbered steps (a/b/c) citing broker dev portal + acknowledgment checkbox |
+
+### Hard-gate
+
+Before `claimed`, the component calls `onAcknowledgeChange(false)` in every state (unclaimed, ipv4_provisioning, loading, error, claiming). Only after the user ticks the "I've whitelisted this IP" checkbox does it call `onAcknowledgeChange(true)`. Each broker's modal wires this to an `egressReady` state and gates its submit button:
+
+```jsx
+<EgressIpCallout
+  broker="upstox"
+  customerId={userId}
+  customerEmail={userEmail}
+  onAcknowledgeChange={setEgressReady}
+  showUnmetAck={unmetAck}
+  onUnmetAckHandled={() => setUnmetAck(false)}
+/>
+
+// submit handler
+if (!egressReady) {
+  setUnmetAck(true);  // triggers red flash on the checkbox
+  return;
+}
+```
+
+If the user hits submit without ticking, `showUnmetAck` drives an `Animated.sequence` red-flash + `⚠ Please tick this box...` warning on the checkbox.
+
+### Wire-up (6 whitelist brokers + 1 static callout)
+
+| Broker | Modal file manages state | UI file renders EgressIpCallout | Status |
+|--------|--------------------------|---------------------------------|--------|
+| Upstox | `upstoxModal.js` (5 refs) | `UpstoxConnectUI.js` (1 render) | ✅ Dynamic gate |
+| Fyers | `FyersConnect.js` (5 refs) | `FyersConnectUI.js` (1 render) | ✅ Dynamic gate |
+| HDFC Securities | `HDFCconnectModal.js` (5 refs) | `HDFCConnectUI.js` (1 render) | ✅ Dynamic gate |
+| ICICI Direct | `icicimodal.js` (5 refs) | `ICICIConnectUI.js` (1 render) | ✅ Dynamic gate |
+| Kotak | `KotakModal.js` (8 refs) | `KotakConnectUI.js` (1 render) | ✅ Dynamic gate |
+| Groww | `GrowwConnectModal.js` (all inline) | (same file) | ✅ Dynamic gate |
+| Motilal Oswal | `MotilalConnectUI.js` | — inline static callout | ✅ Static IPv4 (`72.61.251.253` — shared server IP, no dedicated provisioning) |
+
+**Motilal intentionally doesn't hit `/egress/me`**. Per v3.8.7 Group C2 change: Motilal is IPv4-only; all calls route through the server's shared static IPv4 via an IPv4-pinned session on ccxt-india. The modal renders an inline static callout with IP + Copy + acknowledgment instead of the full 7-state widget.
+
+**Angel One, Dhan, AliceBlue, Axis, Zerodha** are partner-OAuth brokers — they don't hit `/egress/me`. The component short-circuits to `partner` state (renders `null`) and immediately acknowledges through.
+
+### Backend endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET ${ccxtServer}egress/me` | Returns `{brokerEntry, migrationBanner, brokerState}` for the current user |
+| `POST ${ccxtServer}egress/claim` | Provisions a dedicated Route64 IPv6 for the user against the given broker |
+
+Both calls include `X-Advisor-Subdomain` (RGX-specific fallback preserved) and `aq-encrypted-key` headers.
+
+### Migration banner
+
+When the backend marks the user's assigned IP as about to rotate, `/egress/me` returns a `migrationBanner` payload. The component renders an amber banner above the main state with rotation date + re-whitelist instructions. The hard-gate remains active until the user re-acknowledges.
+
+### Per-broker dev-portal URL + whitelist hint
+
+| Broker | Dev portal | Whitelist location |
+|--------|------------|--------------------|
+| Upstox | `account.upstox.com/developer/apps` | API Apps → (your app) → Allowed IPs |
+| Fyers | `myapi.fyers.in/dashboard` | API Dashboard → App Details → Allowed IPs |
+| HDFC | `developer.hdfcsec.com` | InvestRight API app → Allowed IPs |
+| ICICI | `api.icicidirect.com/apiuser/home` | Breeze API app → IP Whitelist |
+| Kotak | `npapi.kotaksecurities.com` | Consumer Key settings → IP Whitelist |
+| Groww | `groww.in/trade-api/api-keys` | Trade API → Create API Key + Secret → Whitelisted IPs |
+| Motilal | `openapi.motilaloswal.com` | App settings → Allowed IPs (pre-paste `72.61.251.253`) |
+
 ## Credential Encryption
 
 Broker API keys and secrets are AES-encrypted with the key `ApiKeySecret` via `CryptoJS.AES.encrypt(value, 'ApiKeySecret')`. `defaultDecrypt` in `src/utils/rebalanceHelpers.js` is the canonical decrypt helper — falls back to the original value if decryption fails (so unencrypted legacy values still work).

@@ -4,6 +4,24 @@ All notable changes to the RGX Research Mobile App (EquityPro) are documented he
 
 ---
 
+## [5.3.2] - 2026-04-20 — HDFC EgressIpCallout wire-up + docs
+
+### Fixed — HDFC Securities was missing EgressIpCallout hard-gate
+
+`src/components/BrokerConnectionModal/HDFCconnectModal.js` — wholesale-copied from alphab2b so the egress state wiring (`egressReady`, `unmetAck`, acknowledgment checkbox, submit gate, red-flash on unmet ack) now matches the other 5 whitelist brokers. Previously the HDFC flow was the only v5.3.1 broker whose submit button didn't gate on the per-user dedicated IP claim — a SEBI-compliance gap.
+
+After this fix all 6 whitelist brokers have dynamic egress provisioning:
+
+- Upstox, Fyers, HDFC, ICICI, Kotak → modal manages state, UI renders `<EgressIpCallout>`
+- Groww → single-file inline implementation
+- Motilal → intentional static IPv4 callout (shared `72.61.251.253`, no dynamic claim)
+
+### Docs
+
+`docs/BROKER_CONNECTION.md` — added "EgressIpCallout — Per-Customer Static IP Gate" section covering: 7 render states, `/egress/me` + `/egress/claim` backend contract, hard-gate mechanics, per-broker wire-up matrix, migration banner, per-broker dev-portal URLs + whitelist hints.
+
+---
+
 ## [5.3.1] - 2026-04-20 — Follow-up sync from AlphaB2B v3.8.2–v3.8.9
 
 Pulls in 8 more AlphaB2B release tags that landed after the v5.3.0 cut. All behavioural, not just docs.
