@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import {ChevronLeft, ChevronRight, Crown} from 'lucide-react-native';
 import {getAuth} from '@react-native-firebase/auth';
 import {useNavigation} from '@react-navigation/native';
@@ -198,7 +198,7 @@ const MySubscriptionsScreen = () => {
         onPress={() => handlePlanPress(plan)}
         activeOpacity={0.7}
         style={{marginBottom: cardVerticalMargin}}>
-        <GradientView
+        <LinearGradient
           colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 0}}
@@ -257,7 +257,7 @@ const MySubscriptionsScreen = () => {
               <ChevronRight size={18} color="rgba(255,255,255,0.6)" />
             </View>
           </View>
-        </GradientView>
+        </LinearGradient>
       </TouchableOpacity>
     );
   };
@@ -265,7 +265,7 @@ const MySubscriptionsScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <GradientView
+      <LinearGradient
         colors={[gradient1, gradient2]}
         start={{x: 0, y: 0}}
         end={{x: 1, y: 0}}
@@ -276,7 +276,7 @@ const MySubscriptionsScreen = () => {
           <ChevronLeft size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Subscriptions</Text>
-      </GradientView>
+      </LinearGradient>
 
       {loading ? (
         <View style={styles.loaderContainer}>

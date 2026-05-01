@@ -91,7 +91,7 @@ import {
   updatePendingPayment,
 } from '../../FunctionCall/services/PendingPaymentManager';
 import {logPayment} from '../../utils/Logging';
-import GradientView from '../GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import {
   Digio,
   DigioConfig,
@@ -371,13 +371,9 @@ const MPInvestNowModal = ({
           },
         })
         .then(res => {
-          if (res?.data?.paymentPlatform) {
-            setadminpaymentPlatform(res.data.paymentPlatform);
-          }
+          setadminpaymentPlatform(res?.data?.paymentPlatform);
         })
-        .catch(() => {
-          setadminpaymentPlatform(config?.paymentPlatform || 'cashfree');
-        });
+        .catch(err => console.log('here-------->>>>>>>>>>.', err.response));
     }
   };
 
@@ -386,6 +382,7 @@ const MPInvestNowModal = ({
   const payu =
     String(adminpaymentPlatform).trim().toLowerCase() === 'payu';
 
+  console.log('Payment Platform-------', adminpaymentPlatform, { cashfree, payu });
 
   // PayU WebView state
   const [showPayUWebView, setShowPayUWebView] = useState(false);
@@ -3688,7 +3685,6 @@ const MPInvestNowModal = ({
       console.log('data==', data);
     } catch (err) {
       setAppliedCoupon(null);
-      setAppliedCouponId(null);
       console.log('messa---', err?.response);
       setCouponMessage(
         `❌ ${err?.response?.data?.message || 'Failed to apply coupon'}`,
@@ -3726,11 +3722,7 @@ const MPInvestNowModal = ({
     // --- RECURRING PLAN LOGIC ---
     durationText =
       selectedCard?.charAt(0)?.toUpperCase() + selectedCard?.slice(1);
-    const offerDetails = appliedCoupon
-      ? specificPlan?.offer_plans_details?.find(
-          (detail) => detail.couponId?.toString() === appliedCouponId?.toString(),
-        )
-      : specificPlan?.offer_plans_details?.[0];
+    const offerDetails = specificPlan?.offer_plans_details?.[0];
 
     if (appliedCoupon && offerDetails) {
       const originalRecurringAmount =
@@ -4276,12 +4268,11 @@ const MPInvestNowModal = ({
                                             <Text
                                               style={styles.lineThroughGray}>
                                               ₹
-                                              {displayAmount(
+                                              {
                                                 planDetails.pricingWithoutGst?.[
                                                 item
                                                 ]
-                                              )}
-                                              {gstText}
+                                              }
                                             </Text>
                                             <Text style={[styles.greenPrice, {color: stepCompletedColor}]}>
                                               ₹
@@ -4475,7 +4466,7 @@ const MPInvestNowModal = ({
       <Modal visible={visible} animationType="slide" transparent={false}>
         <SafeAreaView style={styles.container}>
           <View style={styles.headerContainer}>
-            <GradientView
+            <LinearGradient
               colors={[gradient1, gradient2]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -4496,7 +4487,7 @@ const MPInvestNowModal = ({
                   <XIcon size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
-            </GradientView>
+            </LinearGradient>
           </View>
 
           {/* Progress Bar */}

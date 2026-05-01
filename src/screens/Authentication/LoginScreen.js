@@ -13,7 +13,7 @@ import {
   Platform,
   Image,
 } from 'react-native';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import auth from '@react-native-firebase/auth';
 import Config from 'react-native-config';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
@@ -31,11 +31,12 @@ import APP_VARIANTS from '../../utils/Config';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useConfig} from '../../context/ConfigContext';
 
-// Import storage utilities
+// Import enhanced storage utilities
 import {
-  storeLoginData,
   checkAndFetchAdvisorConfig,
   setUserData,
+  isUserDataComplete,
+  refreshAllAppData,
 } from '../../utils/storageUtils';
 import {
   logLoginAttempt,
@@ -71,7 +72,8 @@ const LoginScreen = () => {
     getModelPortfolioStrategyDetails,
   } = useTrade();
 
-  // Configure Google Sign-In with correct Web client ID from google-services.json (client_type: 3)
+  // Configure Google Sign-In with correct Web client ID
+  // IMPORTANT: Must use Web client (client_type: 3), NOT iOS client (client_type: 2)
   const WEB_CLIENT_ID = '887826618956-83tfceb7n4m4h38qk93ld1emb78uj5rh.apps.googleusercontent.com';
 
   React.useEffect(() => {
@@ -84,56 +86,58 @@ const LoginScreen = () => {
   // Navigation handler - store data and navigate
   const handlePostLoginNavigation = async (userDetails, userEmail) => {
     try {
-      const userData = userDetails.data?.User;
-      const advisorRaCode = Config?.ADVISOR_RA_CODE || userData?.advisor_ra_code;
-      const hasAdvisorRaCode = !!advisorRaCode;
+      const hasAdvisorRaCode = Config?.ADVISOR_RA_CODE
+        ? Config?.ADVISOR_RA_CODE
+        : !!userDetails.data?.User?.advisor_ra_code;
 
       setIsProfileCompleted(hasAdvisorRaCode);
       await storeLoginTime();
 
-      if (!hasAdvisorRaCode) {
-        await setUserData({
-          email: userEmail,
-          profileCompleted: false,
-          ...userData,
-        });
-        navigation.replace('SignUpRADetails', {userEmail});
-        return;
-      }
+      if (hasAdvisorRaCode) {
+        const advisorRaCode = Config?.ADVISOR_RA_CODE
+          ? Config?.ADVISOR_RA_CODE
+          : userDetails.data.User.advisor_ra_code;
 
-      // Check if advisorConfig came inline from consolidated endpoint
-      const inlineConfig = userDetails.data?.advisorConfig;
-
-      if (inlineConfig) {
-        // Fast path: config returned inline with getUser response
-        await storeLoginData({
-          raCode: advisorRaCode,
-          userData: {email: userEmail, advisor_ra_code: advisorRaCode, profileCompleted: true, ...userData},
-          advisorConfig: inlineConfig,
-        });
-      } else {
-        // Fallback: old server without consolidated endpoint — fetch config separately
+        // Store user data
         await setUserData({
           email: userEmail,
           advisor_ra_code: advisorRaCode,
           profileCompleted: true,
-          ...userData,
+          ...userDetails.data.User,
         });
+
+        // Fetch advisor config
         const configResult = await checkAndFetchAdvisorConfig(advisorRaCode);
-        if (!configResult.success && configResult.advisorExists === false) {
-          navigation.replace('SignUpRADetails', {userEmail});
-          return;
+
+        if (configResult.success) {
+          // Reload config for UI
+          await reloadConfigData();
+
+          // Load home data in background (don't wait)
+          getAllTrades().catch(err => console.error('Trade load error:', err));
+          getModelPortfolioStrategyDetails().catch(err => console.error('Portfolio load error:', err));
+
+          // Navigate to Home
+          navigation.replace('Home');
+        } else {
+          if (configResult.advisorExists === false) {
+            navigation.replace('SignUpRADetails', {
+              userEmail: userEmail,
+            });
+          } else {
+            navigation.replace('Home');
+          }
         }
+      } else {
+        await setUserData({
+          email: userEmail,
+          profileCompleted: false,
+          ...userDetails?.data?.User,
+        });
+        navigation.replace('SignUpRADetails', {
+          userEmail: userEmail,
+        });
       }
-
-      // Reload config for UI
-      await reloadConfigData();
-
-      // Load home data in background (don't wait)
-      getAllTrades().catch(err => console.error('Trade load error:', err));
-      getModelPortfolioStrategyDetails().catch(err => console.error('Portfolio load error:', err));
-
-      navigation.replace('Home');
     } catch (error) {
       console.error('Login error:', error);
       navigation.replace('Home');
@@ -144,9 +148,7 @@ const LoginScreen = () => {
     setLoading(true);
     setErrorShow(false);
 
-    const trimmedEmail = email.trim();
-
-    if (!trimmedEmail || !password) {
+    if (!email || !password) {
       setError('Email and password are required');
       setErrorShow(true);
       setLoading(false);
@@ -155,7 +157,7 @@ const LoginScreen = () => {
 
     try {
       // Step 1: Firebase auth
-      const response = await auth().signInWithEmailAndPassword(trimmedEmail, password);
+      const response = await auth().signInWithEmailAndPassword(email, password);
       const user = response.user;
 
       if (user) {
@@ -164,7 +166,7 @@ const LoginScreen = () => {
 
         try {
           const getResponse = await axios.get(
-            `${server.server.baseUrl}api/user/getUser/${trimmedEmail}?includeAdvisorConfig=true`,
+            `${server.server.baseUrl}api/user/getUser/${email}`,
             {
               headers: {
                 'Content-Type': 'application/json',
@@ -179,59 +181,52 @@ const LoginScreen = () => {
           );
           userDetails = getResponse;
         } catch (getUserError) {
-          // Only create a new user if the backend returned 404 (user not found)
-          // For any other error (network, timeout, server error), rethrow
-          if (getUserError.response?.status === 404) {
-            console.log('User not found (404), creating new user...');
+          console.log('User does not exist, creating...');
 
-            // Create user
-            await axios.post(
-              `${server.server.baseUrl}api/user/`,
-              {
+          // Create user
+          await axios.post(
+            `${server.server.baseUrl}api/user/`,
+            {
+              email: user.email,
+              name: user.displayName || 'New User',
+              firebaseId: user.uid,
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+              timeout: 10000,
+            },
+          );
+
+          // Return minimal user data to avoid second API call
+          userDetails = {
+            data: {
+              User: {
                 email: user.email,
                 name: user.displayName || 'New User',
-                firebaseId: user.uid,
               },
-              {
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': getAdvisorSubdomain(),
-                  'aq-encrypted-key': generateToken(
-                    Config.REACT_APP_AQ_KEYS,
-                    Config.REACT_APP_AQ_SECRET,
-                  ),
-                },
-                timeout: 10000,
-              },
-            );
-
-            // Return minimal user data to avoid second API call
-            userDetails = {
-              data: {
-                User: {
-                  email: user.email,
-                  name: user.displayName || 'New User',
-                },
-              },
-            };
-          } else {
-            console.error('Error fetching user details:', getUserError.message);
-            throw getUserError;
-          }
+            },
+          };
         }
 
         // Log successful login (fire-and-forget) - use subdomain from config
         // Try multiple possible locations for the subdomain
         const advisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
         trackAppUser({
-          email: trimmedEmail,
+          email: email,
           firebase_id: user.uid,
           name: user.displayName,
           login_method: 'email',
           advisor_subdomain: advisorSubdomain,
         });
         logLoginAttempt({
-          email: trimmedEmail,
+          email: email,
           firebase_id: user.uid,
           status: 'success',
           login_method: 'email',
@@ -239,15 +234,15 @@ const LoginScreen = () => {
         });
 
         // Navigate with handlePostLoginNavigation
-        await handlePostLoginNavigation(userDetails, trimmedEmail);
+        await handlePostLoginNavigation(userDetails, email);
       }
     } catch (error) {
-      console.error('Login error:', error.code, error.message);
+      console.error('Login error:', error);
 
       // Log failed login attempt (fire-and-forget) - use subdomain from config
       const failedAdvisorSubdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
       logLoginAttempt({
-        email: trimmedEmail,
+        email: email,
         status: 'failed',
         login_method: 'email',
         failure_reason: error.code?.includes('auth/') ? 'firebase_error' : 'api_error',
@@ -256,23 +251,7 @@ const LoginScreen = () => {
         advisor_subdomain: failedAdvisorSubdomain,
       });
 
-      // Show user-friendly error messages instead of raw Firebase errors
-      let userMessage = 'Something went wrong. Please try again.';
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
-        userMessage = 'Invalid email or password. Please check your credentials and try again.';
-      } else if (error.code === 'auth/user-not-found') {
-        userMessage = 'No account found with this email. Please sign up first.';
-      } else if (error.code === 'auth/invalid-email') {
-        userMessage = 'Please enter a valid email address.';
-      } else if (error.code === 'auth/too-many-requests') {
-        userMessage = 'Too many failed attempts. Please try again later.';
-      } else if (error.code === 'auth/user-disabled') {
-        userMessage = 'This account has been disabled. Please contact support.';
-      } else if (error.code === 'auth/network-request-failed') {
-        userMessage = 'Network error. Please check your internet connection.';
-      }
-
-      setError(userMessage);
+      setError(error.message);
       setErrorShow(true);
     } finally {
       setLoading(false);
@@ -314,7 +293,7 @@ const LoginScreen = () => {
         );
 
         const userDetails = await axios.get(
-          `${server.server.baseUrl}api/user/getUser/${user.email}?includeAdvisorConfig=true`,
+          `${server.server.baseUrl}api/user/getUser/${user.email}`,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -498,7 +477,7 @@ const LoginScreen = () => {
 
       // Get user details from backend
       const userDetails = await axios.get(
-        `${server.server.baseUrl}api/user/getUser/${userEmail}?includeAdvisorConfig=true`,
+        `${server.server.baseUrl}api/user/getUser/${userEmail}`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -565,7 +544,7 @@ const LoginScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
       <TouchableWithoutFeedback onPress={dismissKeyboard}>
-        <GradientView
+        <LinearGradient
           colors={[gradient1, gradient2]}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
@@ -727,7 +706,7 @@ const LoginScreen = () => {
             </View>
             <Toast />
           </View>
-        </GradientView>
+        </LinearGradient>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );

@@ -12,7 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import Toast from 'react-native-toast-message';
 import {Mail} from 'lucide-react-native';
 import {useConfig} from '../../context/ConfigContext';
@@ -88,7 +88,7 @@ const EmailScreenAppleLogin = ({route}) => {
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{flex: 1}}>
-      <GradientView
+      <LinearGradient
         colors={[gradient1, gradient2]}
         start={{x: 0, y: 0}}
         end={{x: 1, y: 1}}
@@ -144,7 +144,7 @@ const EmailScreenAppleLogin = ({route}) => {
           </TouchableOpacity>
         </View>
         <Toast />
-      </GradientView>
+      </LinearGradient>
     </KeyboardAvoidingView>
   );
 };

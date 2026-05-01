@@ -1,7 +1,6 @@
 
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from '../utils/safeConfig';
 import APP_VARIANTS from '../utils/Config';
 import { generateToken } from '../utils/SecurityTokenManager';
@@ -65,13 +64,6 @@ export const ConfigProvider = ({ children }) => {
                         hasApiKeys: !!apiData.apiKeys,
                         advisorSpecificTag: apiData.apiKeys?.advisorSpecificTag,
                         advisorRaCode: apiData.apiKeys?.advisorRaCode,
-                        brokerConnectRedirectUrl: apiData.brokerConnectRedirectUrl,
-                        customDomain: apiData.customDomain,
-                    });
-                    console.log('[ConfigContext] Redirect URL resolution:', {
-                        fromAPI: apiData.brokerConnectRedirectUrl,
-                        fromEnv: Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL,
-                        final: apiData.brokerConnectRedirectUrl || Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL || '',
                     });
 
                     // Map API response to APP_VARIANTS structure
@@ -199,7 +191,6 @@ export const ConfigProvider = ({ children }) => {
                         // ============================================================================
                         REACT_APP_ANGEL_ONE_API_KEY: apiData.apiKeys?.angelOneApiKey || Config.REACT_APP_ANGEL_ONE_API_KEY || '',
                         REACT_APP_ZERODHA_API_KEY: apiData.apiKeys?.zerodhaApiKey || Config.REACT_APP_ZERODHA_API_KEY || '',
-                        REACT_APP_BROKER_CONNECT_REDIRECT_URL: apiData.brokerConnectRedirectUrl || Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL || '',
 
                         // ============================================================================
                         // PAYMENT MODAL UI CUSTOMIZATION
@@ -240,27 +231,6 @@ export const ConfigProvider = ({ children }) => {
                     });
 
                     setConfig(newConfig);
-
-                    // Sync fresh config to AsyncStorage so TradeContext also gets updated values
-                    try {
-                        const storedJson = await AsyncStorage.getItem('@app:advisorConfig');
-                        if (storedJson) {
-                            const stored = JSON.parse(storedJson);
-                            const updatedStored = {
-                                ...stored,
-                                config: {
-                                    ...(stored.config || {}),
-                                    REACT_APP_BROKER_CONNECT_REDIRECT_URL: newConfig.REACT_APP_BROKER_CONNECT_REDIRECT_URL,
-                                    REACT_APP_ANGEL_ONE_API_KEY: newConfig.REACT_APP_ANGEL_ONE_API_KEY,
-                                    REACT_APP_ZERODHA_API_KEY: newConfig.REACT_APP_ZERODHA_API_KEY,
-                                },
-                            };
-                            await AsyncStorage.setItem('@app:advisorConfig', JSON.stringify(updatedStored));
-                            console.log('[ConfigContext] Synced fresh config to AsyncStorage');
-                        }
-                    } catch (syncErr) {
-                        console.warn('[ConfigContext] Failed to sync to AsyncStorage:', syncErr.message);
-                    }
                 }
             } catch (error) {
                 console.error('❌ Error fetching app config:', error);

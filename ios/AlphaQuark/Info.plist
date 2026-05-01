@@ -9,7 +9,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>EquityPro by RGX Research</string>
+	<string>EquityPro</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -31,7 +31,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.887826618956-2nk3f344nfp2mkgbc96acafeve14j37t</string>
+				<string>com.googleusercontent.apps.887826618956-pn7ejajgckc829p28g39rd6nsra8hf9i</string>
 			</array>
 		</dict>
 		<dict>
@@ -54,12 +54,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>EquityPro uses your location to confirm you are in a region where our research and advisory services are licensed to operate.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>EquityPro uses your location to confirm you are in a region where our research and advisory services are licensed to operate.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>EquityPro uses your location to confirm you are in a region where our research and advisory services are licensed to operate.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>We need camera access to capture photos for profile verification and uploads.
-We need camera access to capture photos for profile verification and uploads.
-We need camera access to capture photos for profile verification and uploads.
-We need camera access to capture photos for profile verification and uploads.
-  We need camera access to capture photos for profile verification and uploads.</string>
+	<string>We need camera access to capture photos for profile verification and uploads.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>We need permission to save images to your photo library</string>
 	<key>NSPhotoLibraryUsageDescription</key>

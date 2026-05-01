@@ -680,8 +680,8 @@
 				CODE_SIGN_ENTITLEMENTS = AlphaQuark/AlphaQuark.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
-				DEVELOPMENT_TEAM = 6H43CN8AV6;
+				CURRENT_PROJECT_VERSION = 5;
+				DEVELOPMENT_TEAM = 4AK2LVPBUS;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = AlphaQuark/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "EquityPro by RGX Research";
@@ -696,7 +696,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.alphaquark;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aq.rgx;
 				PRODUCT_NAME = AlphaQuark;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -715,8 +715,8 @@
 				CODE_SIGN_ENTITLEMENTS = AlphaQuark/AlphaQuark.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
-				DEVELOPMENT_TEAM = 6H43CN8AV6;
+				CURRENT_PROJECT_VERSION = 5;
+				DEVELOPMENT_TEAM = 4AK2LVPBUS;
 				INFOPLIST_FILE = AlphaQuark/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "EquityPro by RGX Research";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
@@ -730,7 +730,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.rgx.alphaquark;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aq.rgx;
 				PRODUCT_NAME = AlphaQuark;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;

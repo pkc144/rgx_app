@@ -1,71 +1,80 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { fetchGstConfig, getEnvFallbackConfig } from '../services/GstConfigService';
+import React, { createContext, useState, useEffect, useContext } from 'react';
+import axios from 'axios';
+import Config from 'react-native-config';
+import { generateToken } from '../utils/SecurityTokenManager';
+import { useTrade } from '../screens/TradeContext';
 
-const defaultContextValue = {
+const GstConfigContext = createContext({
   gstConfigure: false,
   gstWithTextConfigure: false,
   isLoading: true,
-};
+});
 
-const GstConfigContext = createContext(defaultContextValue);
+export const useGstConfig = () => useContext(GstConfigContext);
 
-export function GstConfigProvider({ children }) {
-  const [state, setState] = useState(defaultContextValue);
+export const GstConfigProvider = ({ children }) => {
+  const [gstConfigure, setGstConfigure] = useState(false);
+  const [gstWithTextConfigure, setGstWithTextConfigure] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const { configData } = useTrade();
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function loadConfig() {
+    const fetchGstConfig = async () => {
       try {
-        console.log('[GstConfigContext] Fetching GST configuration...');
-        const config = await fetchGstConfig();
+        const baseUrl =
+          Config.REACT_APP_NODE_SERVER_API_URL || 'https://server.alphaquark.in/';
+        const subdomain =
+          Config.REACT_APP_ADVISOR_SUBDOMAIN ||
+          Config.REACT_APP_HEADER_NAME ||
+          'rgxresearch';
 
-        if (isMounted) {
-          console.log('✅ GST Config loaded:', {
-            gstConfigure: config.gstConfigure,
-            gstWithTextConfigure: config.gstWithTextConfigure
-          });
-          setState({
-            gstConfigure: config.gstConfigure,
-            gstWithTextConfigure: config.gstWithTextConfigure,
-            isLoading: false,
-          });
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain':
+            Config.REACT_APP_X_ADVISOR_SUBDOMAIN ||
+            Config.REACT_APP_HEADER_NAME ||
+            subdomain,
+          'aq-encrypted-key':
+            Config.REACT_APP_AQ_ENCRYPTED_KEY ||
+            generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+        };
+
+        const response = await axios.get(
+          `${baseUrl}api/adminControl/get-gst-config`,
+          { headers },
+        );
+
+        console.log('🔍 GST Config API raw response:', JSON.stringify(response.data));
+
+        // Backend returns: { success, gstConfig: { gst_configure, gst_with_text_configure } }
+        const gstConfig = response.data?.gstConfig;
+
+        if (gstConfig) {
+          const gst = gstConfig.gst_configure === true || gstConfig.gst_configure === 'true';
+          const gstWithText = gstConfig.gst_with_text_configure === true || gstConfig.gst_with_text_configure === 'true';
+          console.log('✅ GST Config parsed:', { gst_configure: gst, gst_with_text_configure: gstWithText });
+          setGstConfigure(gst);
+          setGstWithTextConfigure(gstWithText);
         }
       } catch (error) {
-        console.error('[GstConfigContext] Failed to load config:', error);
-        if (isMounted) {
-          const fallback = getEnvFallbackConfig();
-          console.log('⚠️ Using GST fallback config:', fallback);
-          setState({
-            ...fallback,
-            isLoading: false,
-          });
-        }
+        console.warn('❌ GST config API failed, using fallback:', error.message, error.response?.status);
+        // Fallback to configData from TradeContext
+        const fallback = configData?.config?.REACT_APP_ADVISOR_GST_CONFIGURE;
+        console.log('⚠️ GST fallback value:', fallback);
+        setGstConfigure(fallback === 'true' || fallback === true);
+        setGstWithTextConfigure(false);
+      } finally {
+        setIsLoading(false);
       }
-    }
-
-    loadConfig();
-
-    return () => {
-      isMounted = false;
     };
-  }, []);
+
+    fetchGstConfig();
+  }, [configData]);
 
   return (
-    <GstConfigContext.Provider value={state}>
+    <GstConfigContext.Provider
+      value={{ gstConfigure, gstWithTextConfigure, isLoading }}>
       {children}
     </GstConfigContext.Provider>
   );
-}
-
-export function useGstConfig() {
-  const context = useContext(GstConfigContext);
-
-  if (context === undefined) {
-    throw new Error('useGstConfig must be used within a GstConfigProvider');
-  }
-
-  return context;
-}
-
-export default GstConfigContext;
+};

@@ -15,6 +15,7 @@ import { handleOAuthCallback } from './src/services/ZerodhaOAuthService';
 import Config from 'react-native-config';
 
 import Navigation from './src/components/Navigation';
+import RegionGate from './src/components/RegionGate';
 import {CartProvider} from './src/components/CartContext';
 import {ModalProvider} from './src/components/ModalContext';
 import {SocialProofProvider} from './src/components/SocialProofProvider';
@@ -200,6 +201,7 @@ const App = () => {
       <UpdateAppModal />
       <CustomStatusBar barStyle={'dark-content'} />
       <GestureHandlerRootView style={{flex: 1}}>
+       <RegionGate>
         <SocialProofProvider>
           <CartProvider>
             <ConfigProvider>
@@ -222,6 +224,7 @@ const App = () => {
             </ConfigProvider>
           </CartProvider>
         </SocialProofProvider>
+       </RegionGate>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );
