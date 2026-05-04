@@ -1,48 +1,54 @@
+/**
+ * ModelPortfolioScreen — container (Phase I, 2026-05-02)
+ *
+ * Owns: useTrade, useConfig, useNavigation, Firebase getAuth,
+ * axios (getAllBespoke, getAllStrategy, getSingleStrategyDetails,
+ * getSpecificPlan, getAllSubscriptionData), TabView state,
+ * modal state (payment, success, recommendation), RefreshControl.
+ *
+ * Resolves presentation from `screens.ModelPortfolioScreen`.
+ * FlatLists for MP and Bespoke are passed as render-function slots.
+ */
+
 import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   FlatList,
   Text,
-  ActivityIndicator,
   StyleSheet,
   Dimensions,
   TouchableOpacity,
   RefreshControl,
-  SafeAreaView,
-  Modal,
-  ScrollView,
 } from 'react-native';
 import axios from 'axios';
-import uuid from 'react-native-uuid';
 import MPInvestNowModal from '../../components/ModelPortfolioComponents/MPInvestNowModal';
 import PaymentSuccessModal from '../../components/ModelPortfolioComponents/PaymentSuccessModal';
-import Toast from 'react-native-toast-message';
 import {useNavigation} from '@react-navigation/native';
 import MPCard from '../../components/ModelPortfolioComponents/MPCard';
 import {getAuth} from '@react-native-firebase/auth';
 import server from '../../utils/serverConfig';
-import {ChevronLeft, GitForkIcon} from 'lucide-react-native';
+import {GitForkIcon} from 'lucide-react-native';
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
-import {TabView} from 'react-native-tab-view';
 import MPCardBespoke from '../../components/ModelPortfolioComponents/MPCardBespoke';
 import RecommendationSuccessModal from '../../components/ModelPortfolioComponents/RecommendationSuccessModal';
 import {useTrade} from '../TradeContext';
 import CustomTabBar from './CustomTabbar';
-import RenderHTML from 'react-native-render-html';
-import GradientView from '../../components/GradientView';
 import {useConfig} from '../../context/ConfigContext';
+import { useComponent } from '../../design/useDesign';
 
 const {width, width: ScreenWidth} = Dimensions.get('window');
 
 const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const {userDetails, broker, getUserDeatils, configData} = useTrade();
 
-  // Get dynamic colors from config
   const config = useConfig();
   const gradient1 = config?.gradient1 || 'rgba(0, 86, 183, 1)';
   const gradient2 = config?.gradient2 || 'rgba(0, 38, 81, 1)';
   const mainColor = config?.mainColor || '#2563EB';
+
+  const Presentation = useComponent('screens.ModelPortfolioScreen');
+
   const [allStrategy, setAllStrategy] = useState([]);
   const [allBespoke, setAllBespoke] = useState([]);
   const auth = getAuth();
@@ -54,7 +60,6 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [OpenSubscribeModel, setOpenSubscribeModel] = useState(false);
-  // Batch modal related states into one for fewer re-renders
   const [modalContext, setModalContext] = useState({
     specificPlan: null,
     specificPlanDetails: null,
@@ -62,33 +67,24 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     fileName: '',
   });
   const [strategyDetails, setStrategyDetails] = useState();
-  //console.log("this opens----Hereeee",type);
   const [latestRebalance, setLatestRebalance] = useState(null);
   const [selectedCard, setSelectedCard] = useState(null);
 
-  // Separate refreshing states for each list
   const [refreshingMP, setRefreshingMP] = useState(false);
   const [refreshingBespoke, setRefreshingBespoke] = useState(false);
 
   const [index, setIndex] = useState(0);
 
-  // Dynamic routes based on data availability
   const routes = React.useMemo(() => {
     const availableRoutes = [];
-
-    // Add Bespoke tab only if config is enabled AND data exists
-    if (configData?.config?.REACT_APP_BESPOKE_PLANS_STATUS === true && allBespoke?.length > 0) {
+    if (config?.bespokePlansEnabled !== false) {
       availableRoutes.push({key: 'bespoke', title: 'Bespoke Plan'});
     }
-
-    // Add Model Portfolio tab only if config is enabled AND data exists
-    if (configData?.config?.REACT_APP_MODEL_PORTFOLIO_STATUS === true && allStrategy?.length > 0) {
+    if (config?.modelPortfolioEnabled !== false) {
       availableRoutes.push({key: 'modelportfolio', title: 'Model Portfolio'});
     }
-
     return availableRoutes;
-  }, [configData, allBespoke, allStrategy]);
- // console.log("routesss-----",routes);
+  }, [config]);
 
   const [selectedPlanType, setSelectedPlanType] = useState(null);
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
@@ -105,7 +101,6 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     setSelectedPlan(plan);
     setModalVisible(true);
   };
-  // console.log('Advisor tag----', advisorTag);
 
   // Memoized fetchers
   const getAllBespoke = useCallback(async () => {
@@ -157,7 +152,6 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   }, [advisorTag, userEmail]);
 
   const getSingleStrategyDetails = useCallback(async fileName => {
-    // console.log('File name----', fileName);
     if (!fileName) return;
     try {
       const res = await axios.get(
@@ -179,7 +173,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         singleStrategyDetails: portfolioData,
       }));
       if (portfolioData?.model?.rebalanceHistory?.length) {
-        const latest = portfolioData.model.rebalanceHistory.sort(
+        const latest = [...portfolioData.model.rebalanceHistory].sort(
           (a, b) => new Date(b.rebalanceDate) - new Date(a.rebalanceDate),
         )[0];
         setLatestRebalance(latest);
@@ -206,7 +200,6 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
             },
           },
         );
-
         setStrategyDetails(res.data.data);
       } catch (error) {
         console.error('Error fetching specific plan:', error);
@@ -215,16 +208,14 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     [userEmail],
   );
 
-  // Effects for fetching data and detail updates
   useEffect(() => {
-    if (userEmail) {
+    if (userEmail && advisorTag) {
       getUserDeatils();
       getAllBespoke();
       getAllStrategy();
     }
-  }, [userEmail]);
+  }, [userEmail, advisorTag]);
 
-  // Notify parent about data availability
   useEffect(() => {
     if (onDataLoaded) {
       const isMP = type.includes('mp');
@@ -249,7 +240,6 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Reset index if it's out of bounds when routes change
   useEffect(() => {
     if (index >= routes.length && routes.length > 0) {
       setIndex(0);
@@ -264,12 +254,11 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   };
 
   const handlePricingCardClick = modelName => {
-    // console.log('Model name data here----', modelName);
     setModalContext({
       specificPlan: modelName,
       specificPlanDetails: modelName,
       fileName: modelName?.name,
-      singleStrategyDetails: modalContext.singleStrategyDetails, // preserve existing plans if any
+      singleStrategyDetails: modalContext.singleStrategyDetails,
     });
     setPaymentModal(true);
   };
@@ -277,7 +266,6 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const handleCardClickSelect = item => setSelectedCard(item);
 
   const handleCardClick = modelName => {
-    // console.log('model Name:---', modelName);
     setModalContext(prev => ({
       ...prev,
       specificPlan: modelName,
@@ -291,7 +279,6 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   };
 
   const handleCardClickBespoke = modelName => {
-    // console.log('model Name:---Bepsokeeeee', modelName);
     setModalContext(prev => ({
       ...prev,
       specificPlan: modelName,
@@ -304,9 +291,9 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     });
   };
 
-  const [subscriptionData, setSubscriptionData] = useState([]);
+  const [subscriptionData, setSubscriptionData] = useState(null);
   const getAllSubscriptionData = () => {
-    let config = {
+    let reqConfig = {
       method: 'get',
       url: `${server.server.baseUrl}api/all-clients/user/${userEmail}`,
       headers: {
@@ -320,7 +307,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     };
 
     axios
-      .request(config)
+      .request(reqConfig)
       .then(response => {
         setSubscriptionData(response.data.data);
       })
@@ -329,8 +316,10 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       });
   };
   useEffect(() => {
-    getAllSubscriptionData();
-  }, []);
+    if (userEmail) {
+      getAllSubscriptionData();
+    }
+  }, [userEmail]);
 
   // List renders
   const renderItembespoke = ({item}) => (
@@ -375,12 +364,18 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     />
   );
 
+  const sortedStrategy = [...(allStrategy || [])].sort((a, b) => {
+    const aSubscribed = a?.subscription != null ? 1 : 0;
+    const bSubscribed = b?.subscription != null ? 1 : 0;
+    return bSubscribed - aSubscribed;
+  });
+
   const renderMPList = () => (
     <FlatList
-      data={allStrategy}
+      data={sortedStrategy}
       renderItem={renderItem}
-      keyExtractor={(item, index) =>
-        item._id || item.id || item.model_name?.toString() || index.toString()
+      keyExtractor={(item, idx) =>
+        item._id || item.id || item.model_name?.toString() || idx.toString()
       }
       horizontal={type === 'mphorizontal'}
       refreshControl={
@@ -389,13 +384,13 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       contentContainerStyle={{padding: 5}}
       style={{margin: 0}}
       ListEmptyComponent={
-        <View style={styles.emptyContainer}>
-          <View style={styles.iconWrapper}>
+        <View style={localStyles.emptyContainer}>
+          <View style={localStyles.iconWrapper}>
             <GitForkIcon size={60} color="#6B7280" />
           </View>
-          <View style={styles.textWrapper}>
-            <Text style={styles.emptyTitle}>No Model Portfolio Available</Text>
-            <Text style={styles.emptySubtitle}>
+          <View style={localStyles.textWrapper}>
+            <Text style={localStyles.emptyTitle}>No Model Portfolio Available</Text>
+            <Text style={localStyles.emptySubtitle}>
               When your advisor creates a strategy, it will appear here.
             </Text>
           </View>
@@ -438,7 +433,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
             ? 10
             : 0,
       }}
-      keyExtractor={(item, index) => item._id || item.id || index.toString()}
+      keyExtractor={(item, idx) => item._id || item.id || idx.toString()}
       horizontal={type === 'bespokehorizontal'}
       contentContainerStyle={{padding: 5}}
       refreshControl={
@@ -449,15 +444,15 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       }
       ListEmptyComponent={
         refreshingBespoke ? null : (
-          <View style={styles.emptyContainer}>
-            <View style={styles.iconWrapper}>
+          <View style={localStyles.emptyContainer}>
+            <View style={localStyles.iconWrapper}>
               <GitForkIcon size={60} color="#6B7280" />
             </View>
-            <View style={styles.textWrapper}>
-              <Text style={styles.emptyTitle}>
+            <View style={localStyles.textWrapper}>
+              <Text style={localStyles.emptyTitle}>
                 No Bespoke Plan Is Available Now
               </Text>
-              <Text style={styles.emptySubtitle}>
+              <Text style={localStyles.emptySubtitle}>
                 When your advisor creates any strategy, it will appear here
               </Text>
             </View>
@@ -467,599 +462,117 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     />
   );
 
-  const renderScene = ({route}) => {
-    if (
-      (type === 'mpvertical' || type === 'mphorizontal') &&
-      route.key === 'modelportfolio'
-    )
-      return renderMPList();
-    if (
-      (type === 'bespokevertical' || type === 'bespokehorizontal') &&
-      route.key === 'bespoke'
-    )
-      return renderBespokeList();
-    if (route.key === 'modelportfolio') return renderMPList();
-    if (route.key === 'bespoke') return renderBespokeList();
-    return null;
-  };
-
   const singleListTypes = [
     'mphorizontal',
     'mpvertical',
     'bespokehorizontal',
     'bespokevertical',
   ];
+  const isSingleListType = singleListTypes.includes(type);
+  const isMP = type.includes('mp');
+  const isHorizontal = type.includes('horizontal');
 
-  if (singleListTypes.includes(type)) {
-    const isMP = type.includes('mp');
-    const isHorizontal = type.includes('horizontal');
-
-    // For horizontal types (used in HomeScreen), return null if no data
-    if (isHorizontal) {
-      if (isMP && (!allStrategy || allStrategy.length === 0)) {
-        return null;
-      }
-      if (!isMP && (!allBespoke || allBespoke.length === 0)) {
-        return null;
-      }
+  // For horizontal types (used in HomeScreen), return null if no data
+  if (isSingleListType && isHorizontal) {
+    if (isMP && (!allStrategy || allStrategy.length === 0)) {
+      return null;
     }
-
-    return (
-      <SafeAreaView style={{flex: 1, backgroundColor: 'transparent'}}>
-        {isMP ? renderMPList() : renderBespokeList()}
-        {paymentModal && (
-          <MPInvestNowModal
-            visible={paymentModal}
-            onClose={closeInvestNowModal}
-            userEmail={userEmail}
-            broker={broker}
-            plans={planDetails}
-            setShowPaymentFail={setShowPaymentFail}
-            latestRebalance={latestRebalance}
-            strategyDetails={modalContext.singleStrategyDetails}
-            plandata={modalContext.specificPlanDetails}
-            handleCardClick={handleCardClickSelect}
-            selectedCard={selectedCard}
-            getStrategyDetails={() =>
-              getSingleStrategyDetails(modalContext.fileName)
-            }
-            setPaymentSuccess={setPaymentSuccess}
-            getAllStrategy={getAllStrategy}
-            specificPlan={modalContext.specificPlan}
-            specificPlanDetails={modalContext.specificPlanDetails}
-            setPaymentModal={setPaymentModal}
-            userDetails={userDetails}
-            fileName={modalContext?.fileName}
-            isSubscribed={planDetails?.subscription}
-            setOpenTokenExpireModel={setOpenTokenExpireModel}
-            selectedPlanType={selectedPlanType}
-            setSelectedPlanType={setSelectedPlanType}
-            onetimeamount={oneTimeAmount}
-            setOneTimeAmount={setOneTimeAmount}
-            oneTimeDurationPlan={oneTimeDurationPlan}
-            setOneTimeDurationPlan={setOneTimeDurationPlan}
-            getAllBespoke={getAllBespoke}
-          />
-        )}
-        {openSuccessModal && (
-          <RecommendationSuccessModal
-            openSuccessModal={openSuccessModal}
-            setOpenSucessModal={setOpenSucessModal}
-            orderPlacementResponse={orderPlacementResponse}
-          />
-        )}
-        {paymentSuccess && (
-          <PaymentSuccessModal
-            specificPlan={modalContext.specificPlan}
-            specificPlanDetails={modalContext.specificPlanDetails}
-            setPaymentSuccess={setPaymentSuccess}
-            setPaymentModal={setPaymentModal}
-            setSelectedCard={setSelectedCard}
-            setOpenSubscribeModel={setOpenSubscribeModel}
-          />
-        )}
-        <Modal
-          visible={modalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setModalVisible(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              {/* Header */}
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{selectedPlan?.name}</Text>
-                <View
-                  style={[
-                    styles.planTag,
-                    {
-                      backgroundColor:
-                        selectedPlan?.type === 'bespoke'
-                          ? '#F59E0B'
-                          : '#10B981',
-                    },
-                  ]}>
-                  <Text style={styles.planTagText}>
-                    {selectedPlan?.type === 'bespoke' ? 'Bespoke' : 'MP'}
-                  </Text>
-                </View>
-              </View>
-
-              <ScrollView
-                style={styles.modalContent}
-                showsVerticalScrollIndicator={false}>
-                {/* Advisor */}
-                <View style={styles.infoCard}>
-                  <Text style={styles.infoLabel}>Advisor</Text>
-                  <Text style={styles.infoValue}>{selectedPlan?.advisor}</Text>
-                </View>
-
-                {/* Invested / Minimum Investment */}
-                {selectedPlan?.subscription?.amount ||
-                selectedPlan?.minInvestment ? (
-                  <View style={styles.infoCard}>
-                    <Text style={styles.infoLabel}>Invested / Minimum</Text>
-                    <Text style={styles.infoValue}>
-                      {selectedPlan?.subscription?.amount
-                        ? `₹ ${selectedPlan.subscription.amount}`
-                        : selectedPlan?.minInvestment
-                        ? `₹ ${selectedPlan.minInvestment}`
-                        : '-'}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {/* Validity / Duration */}
-                {selectedPlan?.subscription?.end_date ||
-                selectedPlan?.duration ? (
-                  <View style={styles.infoCard}>
-                    <Text style={styles.infoLabel}>Validity / Duration</Text>
-                    <Text style={styles.infoValue}>
-                      {selectedPlan?.subscription?.end_date
-                        ? new Date(
-                            selectedPlan.subscription.end_date,
-                          ).toLocaleDateString()
-                        : selectedPlan?.duration
-                        ? `${selectedPlan.duration} days`
-                        : '-'}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {/* Description */}
-                {selectedPlan?.description && (
-                  <View style={styles.infoCard}>
-                    <Text style={styles.infoLabel}>Description</Text>
-                    <RenderHTML
-                      contentWidth={width - 64} // adjust for modal padding
-                      source={{html: selectedPlan.description}}
-                      baseStyle={styles.infoValue}
-                    />
-                  </View>
-                )}
-
-                {/* Onetime Options */}
-                {selectedPlan?.onetimeOptions?.length > 0 && (
-                  <View style={styles.infoCard}>
-                    <Text style={[styles.infoLabel, {marginBottom: 8}]}>
-                      Onetime Options
-                    </Text>
-                    {selectedPlan.onetimeOptions.map((opt, index) => (
-                      <View key={index} style={styles.optionRow}>
-                        <Text style={styles.optionLabel}>
-                          {opt.label || `${opt.duration} Days`}
-                        </Text>
-                        <Text style={styles.optionValue}>₹ {opt.amount}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                {/* Recurring / Frequency Options */}
-                {selectedPlan?.frequency?.length > 0 && (
-                  <View style={styles.infoCard}>
-                    <Text style={[styles.infoLabel, {marginBottom: 8}]}>
-                      Recurring Options
-                    </Text>
-                    {selectedPlan.frequency.map((freq, index) => {
-                      const price = selectedPlan.pricing?.[freq];
-                      return (
-                        <View key={index} style={styles.optionRow}>
-                          <Text style={styles.optionLabel}>
-                            {freq.charAt(0).toUpperCase() + freq.slice(1)}
-                          </Text>
-                          <Text style={styles.optionValue}>
-                            {price && Number(price) > 0 ? `₹ ${price}` : 'N/A'}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-              </ScrollView>
-
-              {/* Close Button */}
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={[styles.modalCloseButton, { backgroundColor: mainColor }]}>
-                <Text style={styles.modalCloseButtonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      </SafeAreaView>
-    );
+    if (!isMP && (!allBespoke || allBespoke.length === 0)) {
+      return null;
+    }
   }
 
+  // Build modal slots
+  const InvestNowModalSlot = paymentModal ? (
+    <MPInvestNowModal
+      visible={paymentModal}
+      onClose={closeInvestNowModal}
+      userEmail={userEmail}
+      broker={broker}
+      plans={planDetails}
+      setShowPaymentFail={setShowPaymentFail}
+      latestRebalance={latestRebalance}
+      strategyDetails={modalContext.singleStrategyDetails}
+      plandata={modalContext.specificPlanDetails}
+      handleCardClick={handleCardClickSelect}
+      selectedCard={selectedCard}
+      getStrategyDetails={() =>
+        getSingleStrategyDetails(modalContext.fileName)
+      }
+      setPaymentSuccess={setPaymentSuccess}
+      getAllStrategy={getAllStrategy}
+      specificPlan={modalContext.specificPlan}
+      specificPlanDetails={modalContext.specificPlanDetails}
+      setPaymentModal={setPaymentModal}
+      userDetails={userDetails}
+      fileName={modalContext?.fileName}
+      isSubscribed={planDetails?.subscription}
+      setOpenTokenExpireModel={setOpenTokenExpireModel}
+      selectedPlanType={selectedPlanType}
+      setSelectedPlanType={setSelectedPlanType}
+      onetimeamount={oneTimeAmount}
+      setOneTimeAmount={setOneTimeAmount}
+      oneTimeDurationPlan={oneTimeDurationPlan}
+      setOneTimeDurationPlan={setOneTimeDurationPlan}
+      getAllBespoke={getAllBespoke}
+    />
+  ) : null;
+
+  const RecommendationSuccessSlot = openSuccessModal ? (
+    <RecommendationSuccessModal
+      openSuccessModal={openSuccessModal}
+      setOpenSucessModal={setOpenSucessModal}
+      orderPlacementResponse={undefined}
+    />
+  ) : null;
+
+  const PaymentSuccessSlot = paymentSuccess ? (
+    <PaymentSuccessModal
+      specificPlan={modalContext.specificPlan}
+      specificPlanDetails={modalContext.specificPlanDetails}
+      setPaymentSuccess={setPaymentSuccess}
+      setPaymentModal={setPaymentModal}
+      setSelectedCard={setSelectedCard}
+      setOpenSubscribeModel={setOpenSubscribeModel}
+    />
+  ) : null;
+
   return (
-    <SafeAreaView style={{flex: 1, backgroundColor: '#FBFBFB'}}>
-      {!(type === 'tab') && (
-        <GradientView
-          colors={[gradient1, gradient2]}
-          start={{x: 0, y: 0}}
-          end={{x: 0, y: 1}}
-          style={{
-            paddingHorizontal: 15,
-            paddingVertical: 10,
-            borderBottomLeftRadius: 15,
-            borderBottomRightRadius: 15,
-          }}>
-          <View
-            style={{flexDirection: 'row', alignItems: 'center', marginTop: 10}}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}>
-              <ChevronLeft size={24} color="#000" />
-            </TouchableOpacity>
-            <View style={{justifyContent: 'center'}}>
-              <Text
-                style={{
-                  fontSize: 20,
-                  fontFamily: 'Poppins-Medium',
-                  color: '#fff',
-                }}>
-                Plans
-              </Text>
-            </View>
-          </View>
-          <View style={{marginLeft: 45, marginTop: 2}}>
-            <Text
-              style={{
-                fontSize: 12,
-                fontFamily: 'Poppins-Regular',
-                color: '#f0f0f0',
-              }}>
-              You can subscribe to 1 or more Plans
-            </Text>
-          </View>
-        </GradientView>
-      )}
-
-      {routes.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <View style={styles.iconWrapper}>
-            <GitForkIcon size={60} color="#6B7280" />
-          </View>
-          <View style={styles.textWrapper}>
-            <Text style={styles.emptyTitle}>No Plans Available</Text>
-            <Text style={styles.emptySubtitle}>
-              When your advisor creates a plan, it will appear here.
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <TabView
-          navigationState={{index, routes}}
-          renderScene={renderScene}
-          onIndexChange={setIndex}
-          initialLayout={{width}}
-          renderTabBar={props => <CustomTabBar {...props} />}
-        />
-      )}
-
-      {paymentModal && (
-        <MPInvestNowModal
-          visible={paymentModal}
-          onClose={closeInvestNowModal}
-          userEmail={userEmail}
-          broker={broker}
-          plans={planDetails}
-          setShowPaymentFail={setShowPaymentFail}
-          latestRebalance={latestRebalance}
-          strategyDetails={modalContext.singleStrategyDetails}
-          plandata={modalContext.specificPlanDetails}
-          handleCardClick={handleCardClickSelect}
-          selectedCard={selectedCard}
-          getStrategyDetails={() =>
-            getSingleStrategyDetails(modalContext.fileName)
-          }
-          setPaymentSuccess={setPaymentSuccess}
-          getAllStrategy={getAllStrategy}
-          specificPlan={modalContext.specificPlan}
-          specificPlanDetails={modalContext.specificPlanDetails}
-          setPaymentModal={setPaymentModal}
-          userDetails={userDetails}
-          fileName={modalContext?.fileName}
-          isSubscribed={planDetails?.subscription}
-          setOpenTokenExpireModel={setOpenTokenExpireModel}
-          selectedPlanType={selectedPlanType}
-          setSelectedPlanType={setSelectedPlanType}
-          onetimeamount={oneTimeAmount}
-          setOneTimeAmount={setOneTimeAmount}
-          oneTimeDurationPlan={oneTimeDurationPlan}
-          setOneTimeDurationPlan={setOneTimeDurationPlan}
-          getAllBespoke={getAllBespoke}
-        />
-      )}
-      {openSuccessModal && (
-        <RecommendationSuccessModal
-          openSuccessModal={openSuccessModal}
-          setOpenSucessModal={setOpenSucessModal}
-          orderPlacementResponse={orderPlacementResponse}
-        />
-      )}
-      {paymentSuccess && (
-        <PaymentSuccessModal
-          specificPlan={modalContext.specificPlan}
-          specificPlanDetails={modalContext.specificPlanDetails}
-          setPaymentSuccess={setPaymentSuccess}
-          setPaymentModal={setPaymentModal}
-          setSelectedCard={setSelectedCard}
-          setOpenSubscribeModel={setOpenSubscribeModel}
-        />
-      )}
-
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedPlan?.name}</Text>
-              <View
-                style={[
-                  styles.planTag,
-                  {
-                    backgroundColor:
-                      selectedPlan?.type === 'bespoke' ? '#F59E0B' : '#10B981',
-                  },
-                ]}>
-                <Text style={styles.planTagText}>
-                  {selectedPlan?.type === 'bespoke' ? 'Bespoke' : 'MP'}
-                </Text>
-              </View>
-            </View>
-
-            <ScrollView
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}>
-              {/* Advisor */}
-              <View style={styles.infoCard}>
-                <Text style={styles.infoLabel}>Advisor</Text>
-                <Text style={styles.infoValue}>{selectedPlan?.advisor}</Text>
-              </View>
-
-              {/* Invested / Minimum Investment */}
-              {selectedPlan?.subscription?.amount ||
-              selectedPlan?.minInvestment ? (
-                <View style={styles.infoCard}>
-                  <Text style={styles.infoLabel}>Invested / Minimum</Text>
-                  <Text style={styles.infoValue}>
-                    {selectedPlan?.subscription?.amount
-                      ? `₹ ${selectedPlan.subscription.amount}`
-                      : selectedPlan?.minInvestment
-                      ? `₹ ${selectedPlan.minInvestment}`
-                      : '-'}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Validity / Duration */}
-              {selectedPlan?.subscription?.end_date ||
-              selectedPlan?.duration ? (
-                <View style={styles.infoCard}>
-                  <Text style={styles.infoLabel}>Validity / Duration</Text>
-                  <Text style={styles.infoValue}>
-                    {selectedPlan?.subscription?.end_date
-                      ? new Date(
-                          selectedPlan.subscription.end_date,
-                        ).toLocaleDateString()
-                      : selectedPlan?.duration
-                      ? `${selectedPlan.duration} days`
-                      : '-'}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Description */}
-              {selectedPlan?.description && (
-                <View style={styles.infoCard}>
-                  <Text style={styles.infoLabel}>Description</Text>
-                  <RenderHTML
-                    contentWidth={width - 64} // adjust for modal padding
-                    source={{html: selectedPlan.description}}
-                    baseStyle={styles.infoValue}
-                  />
-                </View>
-              )}
-
-              {/* Onetime Options */}
-              {selectedPlan?.onetimeOptions?.length > 0 && (
-                <View style={styles.infoCard}>
-                  <Text style={[styles.infoLabel, {marginBottom: 8}]}>
-                    Onetime Options
-                  </Text>
-                  {selectedPlan.onetimeOptions.map((opt, index) => (
-                    <View key={index} style={styles.optionRow}>
-                      <Text style={styles.optionLabel}>
-                        {opt.label || `${opt.duration} Days`}
-                      </Text>
-                      <Text style={styles.optionValue}>₹ {opt.amount}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* Recurring / Frequency Options */}
-              {selectedPlan?.frequency?.length > 0 && (
-                <View style={styles.infoCard}>
-                  <Text style={[styles.infoLabel, {marginBottom: 8}]}>
-                    Recurring Options
-                  </Text>
-                  {selectedPlan.frequency.map((freq, index) => {
-                    const price = selectedPlan.pricing?.[freq];
-                    return (
-                      <View key={index} style={styles.optionRow}>
-                        <Text style={styles.optionLabel}>
-                          {freq.charAt(0).toUpperCase() + freq.slice(1)}
-                        </Text>
-                        <Text style={styles.optionValue}>
-                          {price && Number(price) > 0 ? `₹ ${price}` : 'N/A'}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </ScrollView>
-
-            {/* Close Button */}
-            <TouchableOpacity
-              onPress={() => setModalVisible(false)}
-              style={[styles.modalCloseButton, { backgroundColor: mainColor }]}>
-              <Text style={styles.modalCloseButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    <Presentation
+      viewModel={{
+        gradient1,
+        gradient2,
+        mainColor,
+        tabIndex: index,
+        routes,
+        isSingleListType,
+        modalVisible,
+        selectedPlan,
+        showHeader: !(type === 'tab'),
+        width,
+      }}
+      actions={{
+        onGoBack: () => navigation.goBack(),
+        onTabIndexChange: setIndex,
+        onCloseModal: () => setModalVisible(false),
+      }}
+      slots={{
+        TabBarSlot: (props) => <CustomTabBar {...props} />,
+        MPListSlot: isSingleListType
+          ? (isMP ? renderMPList : null)
+          : renderMPList,
+        BespokeListSlot: isSingleListType
+          ? (!isMP ? renderBespokeList : null)
+          : renderBespokeList,
+        InvestNowModalSlot,
+        PaymentSuccessSlot,
+        RecommendationSuccessSlot,
+      }}
+    />
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f9f9f9',
-    width: '100%',
-    marginTop: 20,
-    height: '100%',
-  },
-  backButton: {
-    padding: 4,
-    borderRadius: 5,
-    backgroundColor: '#fff',
-    marginRight: 10,
-  },
-  iconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 60,
-    backgroundColor: 'rgba(128, 128, 128, 0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  icon: {width: 60, height: 60},
-  textContent: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-    paddingHorizontal: 16,
-    width: width > 800 ? 800 : '90%',
-  },
-  title: {
-    fontSize: width > 800 ? 28 : 20,
-    textAlign: 'center',
-    fontWeight: '600',
-    color: '#000',
-    marginTop: 10,
-  },
-  description: {
-    fontSize: width > 800 ? 18 : 14,
-    textAlign: 'center',
-    color: 'rgba(0, 0, 0, 0.6)',
-    marginTop: 10,
-    lineHeight: width > 800 ? 30 : 20,
-    paddingHorizontal: width > 800 ? 60 : 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: '90%',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    maxHeight: '80%',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
-    flex: 1,
-    flexWrap: 'wrap',
-  },
-  planTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  planTagText: {color: '#fff', fontSize: 12, fontWeight: '600'},
-  modalContent: {marginTop: 8},
-  infoCard: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-  },
-  infoLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  infoValue: {fontSize: 14, fontWeight: '600', color: '#111827'},
-  optionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#E5E7EB',
-  },
-  optionLabel: {fontSize: 14, color: '#374151', fontWeight: '500'},
-  optionValue: {fontSize: 14, color: '#111827', fontWeight: '600'},
-  modalCloseButton: {
-    marginTop: 12,
-    backgroundColor: '#2563EB',
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalCloseButtonText: {color: '#FFF', fontWeight: '700', fontSize: 14},
-  //////
+const localStyles = StyleSheet.create({
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1069,7 +582,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     marginHorizontal: 20,
-    width: ScreenWidth - 40,
+    width: Dimensions.get('window').width - 40,
     marginTop: 20,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 4},

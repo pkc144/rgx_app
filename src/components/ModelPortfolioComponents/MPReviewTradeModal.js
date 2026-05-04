@@ -29,11 +29,23 @@ const {height: screenHeight} = Dimensions.get('window');
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../../screens/TradeContext';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
+import { detectTransientOrderWindowError } from '../../utils/rebalanceHelpers';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import { validateStockExchanges, getPublisherWebViewBaseUrl, resolveZerodhaSymbol, applyKiteMarketProtection } from '../../utils/brokerPublisher';
+import useZerodhaSymbolMap from '../../hooks/useZerodhaSymbolMap';
 import { convertResponse } from '../../utils/tradeUtils';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import moment from 'moment';
 import useModalStore from '../../GlobalUIModals/modalStore';
-import { createPlaceOrderFunction } from '../../FunctionCall/ProcessTrades';
+import { useConfig } from '../../context/ConfigContext';
+import { computeTradeVariant } from '../../utils/tradeVariant';
+import useSdkClient from '../../sdk/useSdkClient';
+
+const isSdkExecuteAdviceEnabled = () => {
+  const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
+  return v === 'true' || v === '1';
+};
+
 const MPReviewTradeModal = ({
   visible,
   onCloseReviewTrade,
@@ -63,9 +75,19 @@ const MPReviewTradeModal = ({
   setShowOtherBrokerModel,
   isReturningFromOtherBrokerModal,
   setIsReturningFromOtherBrokerModal,
+  // Optional — sibling setter for the outgoing trade list at submit
+  // time (used by RecommendationSuccessModal to recover the trade
+  // `variant` per row when ccxt-india doesn't echo it). See
+  // utils/tradeVariant.js § resolveResultVariant.
+  setLastSubmittedTrades,
 }) => {
   const {configData} = useTrade();
   const openBrokerModal = useModalStore(state => state.openModal);
+  // For trade `variant` computation at submit. See
+  // docs/APP_ARCHITECTURE.md § 4.5.2 Trade variant field.
+  const { allowAfterHoursOrders } = useConfig() || {};
+  const sdkClient = useSdkClient();
+  const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   console.log('MPBROKER:', broker);
   const {width} = useWindowDimensions();
 
@@ -143,7 +165,7 @@ const MPReviewTradeModal = ({
 
   // WebSocket connection for market data
   useEffect(() => {
-    socketRef.current = io('wss://ccxtprod.alphaquark.in', {
+    socketRef.current = io(server.ccxtWs.baseUrl, {
       transports: ['websocket'],
       query: {EIO: '4'},
     });
@@ -206,7 +228,7 @@ const MPReviewTradeModal = ({
       const data = {symbol: trade.symbol, exchange: trade.exchange};
 
       axios
-        .post('https://ccxtprod.alphaquark.in/websocket/subscribe', data)
+        .post(`${server.ccxtWs.httpUrl}/websocket/subscribe`, data)
         .then(() => {
           subscribedSymbolsRef.current.add(trade.symbol);
           delete failedSubscriptionsRef.current[trade.symbol];
@@ -263,6 +285,8 @@ const MPReviewTradeModal = ({
   };
 
   const stockDetails = convertResponse(totalArray, broker);
+  // ccxt-india scripmaster map — see brokerPublisher.resolveZerodhaSymbol.
+  const symbolMap = useZerodhaSymbolMap(stockDetails, visible);
   const [loading, setLoading] = useState(false);
   const clientCode = userDetails && userDetails?.clientCode;
   const apiKey = userDetails && userDetails?.apiKey;
@@ -314,13 +338,18 @@ const MPReviewTradeModal = ({
     if (
       broker === 'Dhan' &&
       (allSellPreCheck || isMixedPreCheck) &&
-      dhanEdisStatus?.data?.some((h) => h.edis === false)
+      (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))
     ) {
       setShowDhanTpinModel(true);
       onCloseReviewTrade();
       setLoading(false);
       return;
     }
+
+    // Trade variant tagged on every per-trade object — see
+    // docs/APP_ARCHITECTURE.md § 4.5.2 Trade variant field. Display-only.
+    const variant = computeTradeVariant(allowAfterHoursOrders);
+    const tradesWithVariant = stockDetails.map(s => ({ ...s, variant }));
 
     const getBasePayload = () => ({
       modelName: strategyDetails?.model_name,
@@ -329,39 +358,13 @@ const MPReviewTradeModal = ({
       unique_id: calculatedPortfolioData?.uniqueId,
       user_broker: broker,
       user_email: userEmail,
-      trades: stockDetails,
+      trades: tradesWithVariant,
     });
 
     const getBrokerSpecificPayload = () => {
-      const base = { accessToken: jwtToken };
-      switch (broker) {
-        case 'Kotak':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode, mobileNumber, my2pin, sid, serverId };
-        case 'Fyers':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
-        case 'AliceBlue':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), clientCode, user_email: userEmail };
-        case 'Dhan':
-          return { ...base, clientCode };
-        case 'ICICI Direct':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
-        case 'IIFL Securities':
-          return { ...base, clientCode };
-        case 'Upstox':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
-        case 'Hdfc Securities':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), clientCode };
-        case 'Angel One':
-          return { ...base, apiKey: configData?.config?.REACT_APP_ANGEL_ONE_API_KEY || Config.REACT_APP_ANGEL_ONE_API_KEY, clientCode };
-        case 'Motilal Oswal':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), clientCode };
-        case 'Zerodha':
-          return { ...base, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey) };
-        case 'Groww':
-          return { ...base, clientCode };
-        default:
-          return base;
-      }
+      return {
+        accessToken: jwtToken,
+      };
     };
 
     const payload = {
@@ -376,7 +379,7 @@ const MPReviewTradeModal = ({
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -399,7 +402,7 @@ const MPReviewTradeModal = ({
 
     const statusCheckHeaders = {
       'Content-Type': 'application/json',
-      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
       'aq-encrypted-key': generateToken(
         Config.REACT_APP_AQ_KEYS,
         Config.REACT_APP_AQ_SECRET,
@@ -424,7 +427,36 @@ const MPReviewTradeModal = ({
     };
 
     try {
-      const response = await axios.request(config);
+      // SDK executeAdvice dual-path (Phase C) — main broker path.
+      // When the SDK is enabled, try the orchestrator first. On failure,
+      // fall through to legacy. SDK result wrapped to match response shape.
+      let response;
+      if (sdkExecuteAdviceEnabled) {
+        try {
+          const sdkResult = await sdkClient.executeAdvice({
+            kind: 'mpRebalance',
+            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            brokerName: broker,
+            modelId: latestRebalance?.model_Id,
+            modelName: strategyDetails?.model_name,
+            uniqueId: calculatedPortfolioData?.uniqueId,
+            trades: payload.trades,
+          });
+          const mappedRows = (sdkResult?.rows || []).map(row => ({
+            ...row,
+            orderStatus: row.status,
+            tradingSymbol: row.symbol,
+          }));
+          response = { data: { results: mappedRows } };
+          console.log('[MPReviewTradeModal] SDK executeAdvice result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+        } catch (sdkErr) {
+          console.error('[MPReviewTradeModal] SDK executeAdvice failed, falling back to legacy:', sdkErr?.message);
+          response = null;
+        }
+      }
+      if (!response) {
+        response = await axios.request(config);
+      }
       console.log('[OrderPlacement] API Response full:', JSON.stringify(response.data));
       console.log('[OrderPlacement] Results:', response.data.results);
       const checkData = response?.data?.results;
@@ -449,15 +481,19 @@ const MPReviewTradeModal = ({
       if (!checkData || !Array.isArray(checkData) || checkData.length === 0) {
         console.error('[OrderPlacement] API returned empty or invalid response:', response?.data);
 
-        // Check for Dhan CDSL/EDIS/TPIN errors in the response message
-        const responseMsg = (response?.data?.message || '').toLowerCase();
-        if (
-          broker === 'Dhan' &&
-          (responseMsg.includes('cdsl') || responseMsg.includes('edis') ||
-           responseMsg.includes('tpin') || responseMsg.includes('validate qty')) &&
-          setShowDhanTpinModel
-        ) {
-          setShowDhanTpinModel(true);
+        // Show TPIN modal for all brokers when sell orders get empty response
+        if (allSellPreCheck || isMixedPreCheck) {
+          if (broker === 'Dhan') {
+            setShowDhanTpinModel(true);
+          } else if (broker === 'Angel One') {
+            setShowAngleOneTpinModel(true);
+          } else if (broker === 'Zerodha') {
+            setShowDdpiModal && setShowDdpiModal(true);
+          } else if (broker === 'Fyers') {
+            setShowFyersTpinModal(true);
+          } else {
+            setShowOtherBrokerModel(true);
+          }
           onCloseReviewTrade();
           setLoading(false);
           return;
@@ -479,6 +515,9 @@ const MPReviewTradeModal = ({
 
       const results = checkData;
       setOrderPlacementResponse(results);
+      // Outgoing trade list (variant-tagged) — fallback source for the
+      // success modal's `variant` lookups.
+      setLastSubmittedTrades?.(tradesWithVariant);
 
       // 2. Always call model-portfolio-db-update first (before EDIS checks)
       const updateData = {
@@ -503,6 +542,27 @@ const MPReviewTradeModal = ({
         const s = (order?.orderStatus || '').toUpperCase();
         return s === 'REJECTED' || s === 'CANCELLED' || s === 'FAILURE' || s === 'FAILED';
       });
+
+      // Transient service-window short-circuit: if every failed row is a
+      // documented broker maintenance-window error (e.g. Upstox
+      // UDAPI100074 between 00:00–05:30 IST), show a soft toast instead
+      // of the all-failed modal. Broker session is fine — just retry
+      // after the window reopens. Matches web UpdateRebalanceModal.
+      const transientServiceWindowMsg = detectTransientOrderWindowError(response?.data);
+      if (transientServiceWindowMsg) {
+        Toast.show({
+          type: 'info',
+          text1: 'Broker service window',
+          text2:
+            transientServiceWindowMsg ||
+            `${broker} order placement is temporarily unavailable. Try again during the broker's service hours.`,
+          visibilityTime: 8000,
+        });
+        await enrollStatusCheckQueue();
+        onCloseReviewTrade();
+        setLoading(false);
+        return;
+      }
 
       if (allOrdersFailed) {
         // All orders rejected — show results modal with rejection details, skip EDIS checks
@@ -534,24 +594,6 @@ const MPReviewTradeModal = ({
             : count;
         }, 0);
 
-        const hasCdslError = checkData.some((order) => {
-          const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || '').toLowerCase();
-          return msg.includes('cdsl') || msg.includes('edis') || msg.includes('tpin') || msg.includes('validate qty');
-        });
-
-        // Dhan CDSL error check
-        if (
-          broker === 'Dhan' &&
-          (allSell || isMixed) &&
-          rejectedSellCount >= 1 &&
-          hasCdslError &&
-          setShowDhanTpinModel
-        ) {
-          setShowDhanTpinModel(true);
-          onCloseReviewTrade();
-          edisTriggered = true;
-        }
-
         // Special brokers
         if (
           !edisTriggered &&
@@ -564,70 +606,29 @@ const MPReviewTradeModal = ({
             setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
             edisTriggered = true;
           }
-        }
-
-        // Angel One
-        if (
-          !edisTriggered &&
-          broker === 'Angel One' &&
-          edisStatus &&
-          edisStatus.edis === false &&
+        } else if (
           (allSell || isMixed) &&
-          rejectedSellCount >= 1 &&
-          successCount === 0 &&
-          setShowAngleOneTpinModel
+          rejectedSellCount >= 1
         ) {
-          setShowAngleOneTpinModel(true);
-          onCloseReviewTrade();
-          setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-          edisTriggered = true;
-        }
+          // Always show broker-specific TPIN modal for rejected sell orders
+          setOpenSucessModal(false);
+          setLoading(false);
 
-        // Dhan live status fallback
-        if (
-          !edisTriggered &&
-          broker === 'Dhan' &&
-          (allSell || isMixed) &&
-          dhanEdisStatus?.data?.some((h) => h.edis === false) &&
-          rejectedSellCount >= 1 &&
-          successCount === 0 &&
-          setShowDhanTpinModel
-        ) {
-          setShowDhanTpinModel(true);
-          onCloseReviewTrade();
-          setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-          edisTriggered = true;
-        }
-
-        // Fyers
-        if (
-          !edisTriggered &&
-          broker === 'Fyers' &&
-          (allSell || isMixed) &&
-          rejectedSellCount >= 1 &&
-          successCount === 0 &&
-          setShowFyersTpinModal
-        ) {
-          setShowFyersTpinModal(true);
-          onCloseReviewTrade();
-          setIsReturningFromOtherBrokerModal && setIsReturningFromOtherBrokerModal(false);
-          edisTriggered = true;
-        }
-
-        // Zerodha DDPI
-        if (
-          !edisTriggered &&
-          broker === 'Zerodha' &&
-          (allSell || isMixed) &&
-          !userDetails?.is_authorized_for_sell &&
-          !['physical', 'ddpi'].includes(userDetails?.ddpi_status) &&
-          rejectedSellCount >= 1 &&
-          successCount === 0 &&
-          setShowDdpiModal
-        ) {
-          setShowDdpiModal(true);
+          if (broker === 'Dhan') {
+            setShowDhanTpinModel(true);
+          } else if (broker === 'Angel One') {
+            setShowAngleOneTpinModel(true);
+          } else if (broker === 'Zerodha') {
+            setShowDdpiModal && setShowDdpiModal(true);
+          } else if (broker === 'Fyers') {
+            setShowFyersTpinModal(true);
+          } else {
+            setShowOtherBrokerModel(true);
+          }
           onCloseReviewTrade();
           edisTriggered = true;
+        } else {
+          setOpenSucessModal(true);
         }
       }
 
@@ -661,14 +662,19 @@ const MPReviewTradeModal = ({
         errorMessage = responseData?.error || responseData?.message || error?.message || 'Order placement failed';
       }
 
-      // Check for CDSL/EDIS errors in catch handler for Dhan
-      const errMsg = (errorMessage || '').toLowerCase();
-      if (
-        broker === 'Dhan' &&
-        (errMsg.includes('cdsl') || errMsg.includes('edis') || errMsg.includes('tpin')) &&
-        setShowDhanTpinModel
-      ) {
-        setShowDhanTpinModel(true);
+      // Show TPIN modal for all brokers when sell orders fail
+      if (allSellPreCheck || isMixedPreCheck) {
+        if (broker === 'Dhan') {
+          setShowDhanTpinModel(true);
+        } else if (broker === 'Angel One') {
+          setShowAngleOneTpinModel(true);
+        } else if (broker === 'Zerodha') {
+          setShowDdpiModal && setShowDdpiModal(true);
+        } else if (broker === 'Fyers') {
+          setShowFyersTpinModal(true);
+        } else {
+          setShowOtherBrokerModel(true);
+        }
         onCloseReviewTrade();
         return;
       }
@@ -694,6 +700,7 @@ const MPReviewTradeModal = ({
       }
 
       // Fallback: Build synthetic rejected response from stockDetails for the modal
+      const syntheticVariant = computeTradeVariant(allowAfterHoursOrders);
       const syntheticResponse = stockDetails.map(stock => ({
         symbol: stock.tradingSymbol,
         tradingSymbol: stock.tradingSymbol,
@@ -705,8 +712,10 @@ const MPReviewTradeModal = ({
         orderPlacement: 'failed',
         orderStatusMessage: errorMessage,
         message_aq: errorMessage,
+        variant: syntheticVariant,
       }));
       setOrderPlacementResponse(syntheticResponse);
+      setLastSubmittedTrades?.(syntheticResponse);
       setOpenSucessModal(true);
       onCloseReviewTrade();
     }
@@ -832,6 +841,46 @@ const MPReviewTradeModal = ({
       }
     }
 
+    // Pre-flight: refuse to send orders with missing exchange. Kite Publisher
+    // silently drops basket items whose symbol/exchange combo it can't resolve
+    // (e.g. a BSE-only symbol sent with exchange=NSE), leaving the user with
+    // a mystery "not in order book" state. Fail here with the offending symbols.
+    const exchangeCheck = validateStockExchanges(stockDetails);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      const userMsg = `Cannot place order — exchange is missing for: ${missingList}. Please contact your advisor to correct the trade before retrying.`;
+      console.error('[ZerodhaPublisher] Blocked due to missing exchange:', missingList);
+      const syntheticResponse = stockDetails.map(stock => {
+        const stockMissing = !(stock.exchange && String(stock.exchange).trim());
+        const perStockMsg = stockMissing
+          ? 'Exchange missing — advisor must correct this trade.'
+          : 'Blocked: another trade in this batch was missing exchange.';
+        return {
+          symbol: stock.tradingSymbol,
+          tradingSymbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || '',
+          orderStatus: 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: perStockMsg,
+          message_aq: perStockMsg,
+        };
+      });
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+      onCloseReviewTrade();
+      setLoading(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: userMsg,
+        visibilityTime: 8000,
+      });
+      return;
+    }
+
     // Debug: Verify API key is available
     console.log('[ZerodhaPublisher] handleZerodhaRedirect called, API Key:', zerodhaApiKey);
     if (!zerodhaApiKey) {
@@ -868,20 +917,27 @@ const MPReviewTradeModal = ({
     }
     const apiKey = zerodhaApiKey;
     const basket = stockDetails.map(stock => {
-      // Use LTP for price calculation
-      const ltp = getLastKnownPrice(stock.tradingSymbol);
+      // Scripmaster-resolved symbol/exchange (-EQ strip, BE→BSE, etc).
+      const resolved = resolveZerodhaSymbol(stock, symbolMap);
+      // LTP: live ws → live raw → server-cached from /zerodha/convert-symbol.
+      const liveLtp = getLastKnownPrice(resolved.tradingsymbol) || getLastKnownPrice(stock.tradingSymbol);
+      const ltp = liveLtp && liveLtp !== '-' && parseFloat(liveLtp) > 0
+        ? liveLtp
+        : resolved.cachedLtp || 0;
       let orderPrice = 0;
 
       if (stock.orderType === 'LIMIT') {
         orderPrice = parseFloat(stock.price || 0);
       } else if (stock.orderType === 'MARKET' || stock.orderType === 'SL') {
-        orderPrice = ltp !== '-' ? parseFloat(ltp) : 0;
+        orderPrice = ltp && ltp !== '-' ? parseFloat(ltp) : 0;
       }
 
       let baseOrder = {
         variety: 'regular',
-        tradingsymbol: stock.tradingSymbol,
-        exchange: stock.exchange || 'NSE',
+        tradingsymbol: resolved.tradingsymbol,
+        // exchange from scripmaster; validateStockExchanges() above
+        // guarantees stock.exchange was non-empty as a fallback.
+        exchange: resolved.exchange,
         transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
         order_type: mapKiteOrderType(stock.orderType),
         quantity: parseInt(stock.quantity, 10) || 1,
@@ -895,9 +951,10 @@ const MPReviewTradeModal = ({
         baseOrder.readonly = true;
       }
 
-      console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(baseOrder));
-
-      return baseOrder;
+      // MARKET → LIMIT-IOC with 1% market-protection buffer (GSM/T2T/BE stocks).
+      const protectedOrder = applyKiteMarketProtection(baseOrder, ltp, stock.transactionType);
+      console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(protectedOrder));
+      return protectedOrder;
     });
 
     const currentISTDateTime = new Date();
@@ -916,7 +973,7 @@ const MPReviewTradeModal = ({
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1050,7 +1107,7 @@ const MPReviewTradeModal = ({
 
       const requestHeaders = {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1126,6 +1183,7 @@ const MPReviewTradeModal = ({
               {
                 userEmail: userEmail,
                 modelName: strategyDetails?.model_name,
+                model_id: latestRebalance?.model_Id,
                 executionStatus: executionStatus || 'pending',
                 user_broker: 'Zerodha',
               },
@@ -1181,6 +1239,7 @@ const MPReviewTradeModal = ({
             {
               userEmail: userEmail,
               modelName: strategyDetails?.model_name,
+              model_id: latestRebalance?.model_Id,
               executionStatus: 'pending',
               user_broker: 'Zerodha',
             },
@@ -1245,6 +1304,23 @@ const MPReviewTradeModal = ({
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
     if (!sessionValid) return;
 
+    // Pre-flight: refuse to send orders with missing exchange. Fyers symbols
+    // encode the exchange in the form "NSE:SBIN-EQ"; a blank exchange would
+    // produce ":SBIN-EQ" which Fyers rejects or mis-routes silently.
+    const exchangeCheck = validateStockExchanges(stockDetails);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      console.error('[FyersPublisher] Blocked due to missing exchange:', missingList);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        visibilityTime: 8000,
+      });
+      onCloseReviewTrade();
+      return;
+    }
+
     setLoading(true);
     try {
       const currentISTDateTime = new Date();
@@ -1252,7 +1328,7 @@ const MPReviewTradeModal = ({
 
       const requestHeaders = {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || 'common',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1275,7 +1351,10 @@ const MPReviewTradeModal = ({
         console.warn('[FyersPublisher] update-reco failed (non-critical):', recoErr);
       }
 
-      // Place orders via Fyers API through process-trade
+      // Place orders via Fyers API through process-trade.
+      // Variant tagged per-trade — see docs/APP_ARCHITECTURE.md § 4.5.2.
+      const fyersVariant = computeTradeVariant(allowAfterHoursOrders);
+      const fyersTrades = stockDetails.map(s => ({ ...s, variant: fyersVariant }));
       const payload = {
         clientId: clientCode,
         accessToken: jwtToken,
@@ -1286,14 +1365,41 @@ const MPReviewTradeModal = ({
         model_id: latestRebalance?.model_Id,
         unique_id: calculatedPortfolioData?.uniqueId,
         returnDateTime: istDatetime,
-        trades: stockDetails,
+        trades: fyersTrades,
       };
 
-      const response = await axios.post(
-        `${server.ccxtServer.baseUrl}rebalance/process-trade`,
-        payload,
-        { headers: requestHeaders, timeout: 120000 },
-      );
+      // SDK executeAdvice dual-path (Phase C) — Fyers publisher path.
+      let response;
+      if (sdkExecuteAdviceEnabled) {
+        try {
+          const sdkResult = await sdkClient.executeAdvice({
+            kind: 'mpRebalance',
+            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            brokerName: 'Fyers',
+            modelId: latestRebalance?.model_Id,
+            modelName: strategyDetails?.model_name,
+            uniqueId: calculatedPortfolioData?.uniqueId,
+            trades: fyersTrades,
+          });
+          const mappedRows = (sdkResult?.rows || []).map(row => ({
+            ...row,
+            orderStatus: row.status,
+            tradingSymbol: row.symbol,
+          }));
+          response = { data: { results: mappedRows } };
+          console.log('[MPReviewTradeModal] SDK executeAdvice (Fyers) result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+        } catch (sdkErr) {
+          console.error('[MPReviewTradeModal] SDK executeAdvice (Fyers) failed, falling back to legacy:', sdkErr?.message);
+          response = null;
+        }
+      }
+      if (!response) {
+        response = await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+          payload,
+          { headers: requestHeaders, timeout: 120000 },
+        );
+      }
 
       const checkData = response?.data?.results;
 
@@ -1388,6 +1494,7 @@ const MPReviewTradeModal = ({
             {
               userEmail: userEmail,
               modelName: strategyDetails?.model_name,
+              model_id: latestRebalance?.model_Id,
               executionStatus: executionStatus,
               user_broker: 'Fyers',
             },
@@ -1621,7 +1728,10 @@ const MPReviewTradeModal = ({
                   borderTopRightRadius: 10,
                   borderTopLeftRadius: 10,
                 }}
-                source={{html: htmlContentfinal}}
+                source={{
+                  html: htmlContentfinal,
+                  baseUrl: getPublisherWebViewBaseUrl(configData),
+                }}
                 onLoadStart={() => setIsLoading(true)}
                 onLoadEnd={() => setIsLoading(false)}
                 onNavigationStateChange={handleWebViewNavigationStateChange}
@@ -1789,14 +1899,14 @@ const MPReviewTradeModal = ({
                         onCloseReviewTrade();
                         return;
                       }
-                      // Angel One EDIS check
-                      if (broker === 'Angel One' && edisStatus && edisStatus.edis === false && setShowAngleOneTpinModel) {
+                      // Angel One DDPI check
+                      if (broker === 'Angel One' && !userDetails?.ddpi_enabled && !userDetails?.is_authorized_for_sell && setShowAngleOneTpinModel) {
                         setShowAngleOneTpinModel(true);
                         onCloseReviewTrade();
                         return;
                       }
                       // Dhan EDIS check
-                      if (broker === 'Dhan' && dhanEdisStatus?.data?.some((h) => h.edis === false) && setShowDhanTpinModel) {
+                      if (broker === 'Dhan' && (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false)) && setShowDhanTpinModel) {
                         setShowDhanTpinModel(true);
                         onCloseReviewTrade();
                         return;

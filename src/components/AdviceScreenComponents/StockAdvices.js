@@ -9,6 +9,7 @@ import {
   Dimensions,
   Modal,
   TouchableWithoutFeedback,
+  TouchableOpacity,
   LayoutAnimation,
   SafeAreaView,
 } from 'react-native';
@@ -29,6 +30,11 @@ import CryptoJS from 'react-native-crypto-js';
 import IIFLReviewTradeModal from '../IIFLReviewTradeModal';
 import WebSocketManager from './DynamicText/WebSocketManager';
 import { getLastKnownPrice } from './DynamicText/websocketPrice';
+import { validateStockExchanges, applyKiteMarketProtection, resolveZerodhaSymbol } from '../../utils/brokerPublisher';
+import useZerodhaSymbolMap from '../../hooks/useZerodhaSymbolMap';
+import {useRefreshBrokerStatus} from '../../hooks/useRefreshBrokerStatus';
+import {isFundsErrorOrMissing} from '../../utils/rebalanceHelpers';
+import {classifyFundsResponse} from '../../utils/brokerSessionValidator';
 
 import moment from 'moment';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -40,31 +46,34 @@ import BrokerSelectionModal from '../BrokerSelectionModal';
 
 import { OtherBrokerModel } from '../DdpiModal';
 import { useTrade } from '../../screens/TradeContext';
+import { useConfig } from '../../context/ConfigContext';
+import IsMarketHours from '../../utils/isMarketHours';
+import { computeTradeVariant } from '../../utils/tradeVariant';
 
 import { ActivateNowModel } from '../DdpiModal';
 import DdpiModal from '../DdpiModal';
 import { DhanTpinModal } from '../DdpiModal';
 import { AngleOneTpinModal } from '../DdpiModal';
 import { FyersTpinModal } from '../DdpiModal';
-import ICICIUPModal from '../BrokerConnectionModal/icicimodal';
-import UpstoxModal from '../BrokerConnectionModal/upstoxModal';
-import AngleOneBookingModal from '../BrokerConnectionModal/AngleoneBookingModal';
-import ZerodhaConnectModal from '../BrokerConnectionModal/ZerodhaConnectModal';
-import HDFCconnectModal from '../BrokerConnectionModal/HDFCconnectModal';
-import DhanConnectModal from '../BrokerConnectionModal/DhanConnectModal';
-import KotakModal from '../BrokerConnectionModal/KotakModal';
-import IIFLModal from '../iiflmodal';
+import BrokerConnectModalDispatch from '../BrokerConnectionModal/BrokerConnectModalDispatch';
 import Config from 'react-native-config';
-import AliceBlueConnect from '../BrokerConnectionModal/AliceBlueConnect';
-import FyersConnect from '../BrokerConnectionModal/FyersConnect';
 import notifee, { EventType } from '@notifee/react-native';
 
 import { generateToken } from '../../utils/SecurityTokenManager';
-import MotilalModal from '../BrokerConnectionModal/MotilalModal';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
+import { getAdvisorSubdomain } from '../utils/variantHelper';
+import useSdkClient from '../../sdk/useSdkClient';
+
+const isSdkExecuteAdviceEnabled = () => {
+  const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
+  return v === 'true' || v === '1';
+};
 
 const { height: screenHeight } = Dimensions.get('window');
 const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
+  // Network-fresh {broker, brokerStatus, funds} — protects every handler that
+  // gates a TokenExpire / broker-selection modal from re-popping right after
+  // a successful reconnect. See `docs/REBALANCING.md § Closure-bound funds`.
+  const refreshBrokerStatus = useRefreshBrokerStatus(userEmail);
   const {
     stockRecoNotExecutedfinal,
     planList,
@@ -81,6 +90,9 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     getAllFunds,
     configData,
   } = useTrade();
+  const { allowAfterHoursOrders } = useConfig() || {};
+  const sdkClient = useSdkClient();
+  const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   const [stockRecoNotExecuted, setStockRecoNotExecuted] = useState([]);
   const [recommendationStock, setrecommendationStock] = useState([]);
   const { showAddToCartModal } = useModal();
@@ -224,6 +236,10 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
 
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
 
+  // Scripmaster symbol/exchange map from ccxt-india. Enabled whenever
+  // stockDetails has items (placeOrder basket-build path depends on this).
+  const symbolMap = useZerodhaSymbolMap(stockDetails, stockDetails?.length > 0);
+
   const checkValidApiAnSecret = data => {
     if (!data) return null;
     const bytesKey = CryptoJS.AES.decrypt(data, 'ApiKeySecret');
@@ -239,6 +255,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   const connectZerodha = () => {
     if (zerodhaRequestToken !== null && !hasConnectedZerodha.current) {
       let data = JSON.stringify({
+        user_email: userEmail,
         apiKey: checkValidApiAnSecret(apiKey),
         apiSecret: checkValidApiAnSecret(secretKey),
         requestToken: zerodhaRequestToken,
@@ -412,7 +429,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     AliceBlue: 'aliceblue',
     Dhan: 'dhan',
     Groww: 'groww',
-    'Motilal Oswal': 'motilal-oswal',
+    'Motilal Oswal': 'motilal',
     'Hdfc Securities': 'hdfc',
   };
 
@@ -427,7 +444,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     AliceBlue: 'aliceblue',
     Dhan: 'dhan',
     Groww: 'groww',
-    'Motilal Oswal': 'motilal-oswal',
+    'Motilal Oswal': 'motilal',
   };
 
   const updatePortfolioData = async (brokerName, userEmail) => {
@@ -504,20 +521,74 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   const [failedSellAttempts, setFailedSellAttempts] = useState(0);
   const getAllTradesUpdate = async () => { };
 
+  // Centralized funds-result branching used by every order chokepoint
+  // below. Returns true if the trade flow should HALT (caller `return`s
+  // immediately); false to continue. TRANSIENT errors (Upstox 00:00–05:30
+  // IST maintenance, ICICI Breeze base-64 hiccup, etc.) show a soft
+  // toast WITHOUT prompting reconnect — the user's session is fine.
+  // Real auth failures (TOKEN_EXPIRED / NOT_CONNECTED) open the existing
+  // TokenExpireBrokerModal so the user can reconnect in-place.
+  const _haltOnFundsCheckFailure = (currentFunds, currentBrokerStatus, currentBroker) => {
+    const check = classifyFundsResponse(currentFunds, currentBrokerStatus, currentBroker);
+    if (check.ok) return false;
+    if (check.reason === 'TRANSIENT') {
+      Toast.show({
+        type: 'info',
+        text1: `${currentBroker || 'Broker'} temporarily unavailable`,
+        text2: check.message,
+        visibilityTime: 4500,
+        position: 'bottom',
+      });
+      return true;
+    }
+    setOpenTokenExpireModel(true);
+    return true;
+  };
+
   const placeOrder = async stockDetails => {
     setLoading(true);
-    //console.log('consolehereeeeee;:',funds);
-    if (funds.status === false || funds.status === 1) {
-      setOpenTokenExpireModel(true);
+
+    // Market-hours gate — bypassed when advisor has allowAfterHoursOrders enabled.
+    if (!IsMarketHours() && !allowAfterHoursOrders) {
+      Toast.show({
+        type: 'error',
+        text1: 'Orders cannot be placed outside Market hours',
+        text2: 'Market hours: 9:15 AM - 3:30 PM IST',
+        visibilityTime: 4000,
+      });
+      setLoading(false);
+      return;
+    }
+
+    if (_haltOnFundsCheckFailure(funds, brokerStatus, broker)) {
       setOpenReviewTrade(false);
       setLoading(false);
       return;
     }
 
-    // Pre-order EDIS check for brokers without a dedicated EDIS API
-    const allSellPre = stockDetails.every(s => s.transactionType === 'SELL');
-    const isMixedPre = stockDetails.some(s => s.transactionType === 'BUY') &&
-      stockDetails.some(s => s.transactionType === 'SELL');
+    // Zerodha: MUST use Kite Publisher WebView for order placement
+    if (broker === 'Zerodha') {
+      setLoading(false);
+      setOpenReviewTrade(false);
+      setZerodhaStockDetails(stockDetails);
+      await handleZerodhaRedirect(stockDetails);
+      setOpenZerodhaModel(true);
+      return;
+    }
+
+    // Pre-order EDIS check — equity delivery (CNC) sells only.
+    // Derivatives (NFO/BFO/MIS/NRML) do NOT need EDIS/DDPI.
+    const eqDeliverySells = stockDetails.filter(s => {
+      const txnType = (s.transactionType || s.TransactionType || '').toUpperCase();
+      if (txnType !== 'SELL') return false;
+      const exchange = (s.exchange || s.Exchange || '').toUpperCase();
+      const productType = (s.productType || s.ProductType || 'CNC').toUpperCase();
+      if (['NFO', 'BFO', 'MCX'].includes(exchange)) return false;
+      if (['MIS', 'NRML', 'CARRYFORWARD'].includes(productType)) return false;
+      return true;
+    });
+    const allSellPre = eqDeliverySells.length > 0 && stockDetails.every(s => s.transactionType === 'SELL');
+    const isMixedPre = eqDeliverySells.length > 0 && stockDetails.some(s => s.transactionType === 'BUY');
     if (
       ['AliceBlue', 'IIFL Securities', 'ICICI Direct', 'Upstox', 'Kotak', 'Hdfc Securities', 'Motilal Oswal', 'Groww'].includes(broker) &&
       (allSellPre || isMixedPre) &&
@@ -538,23 +609,33 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     );
 
     const getOrderPayload = (isGtt = false) => {
-      const trades = isGtt ? gttOrders : (regularOrders.length > 0 ? regularOrders : stockDetails);
+      const sourceTrades = isGtt ? gttOrders : (regularOrders.length > 0 ? regularOrders : stockDetails);
 
-      // GTT payload path
+      // Trade variant — `"AMO" | "REGULAR"`. Computed once per submit and
+      // tagged on every per-trade object. See docs/APP_ARCHITECTURE.md
+      // § 4.5.2 Trade variant field. Display-only — no behavioural change
+      // to the place-order payload (every supported broker auto-converts
+      // after-hours to AMO server-side; explicit `orderVariety: "AMO"`
+      // is a deferred followup with its own dual-write soak).
+      const variant = computeTradeVariant(allowAfterHoursOrders);
+      const trades = sourceTrades.map(stock => ({ ...stock, variant }));
+
+      // GTT payload path — decrypt credentials matching prod
       if (isGtt) {
         const gttPayload = {
           trades,
           user_broker: broker,
+          user_email: userEmail,
         };
         switch (broker) {
           case 'Upstox':
-            return { ...gttPayload, apiKey, jwtToken, secretKey };
+            return { ...gttPayload, apiKey: checkValidApiAnSecret(apiKey), jwtToken, secretKey: checkValidApiAnSecret(secretKey) };
           case 'Zerodha':
-            return { ...gttPayload, apiKey, secretKey, jwtToken };
+            return { ...gttPayload, apiKey: checkValidApiAnSecret(apiKey), secretKey: checkValidApiAnSecret(secretKey), jwtToken };
           case 'AliceBlue':
             return { ...gttPayload, clientCode, apiKey: checkValidApiAnSecret(apiKey), accessToken: jwtToken };
           default:
-            return { ...gttPayload, apiKey, jwtToken };
+            return { ...gttPayload, apiKey: checkValidApiAnSecret(apiKey), jwtToken };
         }
       }
 
@@ -562,6 +643,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       let basePayload = {
         trades,
         user_broker: broker, // Common fields
+        user_email: userEmail,
       };
 
       // Add basket info if available
@@ -715,9 +797,11 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     const rejectedSellCount = parseInt(
       (await AsyncStorage.getItem(rejectedKey)) || '0',
     );
-    const allFNO = stockDetails.every(
-      item => item.exchange === 'NFO' || item.exchange === 'BFO',
-    );
+    const allFNO = stockDetails.every(item => {
+      const exchange = String(item.exchange || item.Exchange || '').toUpperCase();
+      const productType = String(item.productType || item.ProductType || 'CNC').toUpperCase();
+      return ['NFO', 'BFO', 'MCX'].includes(exchange) || ['MIS', 'NRML', 'CARRYFORWARD'].includes(productType);
+    });
 
     if (!allFNO) {
       if (!isReturningFromOtherBrokerModal && specialBrokers.includes(broker)) {
@@ -777,27 +861,82 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         }
       }
 
-      // Regular order endpoint
-      const regularEndpoint = `${server.server.baseUrl}api/process-trades/order-place`;
-      const response = await axios.request({
-        method: 'post',
-        url: regularEndpoint,
-        headers: {
+      // Phase C SDK orchestrator path — when REACT_APP_USE_SDK_EXECUTE_ADVICE
+      // is on AND SDK integration is active, route through the SDK's
+      // executeAdvice method. This calls /sdk/v1/orders/place via the SDK
+      // client (minted JWT auth, typed result). Legacy direct-ccxt path
+      // stays below for when the flag is off (default).
+      // Per docs/SDK_ORCHESTRATION_PHASES.md Phase C.
+      const basePayload = getOrderPayload(false);
+      const payloadWithClientIds = {
+        ...basePayload,
+        trades: (basePayload.trades || []).map((t) => ({
+          ...t,
+          clientTradeId: t.clientTradeId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        })),
+      };
+      let placementResults;
+
+      if (sdkExecuteAdviceEnabled) {
+        try {
+          const sdkResp = await sdkClient.placeOrders({
+            trades: payloadWithClientIds.trades,
+            brokerName: broker,
+          });
+          placementResults = sdkResp?.results || [];
+          console.log('[StockAdvices] SDK placeOrders result:', placementResults.length, 'rows');
+        } catch (sdkErr) {
+          console.error('[StockAdvices] SDK placeOrders failed, falling back to legacy:', sdkErr?.message);
+          placementResults = null;
+        }
+      }
+
+      if (!placementResults) {
+        // Legacy direct-ccxt path (Phase A, 2026-05-01)
+        const directCcxtUrl = `${server.ccxtServer.baseUrl}orders/process-trade`;
+        const legacyNodeUrl = `${server.server.baseUrl}api/process-trades/order-place`;
+        const fallbackEnabled = (Config.REACT_APP_BESPOKE_DIRECT_CCXT_FALLBACK || 'true') === 'true';
+        const placeOrderHeaders = {
           'Content-Type': 'application/json',
           'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
           ),
-        },
-        data: JSON.stringify(getOrderPayload(false)),
-      });
+        };
+        let response;
+        try {
+          response = await axios.request({
+            method: 'post',
+            url: directCcxtUrl,
+            headers: placeOrderHeaders,
+            data: JSON.stringify(payloadWithClientIds),
+            timeout: 120000,
+          });
+          placementResults = response.data?.results || [];
+        } catch (directErr) {
+          const status = directErr?.response?.status;
+          const isNetworkOr5xx = !status || status >= 500;
+          if (fallbackEnabled && isNetworkOr5xx) {
+            console.warn('[StockAdvices.placeOrder] direct-ccxt failed, falling back to legacy Node:', directErr?.message);
+            response = await axios.request({
+              method: 'post',
+              url: legacyNodeUrl,
+              headers: placeOrderHeaders,
+              data: JSON.stringify(payloadWithClientIds),
+            });
+            placementResults = response.data?.response || [];
+          } else {
+            throw directErr;
+          }
+        }
+      }
 
       setLoading(false);
-      console.log('the pay load we are sending ::::', getOrderPayload(false));
+      console.log('the pay load we are sending ::::', payloadWithClientIds);
       // setOpenSucessModal(true);
-      console.log('respoiiinsi:', response.data.response);
-      setOrderPlacementResponse(response.data.response);
+      console.log('respoiiinsi:', placementResults);
+      setOrderPlacementResponse(placementResults);
 
       console.log('stock details here ', stockDetails, allFNO);
       if (allFNO) {
@@ -819,7 +958,33 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         return;
       }
 
-      const rejectedSellCount = response.data.response.reduce(
+      if (!placementResults || placementResults.length === 0) {
+        if ((allSell || isMixed) && !allFNO) {
+          if (broker === 'Dhan') {
+            setShowDhanTpinModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (broker === 'Angel One') {
+            setShowAngleOneTpinModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (broker === 'Fyers') {
+            setShowFyersTpinModal(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          } else if (specialBrokers.includes(broker)) {
+            setShowOtherBrokerModel(true);
+            setOpenReviewTrade(false);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      const rejectedSellCount = placementResults.reduce(
         (count, order) => {
           return isOrderRejected(order?.orderStatus) &&
             order.transactionType === 'SELL'
@@ -829,34 +994,14 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         0,
       );
 
-      const successCount = response.data.response.reduce((count, order) => {
+      const successCount = placementResults.reduce((count, order) => {
         return isOrderSuccess(order?.orderStatus) &&
           (order.transactionType === 'SELL' || tradeType.isMixed)
           ? count + 1
           : count;
       }, 0);
 
-      // Check for CDSL/EDIS/TPIN error messages in rejected orders
-      const hasCdslError = response.data.response.some((order) => {
-        const msg = (order?.orderStatusMessage || order?.message_aq || order?.message || "").toLowerCase();
-        return msg.includes("cdsl") || msg.includes("edis") || msg.includes("tpin") || msg.includes("validate qty");
-      });
-
-      console.log(`${broker} Rejected Sell Count:`, rejectedSellCount, 'Success Count:', successCount, 'CDSL Error:', hasCdslError);
-
-      // Dhan: Check CDSL error messages in rejected orders
-      if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        rejectedSellCount >= 1
-      ) {
-        if (hasCdslError) {
-          setShowDhanTpinModel(true);
-          setOpenReviewTrade(false);
-          setLoading(false);
-          return;
-        }
-      }
+      console.log(`${broker} Rejected Sell Count:`, rejectedSellCount, 'Success Count:', successCount);
 
       // Special brokers (IIFL, ICICI, Upstox, Kotak, HDFC, AliceBlue, etc.)
       if (
@@ -866,7 +1011,9 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         if (allBuy) {
           console.log('All trades are BUY for broker:', broker);
           setOpenSucessModal(true);
-        } else if ((allSell || isMixed) && !userDetails?.is_authorized_for_sell && rejectedSellCount >= 1) {
+        } else if ((allSell || isMixed) && rejectedSellCount >= 1) {
+          // Match prod: trigger TPIN modal whenever any sell order is rejected
+          // Don't gate on successCount — even partial rejection needs TPIN auth
           console.log(
             allSell ? 'All trades are SELL' : 'Trades are Mixed',
             'for broker:',
@@ -880,44 +1027,31 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           setOpenSucessModal(true);
         }
       } else if (
-        broker === 'Angel One' &&
-        edisStatus &&
-        edisStatus.edis === false &&
         (allSell || isMixed) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
+        !allFNO &&
+        rejectedSellCount >= 1
       ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setOpenSucessModal(false);
-        setShowAngleOneTpinModel(true);
-        setOpenReviewTrade(false);
-        return;
-      } else if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        dhanEdisStatus?.data?.some((h) => h.edis === false) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
-      ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setShowDhanTpinModel(true);
+        console.log('Setting TPIN modal to true for', broker);
         setOpenSucessModal(false);
         setOpenReviewTrade(false);
-        return;
-      } else if (
-        broker === 'Fyers' &&
-        (allSell || isMixed) &&
-        rejectedSellCount >= 1 &&
-        successCount === 0
-      ) {
-        console.log('Setting AfterPlaceOrderDdpiModal to true for', broker);
-        setOpenSucessModal(false);
-        setShowFyersTpinModal(true);
-        setOpenReviewTrade(false);
+
+        if (broker === 'Angel One') {
+          setShowAngleOneTpinModel(true);
+        } else if (broker === 'Dhan') {
+          setShowDhanTpinModel(true);
+        } else if (broker === 'Fyers') {
+          setShowFyersTpinModal(true);
+        } else if (broker === 'Zerodha') {
+          setShowDdpiModal(true);
+        } else {
+          // Fallback: show success modal with rejection details
+          setOrderPlacementResponse(placementResults);
+          setOpenSucessModal(true);
+        }
         return;
       } else {
         console.log('Setting openSuccessModal to true');
-        setOrderPlacementResponse(response.data.response);
+        setOrderPlacementResponse(placementResults);
         setOpenSucessModal(true);
       }
       setOpenReviewTrade(false);
@@ -969,16 +1103,28 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         error.response?.data?.details?.[0]?.message ||
         "There was an issue in placing the trade, please try again later.";
 
-      // Check for CDSL/EDIS errors in catch handler for Dhan
-      const catchMsg = edisMessage.toLowerCase();
-      if (
-        broker === 'Dhan' &&
-        (allSell || isMixed) &&
-        (catchMsg.includes("cdsl") || catchMsg.includes("edis") || catchMsg.includes("tpin"))
-      ) {
-        setShowDhanTpinModel(true);
-        setOpenReviewTrade(false);
-        return;
+      if ((allSell || isMixed) && !allFNO) {
+        if (broker === 'Dhan') {
+          setShowDhanTpinModel(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Angel One') {
+          setShowAngleOneTpinModel(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Fyers') {
+          setShowFyersTpinModal(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (broker === 'Zerodha') {
+          setShowDdpiModal(true);
+          setOpenReviewTrade(false);
+          return;
+        } else if (specialBrokers.includes(broker)) {
+          setShowOtherBrokerModel(true);
+          setOpenReviewTrade(false);
+          return;
+        }
       }
 
       // Build synthetic rejected response from stockDetails for the modal
@@ -1049,24 +1195,45 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     return "MARKET";
   };
 
-  const handleZerodhaRedirect = async () => {
+  const handleZerodhaRedirect = async (tradesToPlace) => {
+    const trades = tradesToPlace || stockDetails;
+    const exchangeCheck = validateStockExchanges(trades);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      console.error('[ZerodhaPublisher] Blocked due to missing exchange:', missingList);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        visibilityTime: 8000,
+      });
+      setOpenReviewTrade(false);
+      return;
+    }
+
     const apiKey = zerodhaApiKey;
 
-    const basket = stockDetails.map(stock => {
-      // Use LTP for price calculation
-      const ltp = getLastKnownPrice(stock.tradingSymbol);
+    const basket = trades.map(stock => {
+      // Scripmaster-resolved symbol/exchange (-EQ strip, BE→BSE, etc).
+      const resolved = resolveZerodhaSymbol(stock, symbolMap);
+      // LTP: live ws on resolved → live on raw → server-cached fallback.
+      const liveLtp = getLastKnownPrice(resolved.tradingsymbol) || getLastKnownPrice(stock.tradingSymbol);
+      const ltp = liveLtp && liveLtp !== '-' && parseFloat(liveLtp) > 0
+        ? liveLtp
+        : resolved.cachedLtp || 0;
       let orderPrice = 0;
 
       if (stock.orderType === 'LIMIT') {
         orderPrice = parseFloat(stock.price || 0);
       } else if (stock.orderType === 'MARKET' || stock.orderType === 'SL') {
-        orderPrice = ltp !== '-' ? parseFloat(ltp) : 0;
+        orderPrice = ltp && ltp !== '-' ? parseFloat(ltp) : 0;
       }
 
       let baseOrder = {
         variety: 'regular',
-        tradingsymbol: stock.tradingSymbol,
-        exchange: stock.exchange || 'NSE',
+        tradingsymbol: resolved.tradingsymbol,
+        // exchange from scripmaster (stock.exchange is the fallback — guaranteed non-empty by validateStockExchanges()).
+        exchange: resolved.exchange,
         transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
         order_type: mapKiteOrderType(stock.orderType),
         quantity: parseInt(stock.quantity, 10) || 1,
@@ -1080,23 +1247,29 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         baseOrder.readonly = true;
       }
 
-      console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(baseOrder));
+      // MARKET → LIMIT-IOC with 1% market-protection buffer (dodges Kite's
+      // "MARKET orders are blocked — enable market protection" on GSM/T2T/BE stocks).
+      const protectedOrder = applyKiteMarketProtection(baseOrder, ltp, stock.transactionType);
 
-      return baseOrder;
+      console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(protectedOrder));
+
+      return protectedOrder;
     });
+    const htmlContent = generateHtmlForm(basket, apiKey);
+    setHtmlContent(htmlContent);
+
     const currentISTDateTime = new Date();
-
     try {
-      // Update the database with the current IST date-time
       await axios.put(`${server.server.baseUrl}api/zerodha/update-trade-reco`, {
-        stockDetails: stockDetails,
+        stockDetails: trades,
         leaving_datetime: currentISTDateTime,
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+        },
       });
-
-      // Generate HTML form content
-      const htmlContent = generateHtmlForm(basket, apiKey);
-      setHtmlContent(htmlContent);
-      // Inject the HTML form into WebView
     } catch (error) {
       console.error('Failed to update trade recommendation:', error);
     }
@@ -1300,26 +1473,49 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   };
 
   const handleLimitOrderInputChange = (symbol, value, tradeId) => {
-    if (!value || value === '') {
-      const newData = stockRecoNotExecuted.map(stock =>
-        stock.Symbol === symbol && stock.tradeId === tradeId
-          ? { ...stock, Price: '' }
-          : stock,
-      );
-      // console.log('newdata:',newData);
-      setStockRecoNotExecuted(newData);
-      setrecommendationStock(newData);
+    // Match web: accept up to 2 decimals, reject silently otherwise so the
+    // field behaves consistently. Keeps the value as a string so ₹123.45
+    // round-trips instead of being truncated by parseInt.
+    let formattedValue = value;
+    if (value) {
+      const regex = /^\d*\.?\d{0,2}$/;
+      if (!regex.test(value)) {
+        return;
+      }
+      formattedValue = value;
     } else {
-      // console.log('OP:',value);
-      const newData = stockRecoNotExecuted.map(stock =>
-        stock.Symbol === symbol && stock.tradeId === tradeId
-          ? { ...stock, Price: parseInt(value) }
-          : stock,
-      );
-      //  console.log('newdata:',newData);
-      setStockRecoNotExecuted(newData);
-      setrecommendationStock(newData);
+      formattedValue = '';
     }
+
+    const newData = stockRecoNotExecuted.map(stock =>
+      stock.Symbol === symbol && stock.tradeId === tradeId
+        ? { ...stock, Price: formattedValue }
+        : stock,
+    );
+    setStockRecoNotExecuted(newData);
+    setrecommendationStock(newData);
+
+    // Persist to cart so the limit price survives refresh / app restart
+    // (web does this in NewStockCard.handleLimitOrderInputChange).
+    axios
+      .post(
+        `${server.server.baseUrl}api/cart/update`,
+        { tradeId, price: formattedValue },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      )
+      .then(() => getCartAllStocks())
+      .catch(error => {
+        console.error('Error updating cart limit price:', error?.response?.data || error?.message);
+      });
   };
 
   const handleSelectAllStocks = async () => {
@@ -1467,87 +1663,125 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   const isMixed = hasSell && hasBuy;
 
   const handleTrade = async () => {
-    // await getCartAllStocks();
-    // console.log('HIIiiiiiiiiiiiiii', broker);
-    // eventEmitter.emit('OpenTradeModel');
     setTradeClickCount(prevCount => prevCount + 1);
     fetchCart();
-    const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
-    const isMarketHours = IsMarketHours();
+    // Stale-closure fix (2026-04-18, extended 2026-04-22):
+    // `useRefreshBrokerStatus` fetches fresh user + funds inline. Shadows
+    // the closure `broker` / `brokerStatus` / `funds` so every downstream
+    // check in this handler reads post-reconnect state, not stale context.
+    const _closureBroker = broker;
+    const _closureBrokerStatus = brokerStatus;
+    const _closureFunds = funds;
+    const freshStatus = await refreshBrokerStatus({forceNetwork: true});
+    const freshUser = freshStatus?.userDetails;
+    // eslint-disable-next-line no-shadow
+    const broker = freshStatus?.broker ?? _closureBroker;
+    // eslint-disable-next-line no-shadow
+    const brokerStatus = freshStatus?.brokerStatus ?? _closureBrokerStatus;
+    // eslint-disable-next-line no-shadow
+    const funds = freshStatus?.funds ?? _closureFunds;
+    // Populate stockDetails from cartContainer before opening the review
+    // modal. cartContainer is the live cart; stockDetails is the trade-intent
+    // payload ReviewTradeModal reads. We merge any existing stockDetails
+    // entries (which may carry in-flight quantity / price edits) on top of
+    // the cart so user edits are preserved. This bottom-bar "Trade (N)"
+    // path is how multi-select cart trades reach the review modal — since
+    // 2026-04-17 updateCartStates no longer writes stockDetails, so this
+    // sync must happen here explicitly.
+    const mergedTradeIntent = (cartContainer || []).map(cartItem => {
+      const edited = stockDetails.find(
+        s =>
+          s.tradingSymbol === cartItem.tradingSymbol &&
+          s.tradeId === cartItem.tradeId,
+      );
+      return edited ? {...cartItem, ...edited} : cartItem;
+    });
+    setStockDetails(mergedTradeIntent);
 
-    const currentBroker = userDetails?.user_broker;
+    // Transient-aware — Upstox funds/place-order endpoints return status=1
+    // Typed pre-flight — TRANSIENT (Upstox 00:00–05:30 IST maintenance,
+    // ICICI base-64 hiccup, etc.) shows a soft toast and bails out
+    // without prompting reconnect; TOKEN_EXPIRED opens the existing
+    // TokenExpire modal. `isFundsEmpty` retained for downstream
+    // broker-branch checks below — true only on real auth failure,
+    // false on TRANSIENT (those bail above) and OK.
+    const _fundsPreflight = classifyFundsResponse(funds, brokerStatus, broker);
+    if (_fundsPreflight.reason === 'TRANSIENT') {
+      Toast.show({
+        type: 'info',
+        text1: `${broker || 'Broker'} temporarily unavailable`,
+        text2: _fundsPreflight.message,
+        visibilityTime: 4500,
+        position: 'bottom',
+      });
+      return;
+    }
+    const isFundsEmpty = !_fundsPreflight.ok;
+
+    const currentBroker = freshUser?.user_broker ?? userDetails?.user_broker;
     const currentBrokerRejectedCount = await getRejectedCount();
     if (isFundsEmpty) {
       setOpenTokenExpireModel(true);
-      return; // Exit as funds are empty
+      return;
     } else if (brokerStatus === null || brokerStatus === undefined) {
       setBrokerModel(true);
       return;
     }
 
+    const tradeHasEquityDeliverySells = mergedTradeIntent.some(item => {
+      const txnType = String(item.transactionType || item.TransactionType || '').toUpperCase();
+      if (txnType !== 'SELL') return false;
+      const exchange = String(item.exchange || item.Exchange || '').toUpperCase();
+      const productType = String(item.productType || item.ProductType || 'CNC').toUpperCase();
+      if (['NFO', 'BFO', 'MCX'].includes(exchange)) return false;
+      if (['MIS', 'NRML', 'CARRYFORWARD'].includes(productType)) return false;
+      return true;
+    });
+
     if (broker === 'Zerodha') {
       if (isFundsEmpty) {
         setOpenTokenExpireModel(true);
-        return; // Exit as funds are empty
+        return;
       } else if (brokerStatus === null) {
         setBrokerModel(true);
         return;
       }
-      // If not funds empty, proceed with Zerodha-specific logic
       if (allBuy) {
-        console.log('hrere');
         setOpenReviewTrade(true);
-      } else if (tradeType?.allSell || tradeType?.isMixed) {
-        console.log('All sells got');
-
-        // Handle DDPI modal logic for SELL or mixed trades
-        // If user has completed TPIN authorization or has active DDPI, proceed
+      } else if ((tradeType?.allSell || tradeType?.isMixed) && tradeHasEquityDeliverySells) {
         const canSell = userDetails?.is_authorized_for_sell ||
           ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
         if (canSell) {
-          console.log('Valid DDPI status, no modal needed');
-          setShowDdpiModal(false); // Hide DDPI Modal
-          setOpenReviewTrade(true); // Proceed with Zerodha modal
+          setShowDdpiModal(false);
+          setOpenReviewTrade(true);
         } else {
-          console.log('Show DDPI modal');
-          setShowDdpiModal(true); // Show DDPI Modal for invalid or missing status
-          setOpenReviewTrade(false); // Ensure Zerodha modal is closed
+          setShowDdpiModal(true);
+          setOpenReviewTrade(false);
         }
       } else {
         setOpenReviewTrade(true);
       }
     } else if (broker === 'Angel One') {
-      if (edisStatus && edisStatus.edis === true) {
-        console.log(
-          `All trades for Angel One: ${allBuy ? 'BUY' : allSell ? 'SELL' : 'Mixed'
-          }`,
-        );
-        setOpenReviewTrade(true); // Open review trade modal for all cases
+      if (allBuy) {
+        setOpenReviewTrade(true);
       } else if (
-        edisStatus &&
-        edisStatus.edis === false &&
-        (allSell || isMixed)
+        (allSell || isMixed) &&
+        tradeHasEquityDeliverySells &&
+        !userDetails?.ddpi_enabled &&
+        !userDetails?.is_authorized_for_sell
       ) {
-        console.log('edisStatus is missing or not valid for Angel One.');
-        setShowAngleOneTpinModel(true); // Show TPIN modal for invalid edis
+        setShowAngleOneTpinModel(true);
       } else {
         setOpenReviewTrade(true);
       }
     } else if (broker === 'Dhan') {
-      if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
-        console.log(
-          `All trades for Dhan: ${allBuy ? 'BUY' : allSell ? 'SELL' : 'Mixed'}`,
-        );
-        setOpenReviewTrade(true); // All holdings authorized, proceed
+      if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+        setOpenReviewTrade(true);
       } else if (
         (allSell || isMixed) &&
-        dhanEdisStatus?.data?.some((h) => h.edis === false)
+        tradeHasEquityDeliverySells &&
+        (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))
       ) {
-        console.log(
-          'edisStatus is missing or not valid for Dhan.',
-          allSell,
-          isMixed,
-        );
         setShowDhanTpinModel(true);
       } else {
         setOpenReviewTrade(true);
@@ -1571,53 +1805,71 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     }
   };
 
-  const handleTradeBasket = async () => {
-    console.log('HIIiiiiiiiiiiiiii', broker);
+  const handleTradeBasket = async (basketTrades) => {
+    // basketTrades is passed from BasketCard.proceedWithTrade — use it
+    // directly because setStockDetails(basketTrades) hasn't flushed yet.
+    const trades = basketTrades || stockDetails;
 
-    const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
-    if (isFundsEmpty) {
-      setOpenTokenExpireModel(true);
-      return;
-    } else if (brokerStatus === null || brokerStatus === undefined) {
+    const _closureBroker = broker;
+    const _closureBrokerStatus = brokerStatus;
+    const _closureFunds = funds;
+    const freshStatus = await refreshBrokerStatus({forceNetwork: true});
+    // eslint-disable-next-line no-shadow
+    const broker = freshStatus?.broker ?? _closureBroker;
+    // eslint-disable-next-line no-shadow
+    const brokerStatus = freshStatus?.brokerStatus ?? _closureBrokerStatus;
+    // eslint-disable-next-line no-shadow
+    const funds = freshStatus?.funds ?? _closureFunds;
+
+    if (brokerStatus !== 'connected') {
       setBrokerModel(true);
       return;
     }
 
+    if (_haltOnFundsCheckFailure(funds, brokerStatus, broker)) {
+      return;
+    }
+
+    const basketHasEquityDeliverySells = trades.some(item => {
+      const txnType = String(item.transactionType || item.TransactionType || '').toUpperCase();
+      if (txnType !== 'SELL') return false;
+      const exchange = String(item.exchange || item.Exchange || '').toUpperCase();
+      const productType = String(item.productType || item.ProductType || 'CNC').toUpperCase();
+      if (['NFO', 'BFO', 'MCX'].includes(exchange)) return false;
+      if (['MIS', 'NRML', 'CARRYFORWARD'].includes(productType)) return false;
+      return true;
+    });
+
     if (broker === 'Zerodha') {
-      if (allBuy) {
-        setOpenReviewTrade(true);
-      } else if (allSell || isMixed) {
-        // If user has completed TPIN authorization or has active DDPI, proceed
+      if ((allSell || isMixed) && basketHasEquityDeliverySells) {
         const canSellZerodha = userDetails?.is_authorized_for_sell ||
           ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
-        if (canSellZerodha) {
-          setShowDdpiModal(false);
-          setOpenReviewTrade(true);
-        } else {
+        if (!canSellZerodha) {
           setShowDdpiModal(true);
-          setOpenReviewTrade(false);
+          return;
         }
-      } else {
-        setOpenReviewTrade(true);
       }
+      setOpenReviewTrade(true);
     } else if (broker === 'Angel One') {
-      if (edisStatus && edisStatus.edis === true) {
+      if (allBuy) {
         setOpenReviewTrade(true);
       } else if (
-        edisStatus &&
-        edisStatus.edis === false &&
-        (allSell || isMixed)
+        (allSell || isMixed) &&
+        basketHasEquityDeliverySells &&
+        !userDetails?.ddpi_enabled &&
+        !userDetails?.is_authorized_for_sell
       ) {
         setShowAngleOneTpinModel(true);
       } else {
         setOpenReviewTrade(true);
       }
     } else if (broker === 'Dhan') {
-      if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+      if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
         setOpenReviewTrade(true);
       } else if (
         (allSell || isMixed) &&
-        dhanEdisStatus?.data?.some((h) => h.edis === false)
+        basketHasEquityDeliverySells &&
+        (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))
       ) {
         setShowDhanTpinModel(true);
       } else {
@@ -1650,39 +1902,6 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         fontFamily: 'Satoshi-Regular', // Customize your font
       },
     });
-  };
-
-  const IsMarketHours = () => {
-    // Get the current time in IST and format it
-    const currentTimeIST = moment()
-      .utcOffset('+05:30')
-      .format('DD-MM-YYYY HH:mm:ss');
-
-    // Define the cutoff time of 3:15 PM in IST and format it
-    const endTimeIST = moment()
-      .utcOffset('+05:30')
-      .set({ hour: 15, minute: 30, second: 0, millisecond: 0 })
-      .format('DD-MM-YYYY HH:mm:ss');
-
-    // Define the cutoff time of 3:15 PM in IST and format it
-    const startTimeIST = moment()
-      .utcOffset('+05:30')
-      .set({ hour: 9, minute: 15, second: 0, millisecond: 0 })
-      .format('DD-MM-YYYY HH:mm:ss');
-
-    // Compare current time with the cutoff time
-    if (
-      moment(currentTimeIST, 'DD-MM-YYYY HH:mm:ss').isAfter(
-        moment(startTimeIST, 'DD-MM-YYYY HH:mm:ss'),
-      ) &&
-      moment(currentTimeIST, 'DD-MM-YYYY HH:mm:ss').isBefore(
-        moment(endTimeIST, 'DD-MM-YYYY HH:mm:ss'),
-      )
-    ) {
-      return true;
-    }
-
-    return false;
   };
 
   const [cartContainer, setCartContainer] = useState([]);
@@ -1734,52 +1953,50 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     setStocksWithoutSource(filteredStocks);
   };
 
-  //console.log('typeeeeeee=------ i get:---',type);
+  // On mount (and when `type` changes), hydrate React cart state from
+  // AsyncStorage. cartContainer drives UI (badges, "Trade (N)" count,
+  // isSelected). stocksWithoutSource drives the "Ignore Trades" screen's
+  // cart view. Both mirror the persistent cart.
+  //
+  // stockDetails is intentionally NOT set here — it's trade-intent state,
+  // populated explicitly by handleSingleSelectStock (single) or handleTrade /
+  // handleTradeNow1 (bottom-bar Trade (N)) at the moment the user asks to
+  // open the review modal. Matches web where the server cart and the
+  // modal's trade payload are separate concepts.
   useEffect(() => {
     const syncCartWithStockDetails = async () => {
       const localCart = await loadCartFromLocalStorage();
-      //  console.log('kkkk',localCart);
-      // If you want to merge latest fields from `stockDetails` into `localCart`, you can do:
-      const mergedCart = localCart.map(cartItem => {
-        const updatedStock = stockDetails.find(
-          stock =>
-            stock.tradeId === cartItem.tradeId &&
-            stock.symbol === cartItem.symbol,
-        );
-
-        return updatedStock ? { ...cartItem, ...updatedStock } : cartItem;
-      });
-
-      setStockDetails(mergedCart);
-      setStocksWithoutSource(mergedCart);
+      setCartContainer(localCart);
+      setStocksWithoutSource(localCart);
     };
 
     syncCartWithStockDetails();
   }, [type]);
 
+  // Mirrors the server/local cart into React state for UI display (badges,
+  // "Trade (N)" button count, isSelected flag on each card).
+  //
+  // IMPORTANT: this function only updates `cartContainer` — it does NOT touch
+  // `stockDetails`. `stockDetails` is the "trade-intent" state (what the user
+  // is about to submit in the ReviewTradeModal), a separate concept from the
+  // cart. Web does the same separation (web's cart is server-side via
+  // `/api/cart` and never pollutes local `stockDetails`).
+  //
+  // Trade-intent is set explicitly at each boundary:
+  //   - `handleSingleSelectStock`      → setStockDetails([newStock])   (single)
+  //   - `handleTrade` / `handleTradeNow1` → merge cartContainer + edits (Trade N)
+  //   - `handleRemoveAllSelectedStocks`  → setStockDetails([])
+  //   - `syncCartWithStockDetails` effect → initial mount populate
+  //
+  // Before 2026-04-17 this function ALSO wrote `setStockDetails(items)`,
+  // which caused a single Trade-Now click to open the review modal with
+  // EVERY item in the cart (including stale rejected trades) because
+  // `handleSelectStock('add')` runs before the subsequent
+  // `setStockDetails([newStock])` reset — the cart-sync write leaked into
+  // the modal render. See CHANGELOG 2026-04-17 "Trade Now modal shows
+  // extra cart items".
   const updateCartStates = useCallback(items => {
-    const startTime = Date.now();
-    console.log('items we get in container----', items);
-    // Measure time for setCartContainer
-    const cartContainerStart = Date.now();
     setCartContainer(items);
-    const cartContainerEnd = Date.now();
-    console.log(
-      `setCartContainer took ${cartContainerEnd - cartContainerStart} ms`,
-    );
-
-    // Measure time for setStockDetails
-    const stockDetailsStart = Date.now();
-    setStockDetails(items);
-    const stockDetailsEnd = Date.now();
-    console.log(
-      `setStockDetails took ${stockDetailsEnd - stockDetailsStart} ms`,
-    );
-
-    // Measure time for setCartCount
-
-    const endTime = Date.now();
-    console.log(`updateCartStates took ${endTime - startTime} ms in total`);
   }, []);
 
   //const cartItemsCallback = useCallback((items) => items, []);
@@ -1881,6 +2098,27 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       const startEvent = performance.now();
       eventEmitter.emit('cartUpdated');
       timings.eventEmission = performance.now() - startEvent;
+
+      // UX feedback — the cart icon in the top toolbar updates via the
+      // cartUpdated listener, but a toast makes the action visible on the
+      // current screen too (the icon can be out of frame on scroll).
+      if (action === 'add') {
+        Toast.show({
+          type: 'success',
+          text1: 'Added to cart',
+          text2: `${symbol} · ${cartItems.length} item${cartItems.length === 1 ? '' : 's'} in cart`,
+          position: 'bottom',
+          visibilityTime: 2000,
+        });
+      } else if (action === 'remove') {
+        Toast.show({
+          type: 'info',
+          text1: 'Removed from cart',
+          text2: `${symbol} · ${cartItems.length} item${cartItems.length === 1 ? '' : 's'} left`,
+          position: 'bottom',
+          visibilityTime: 1800,
+        });
+      }
 
       const startModal = performance.now();
       //  console.log('Updated cartContainer state:', cartContainer);
@@ -2026,6 +2264,136 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   };
 
   const [stockTypeAndSymbol, setStockTypeAndSymbol] = useState([]);
+  const [pendingManualTrade, setPendingManualTrade] = useState(null);
+  const [showManualConfirm, setShowManualConfirm] = useState(false);
+  const [isManualConfirmLoading, setIsManualConfirmLoading] = useState(false);
+
+  // Auto-show confirm modal when broker modal closes with a pending trade (matching web)
+  const prevBrokerModel = useRef(brokerModel);
+  useEffect(() => {
+    if (prevBrokerModel.current === true && brokerModel === false && pendingManualTrade) {
+      setTimeout(() => setShowManualConfirm(true), 300);
+    }
+    prevBrokerModel.current = brokerModel;
+  }, [brokerModel, pendingManualTrade]);
+
+  // Reject/cancel a basket recommendation (matching web StockRecommendation.js)
+  const handleCancelBasket = async (basketId) => {
+    try {
+      await axios.put(
+        `${server.ccxtServer.baseUrl}comms/reco/cancel/${basketId}`,
+        {},
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+      Toast.show({type: 'success', text1: 'Basket rejected successfully'});
+      await getAllTrades();
+    } catch (err) {
+      console.error('Error cancelling basket:', err);
+      Toast.show({type: 'error', text1: 'Failed to reject basket'});
+    }
+  };
+
+  // "Continue without broker" for bespoke — save preference, refresh as DummyBroker, then proceed
+  const handleContinueWithoutBrokerBespoke = async () => {
+    try {
+      // Step 1: Save no-broker preference (matching web connectBroker.js)
+      await axios.put(
+        `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
+        {userEmail: userEmail, noBrokerRequired: true},
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'aq-encrypted-key': generateToken(
+              Config.REACT_APP_AQ_KEYS,
+              Config.REACT_APP_AQ_SECRET,
+            ),
+          },
+        },
+      );
+
+      // Step 2: Refresh user details so broker becomes DummyBroker
+      await getUserDeatils();
+
+      // Step 3: Close broker modal and proceed
+      setBrokerModel(false);
+
+      // For basket orders, open review trade modal — DummyBroker handles placement
+      if (isBasket) {
+        setOpenReviewTrade(true);
+        return;
+      }
+
+      // For single bespoke trades, show manual confirmation
+      if (stockDetails.length === 0 && !pendingManualTrade) return;
+      setShowManualConfirm(true);
+    } catch (err) {
+      console.error('Error saving no-broker preference:', err);
+      Toast.show({type: 'error', text1: 'Failed to continue. Try again.'});
+      setBrokerModel(false);
+    }
+  };
+
+  const handleConfirmManuallyPlaced = async () => {
+    if (!pendingManualTrade && stockDetails.length === 0) return;
+    setIsManualConfirmLoading(true);
+    try {
+      // If single pending trade (from card action), mark just that one
+      // If batch (from continue without broker), mark all stockDetails
+      const tradesToMark = pendingManualTrade ? [pendingManualTrade] : stockDetails;
+
+      for (const trade of tradesToMark) {
+        await axios.put(
+          `${server.server.baseUrl}api/recommendation`,
+          {uid: trade._id || trade.tradeId, trade_place_status: 'manually_placed'},
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'aq-encrypted-key': generateToken(
+                Config.REACT_APP_AQ_KEYS,
+                Config.REACT_APP_AQ_SECRET,
+              ),
+            },
+          },
+        );
+      }
+
+      // Build synthetic order response so the success modal shows status (matching web)
+      const syntheticResponse = tradesToMark.map(trade => ({
+        symbol: trade.Symbol || trade.tradingSymbol,
+        searchSymbol: trade.searchSymbol || trade.Symbol || trade.tradingSymbol,
+        transactionType: trade.Type || trade.transactionType,
+        quantity: trade.Quantity || trade.quantity,
+        orderType: trade.OrderType || trade.orderType || 'MARKET',
+        orderPlacement: 'success',
+        orderStatus: 'Placed',
+        message_aq: 'Manually placed',
+      }));
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+
+      setPendingManualTrade(null);
+      await Promise.all([
+        getAllTrades(),
+        getCartAllStocks(),
+      ]);
+    } catch (err) {
+      Toast.show({type: 'error', text1: 'Failed to save. Try again.'});
+    } finally {
+      setIsManualConfirmLoading(false);
+      setShowManualConfirm(false);
+    }
+  };
 
   const handleCloseDdpiModal = () => {
     setShowDdpiModal(false);
@@ -2068,28 +2436,69 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   }, [stockRecoNotExecuted]);
 
   const handleSingleSelectStock = async (symbol, tradeId, action) => {
-    await getUserDeatils();
+    // Stale-closure fix (2026-04-18): `broker` / `brokerStatus` from the
+    // top-level `useTrade()` destructure are captured at render time.
+    // If the user taps Trade Now before the initial `getUserDeatils()` in
+    // TradeContext has finished, the closure holds `null` for both, and
+    // the `!broker` check below would fire the broker-selection palette
+    // even when the user is actually connected.
+    //
+    // `getUserDeatils` updates context state AND returns the fresh user
+    // object (TradeContext.js:955). We shadow the closure bindings with
+    // the fresh values so every subsequent check in this function — the
+    // no-broker gate below AND the per-broker branches (Angel One,
+    // Dhan, Zerodha, etc.) further down — reads the current broker.
+    // Latent since commit aee4f10 added this await.
+    const _closureBroker = broker;
+    const _closureBrokerStatus = brokerStatus;
+    const _closureFunds = funds;
+    // Use shared hook — fetches user AND funds inline, so downstream
+    // isFundsEmpty reads post-reconnect value, not stale context.
+    const freshStatus = await refreshBrokerStatus({forceNetwork: true});
     await getRejectedCount();
+    // eslint-disable-next-line no-shadow
+    const broker = freshStatus?.broker ?? _closureBroker;
+    // eslint-disable-next-line no-shadow
+    const brokerStatus = freshStatus?.brokerStatus ?? _closureBrokerStatus;
+    // eslint-disable-next-line no-shadow
+    const funds = freshStatus?.funds ?? _closureFunds;
 
     const rejectedKey = `rejectedCount${broker}`;
     //const rejectedCountFromStorage = await AsyncStorage.getItem(rejectedKey);
     const currentBrokerRejectedCount = await getRejectedCount();
-    console.log('this hit---1');
-    getAllFunds();
-    console.log('this not----2');
-    const isMarketHours = IsMarketHours();
-    const isFundsEmpty = funds?.status === 1 || funds?.status === 2 || funds === null;
-    console.log("thos called ------jjjjjjjjjjj2", isFundsEmpty, funds, brokerStatus);
-    if (isFundsEmpty) {
-      console.log("thos called ------jjjjjjjjjjj1");
+    // Typed pre-flight: surface TRANSIENT (Upstox maintenance, etc.) as a
+    // toast and bail; otherwise reuse `isFundsEmpty` for the existing
+    // expired-session branch below.
+    const _fundsPreflight = classifyFundsResponse(funds, brokerStatus, broker);
+    if (_fundsPreflight.reason === 'TRANSIENT') {
+      Toast.show({
+        type: 'info',
+        text1: `${broker || 'Broker'} temporarily unavailable`,
+        text2: _fundsPreflight.message,
+        visibilityTime: 4500,
+        position: 'bottom',
+      });
+      return;
+    }
+    const isFundsEmpty = !_fundsPreflight.ok && _fundsPreflight.reason !== 'NOT_CONNECTED';
+
+    // Check order must match web: no broker → broker selection, then expired → token expire
+    if (!broker) {
+      // No broker connected at all → save pending trade and show broker selection (matching web)
+      const tradeToSave = recommendationStock.find(
+        item => item.Symbol === symbol && item.tradeId === tradeId,
+      );
+      if (tradeToSave) setPendingManualTrade(tradeToSave);
+      setBrokerModel(true);
+      return;
+    } else if (brokerStatus !== 'connected' || isFundsEmpty) {
+      // Broker set but session expired or funds empty → re-login to same broker
       setOpenTokenExpireModel(true);
       return;
-    } else if (brokerStatus === null || brokerStatus === undefined || brokerStatus !== 'connected' || brokerStatus === "Disconnected") {
-      console.log('here-----', brokerStatus);
-      setBrokerModel(true);
     } else {
       console.log('broker status--', brokerStatus);
-      if (!isMarketHours) {
+      // Market-hours gate — bypassed when advisor has allowAfterHoursOrders enabled.
+      if (!IsMarketHours() && !allowAfterHoursOrders) {
         showToast('Orders cannot be placed after Market hours.', 'error', '');
         return;
       }
@@ -2107,7 +2516,6 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         console.error('Stock not found in recommendationStock.');
         return;
       }
-      // console.log('UpdatedStock:', updatedStock.Exchange);
       const newStock = {
         user_email: updatedStock.user_email,
         trade_given_by: updatedStock.trade_given_by,
@@ -2128,69 +2536,71 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         zerodhaTradeId: updatedStock.zerodhaTradeId,
       };
 
+      // Open the ReviewTradeModal for this ONE stock only. Defers the
+      // modal open to the next tick via setTimeout(…, 0) so React commits
+      // setStockDetails([newStock]) before ReviewTradeModal reads the
+      // stockDetails prop. Matches web NewStockCard.js:585-587 exactly —
+      // without the deferral, any prior setState that touched stockDetails
+      // (e.g. the old updateCartStates → setStockDetails(cart)) could
+      // leak into the modal render, causing "Trade Now on X" to open the
+      // review with every cart item instead of just X.
+      // Set stockDetails to ONLY this stock immediately — clears any
+      // stale cart/basket items from previous failed attempts. Even if
+      // the EDIS modal opens and user closes without auth, stockDetails
+      // is already clean for the next "Trade Now" tap.
+      setStockDetails([newStock]);
+
+      const openReviewForSingle = () => {
+        setTimeout(() => setOpenReviewTrade(true), 0);
+      };
+
       // If stock is already selected
       if (isStockSelected) {
         const isBuyOrder = action.toUpperCase() === 'BUY';
         const isSellOrder = action.toUpperCase() === 'SELL';
-        // console.log('here i am');
         if (broker === 'Angel One') {
           if (isBuyOrder) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           } else if (isSellOrder) {
-            if (edisStatus && edisStatus?.edis === true) {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
-            } else if (edisStatus?.edis === false) {
+            if (!userDetails?.ddpi_enabled && !userDetails?.is_authorized_for_sell) {
               setShowAngleOneTpinModel(true);
             } else {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
+              openReviewForSingle();
             }
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         } else if (broker === 'Dhan') {
           if (isBuyOrder) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           } else if (isSellOrder) {
-            if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
-            } else if (dhanEdisStatus?.data?.some((h) => h.edis === false)) {
+            if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+              openReviewForSingle();
+            } else if (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false)) {
               setShowDhanTpinModel(true);
             } else {
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
+              openReviewForSingle();
             }
           }
         } else if (broker === 'Zerodha') {
-          const allFNO = stockDetails.every(
-            item => item.exchange === 'NFO' || item.exchange === 'BFO',
-          );
+          const isDerivative = ['NFO', 'BFO', 'MCX'].includes((newStock.exchange || '').toUpperCase())
+            || ['MIS', 'NRML', 'CARRYFORWARD'].includes((newStock.productType || 'CNC').toUpperCase());
           if (isBuyOrder) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
-          } else if (isSellOrder && !allFNO) {
-            // If user has completed TPIN authorization or has active DDPI, proceed
+            openReviewForSingle();
+          } else if (isSellOrder && !isDerivative) {
             const canSellSingle = userDetails?.is_authorized_for_sell ||
               ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
             if (canSellSingle) {
               setShowDdpiModal(false);
-              setStockDetails([newStock]);
-              setOpenReviewTrade(true);
+              openReviewForSingle();
             } else {
               setShowDdpiModal(true);
             }
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         } else {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         }
         return;
       }
@@ -2198,50 +2608,41 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       const isBuyOrder = action.toUpperCase() === 'BUY';
       const isSellOrder = action.toUpperCase() === 'SELL';
       await handleSelectStock(symbol, tradeId, 'add', 'handlesingle');
-      // Handling broker-specific logic
+      // Broker-specific auth gating before opening the review modal.
       if (broker === 'Zerodha') {
-        // If user has completed TPIN authorization or has active DDPI, proceed
+        const isDerivativeSingle = ['NFO', 'BFO', 'MCX'].includes((newStock.exchange || '').toUpperCase())
+          || ['MIS', 'NRML', 'CARRYFORWARD'].includes((newStock.productType || 'CNC').toUpperCase());
         const canSellBatch = userDetails?.is_authorized_for_sell ||
           ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
-        if (isSellOrder && !canSellBatch) {
+        if (isSellOrder && !isDerivativeSingle && !canSellBatch) {
           setShowDdpiModal(true);
         } else {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         }
       } else if (broker === 'Angel One') {
         if (isBuyOrder) {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         } else if (isSellOrder) {
-          if (edisStatus && edisStatus?.edis === true) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
-          } else if (edisStatus?.edis === false) {
+          if (!userDetails?.ddpi_enabled && !userDetails?.is_authorized_for_sell) {
             setShowAngleOneTpinModel(true);
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         }
       } else if (broker === 'Dhan') {
         if (isBuyOrder) {
-          setStockDetails([newStock]);
-          setOpenReviewTrade(true);
+          openReviewForSingle();
         } else if (isSellOrder) {
-          if (dhanEdisStatus && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
-          } else if (dhanEdisStatus?.data?.some((h) => h.edis === false)) {
+          if (dhanEdisStatus && dhanEdisStatus?.data && dhanEdisStatus?.data?.length > 0 && dhanEdisStatus?.data?.every((h) => h.edis === true)) {
+            openReviewForSingle();
+          } else if (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false)) {
             setShowDhanTpinModel(true);
           } else {
-            setStockDetails([newStock]);
-            setOpenReviewTrade(true);
+            openReviewForSingle();
           }
         }
       } else {
-        setStockDetails([newStock]);
-        setOpenReviewTrade(true);
+        openReviewForSingle();
       }
     }
   };
@@ -2261,17 +2662,27 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
   };
 
   const handleTradeNow1 = () => {
+    // Populate stockDetails from cartContainer (matches handleTrade; same
+    // rationale — cart/trade-intent separation as of 2026-04-17).
+    const mergedTradeIntent = (cartContainer || []).map(cartItem => {
+      const edited = stockDetails.find(
+        s =>
+          s.tradingSymbol === cartItem.tradingSymbol &&
+          s.tradeId === cartItem.tradeId,
+      );
+      return edited ? {...cartItem, ...edited} : cartItem;
+    });
+    setStockDetails(mergedTradeIntent);
+
     if (broker === 'Zerodha') {
-      console.log('broker:', broker);
-      setOpenReviewTrade(true); // Open the Zerodha modal only when broker is Zerodha and trade button is pressed
+      setOpenReviewTrade(true);
     } else {
       if (brokerStatus === null) {
         setBrokerModel(true);
       } else {
-        console.log('broker:', broker);
         setOpenReviewTrade(true);
       }
-    } // Set the state to open the modal
+    }
   };
 
   const openReviewModal = () => {
@@ -2731,9 +3142,8 @@ useEffect(() => {
   };
 
   const closeZerodhaTradeModal = () => {
-    console.log('stockDetials))))))---->', stockDetails);
-
     setBasketData([]);
+    setOpenZerodhaModel(false);
     setOpenReviewTrade(false);
   };
   const animatedHeight = useRef(new Animated.Value(10)).current;
@@ -2744,11 +3154,8 @@ useEffect(() => {
     setExpandedCardIndex(prev => (prev === index ? null : index));
   }, []);
   const handleConnectAndPlaceOrder = async () => {
-    if (funds.status === false || funds.status === 1) {
-      setOpenTokenExpireModel(true);
-    } else {
-      placeOrder();
-    }
+    if (_haltOnFundsCheckFailure(funds, brokerStatus, broker)) return;
+    placeOrder();
   };
 
   return (
@@ -2788,6 +3195,7 @@ useEffect(() => {
         loading={loading}
         userEmail={userEmail}
         handleTradeBasket={handleTradeBasket}
+        handleCancelBasket={handleCancelBasket}
         getAllTrades={getAllTrades}
         handleSelectAllStocks={handleSelectAllStocks}
         handleRemoveAllSelectedStocks={handleRemoveAllSelectedStocks}
@@ -2819,6 +3227,7 @@ useEffect(() => {
           isVisible={openZerodhaReviewModal}
           onClose={closeZerodhaTradeModal}
           setOpenZerodhaModel={setOpenZerodhaModel}
+          skipToWebView={true}
           stockDetails={stockDetails}
           isBasket={isBasket}
           basketData={basketData}
@@ -2872,8 +3281,65 @@ useEffect(() => {
           setOpenSucessModal={setOpenSucessModal}
           orderPlacementResponse={orderPlacementResponse}
           currentBroker={broker}
+          // Outgoing trades — used by RecommendationSuccessModal as the
+          // fallback source for `variant` lookups when the response item
+          // doesn't carry the field (rebalance/MP lane via ccxt-india).
+          // See utils/tradeVariant.js § resolveResultVariant.
+          originalStockDetails={stockDetails}
         />
       )}
+
+      {/* Manual Trade Confirmation — shown after broker modal closes with pending trade (matching web) */}
+      <Modal
+        visible={showManualConfirm && (!!pendingManualTrade || stockDetails.length > 0)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowManualConfirm(false);
+          setPendingManualTrade(null);
+        }}
+      >
+        <View style={styles.manualConfirmOverlay}>
+          <View style={styles.manualConfirmContainer}>
+            <Text style={styles.manualConfirmTitle}>Confirm Manually Placed</Text>
+            <Text style={styles.manualConfirmSubtitle}>Have you manually placed {pendingManualTrade ? 'this trade' : 'these trades'}?</Text>
+            {pendingManualTrade ? (
+              <View style={styles.manualConfirmTradeInfo}>
+                <Text style={styles.manualConfirmTradeText}>
+                  {pendingManualTrade.Type || pendingManualTrade.transactionType}  ·  {pendingManualTrade.Symbol || pendingManualTrade.tradingSymbol}  ·  Qty: {pendingManualTrade.Quantity || pendingManualTrade.quantity}
+                </Text>
+              </View>
+            ) : stockDetails.length > 0 ? (
+              <View style={styles.manualConfirmTradeInfo}>
+                <Text style={styles.manualConfirmTradeText}>
+                  {stockDetails.length} trade{stockDetails.length !== 1 ? 's' : ''} selected
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.manualConfirmButtons}>
+              <TouchableOpacity
+                style={styles.manualConfirmNoBtn}
+                disabled={isManualConfirmLoading}
+                onPress={() => {
+                  setShowManualConfirm(false);
+                  setPendingManualTrade(null);
+                }}
+              >
+                <Text style={styles.manualConfirmNoBtnText}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.manualConfirmYesBtn}
+                disabled={isManualConfirmLoading}
+                onPress={handleConfirmManuallyPlaced}
+              >
+                <Text style={styles.manualConfirmYesBtnText}>
+                  {isManualConfirmLoading ? 'Saving...' : 'Yes, Placed'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {OpenTokenExpireModel && (
         <IIFLReviewTradeModal
@@ -2927,6 +3393,7 @@ useEffect(() => {
           setShowBrokerModal={setBrokerModel}
           setOpenTokenExpireModel={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
+          handleAcceptRebalanceWithoutBroker={handleContinueWithoutBrokerBespoke}
         />
       )}
 
@@ -2937,6 +3404,8 @@ useEffect(() => {
           proceedWithTpin={handleProceedWithTpin}
           userDetails={userDetails && userDetails}
           setOpenReviewTrade={setOpenReviewTrade}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -2956,6 +3425,8 @@ useEffect(() => {
           userDetails={userDetails}
           edisStatus={edisStatus}
           tradingSymbol={stockDetails.map(stock => stock.tradingSymbol)}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -2964,6 +3435,8 @@ useEffect(() => {
           isOpen={showFyersTpinModal}
           setIsOpen={setShowFyersTpinModal}
           userDetails={userDetails}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -2975,6 +3448,8 @@ useEffect(() => {
           dhanEdisStatus={dhanEdisStatus}
           stockTypeAndSymbol={stockTypeAndSymbol}
           singleStockTypeAndSymbol={singleStockTypeAndSymbol}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
@@ -3007,11 +3482,14 @@ useEffect(() => {
           setStoreModalName={setStoreModalName}
           storeModalName={storeModalName}
           funds={funds}
+          reopenRebalanceModal={() => setOpenRebalanceModal(true)}
+          getUserDetails={getUserDeatils}
         />
       )}
 
       {showIIFLModal && (
-        <IIFLModal
+        <BrokerConnectModalDispatch
+          brokerName="IIFL"
           isVisible={showIIFLModal}
           onClose={() => setShowIIFLModal(false)}
           setShowBrokerModal={setOpenTokenExpireModel}
@@ -3020,18 +3498,19 @@ useEffect(() => {
       )}
 
       {showICICIUPModal && (
-        <ICICIUPModal
+        <BrokerConnectModalDispatch
+          brokerName="ICICI"
           isVisible={showICICIUPModal}
-          showICICIUPModal={showICICIUPModal}
-          setShowICICIUPModal={setShowICICIUPModal}
           onClose={() => setShowICICIUPModal(false)}
+          setShowICICIUPModal={setShowICICIUPModal}
           setShowBrokerModal={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
         />
       )}
 
       {showupstoxModal && (
-        <UpstoxModal
+        <BrokerConnectModalDispatch
+          brokerName="Upstox"
           isVisible={showupstoxModal}
           onClose={() => setShowupstoxModal(false)}
           setShowupstoxModal={setShowupstoxModal}
@@ -3041,7 +3520,8 @@ useEffect(() => {
       )}
 
       {showangleoneModal && (
-        <AngleOneBookingModal
+        <BrokerConnectModalDispatch
+          brokerName="Angel One"
           isVisible={showangleoneModal}
           onClose={() => setShowangleoneModal(false)}
           setShowangleoneModal={setShowangleoneModal}
@@ -3051,7 +3531,8 @@ useEffect(() => {
       )}
 
       {showzerodhamodal && (
-        <ZerodhaConnectModal
+        <BrokerConnectModalDispatch
+          brokerName="Zerodha"
           isVisible={showzerodhamodal}
           onClose={() => setShowzerodhaModal(false)}
           setShowzerodhaModal={setShowzerodhaModal}
@@ -3061,7 +3542,8 @@ useEffect(() => {
       )}
 
       {showhdfcModal && (
-        <HDFCconnectModal
+        <BrokerConnectModalDispatch
+          brokerName="HDFC"
           isVisible={showhdfcModal}
           onClose={() => setShowhdfcModal(false)}
           setShowhdfcModal={setShowhdfcModal}
@@ -3071,7 +3553,8 @@ useEffect(() => {
       )}
 
       {showDhanModal && (
-        <DhanConnectModal
+        <BrokerConnectModalDispatch
+          brokerName="Dhan"
           isVisible={showDhanModal}
           onClose={() => setShowDhanModal(false)}
           setShowDhanModal={setShowDhanModal}
@@ -3081,29 +3564,30 @@ useEffect(() => {
       )}
 
       {showAliceblueModal && (
-        <AliceBlueConnect
+        <BrokerConnectModalDispatch
+          brokerName="AliceBlue"
           isVisible={showAliceblueModal}
-          showAliceblueModal={showAliceblueModal}
-          setShowAliceblueModal={setShowAliceblueModal}
           onClose={() => setShowAliceblueModal(false)}
+          setShowAliceblueModal={setShowAliceblueModal}
           setShowBrokerModal={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
         />
       )}
 
       {showFyersModal && (
-        <FyersConnect
+        <BrokerConnectModalDispatch
+          brokerName="Fyers"
           isVisible={showFyersModal}
-          showFyersModal={showFyersModal}
-          setShowFyersModal={setShowFyersModal}
           onClose={() => setShowFyersModal(false)}
+          setShowFyersModal={setShowFyersModal}
           setShowBrokerModal={setOpenTokenExpireModel}
           fetchBrokerStatusModal={fetchBrokerStatusModal}
         />
       )}
 
       {showKotakModal && (
-        <KotakModal
+        <BrokerConnectModalDispatch
+          brokerName="Kotak"
           isVisible={showKotakModal}
           onClose={() => setShowKotakModal(false)}
           setShowKotakModal={setShowKotakModal}
@@ -3113,7 +3597,8 @@ useEffect(() => {
       )}
 
       {showMotilalModal && (
-        <MotilalModal
+        <BrokerConnectModalDispatch
+          brokerName="Motilal"
           isVisible={showMotilalModal}
           onClose={() => setShowMotilalModal(false)}
           setMotilalModal={setShowMotilalModal}
@@ -3139,6 +3624,74 @@ const styles = StyleSheet.create({
     height: 250,
     alignSelf: 'center',
     marginTop: 20,
+  },
+  manualConfirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  manualConfirmContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    width: '100%',
+    maxWidth: 340,
+    padding: 22,
+  },
+  manualConfirmTitle: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Bold',
+    color: '#1e293b',
+    marginBottom: 8,
+  },
+  manualConfirmSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Poppins-Regular',
+    color: '#475569',
+    marginBottom: 4,
+  },
+  manualConfirmTradeInfo: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 18,
+    marginTop: 6,
+  },
+  manualConfirmTradeText: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+    color: '#334155',
+  },
+  manualConfirmButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  manualConfirmNoBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+  },
+  manualConfirmNoBtnText: {
+    fontSize: 13,
+    fontFamily: 'Poppins-Medium',
+    color: '#475569',
+  },
+  manualConfirmYesBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+  },
+  manualConfirmYesBtnText: {
+    fontSize: 13,
+    fontFamily: 'Poppins-Medium',
+    color: '#fff',
   },
 });
 

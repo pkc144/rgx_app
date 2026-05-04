@@ -11,23 +11,67 @@ import {
 } from 'react-native';
 import { getAuth } from '@react-native-firebase/auth';
 import axios from 'axios';
+import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import Config from 'react-native-config';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import { useTrade } from '../TradeContext';
+import { useConfig } from '../../context/ConfigContext';
+import useModalStore from '../../GlobalUIModals/modalStore';
+import { registerCallback } from '../../utils/brokerAuth';
+import {
+  handleSmartReauth,
+  flipPrimaryBroker,
+  markBrokerExpired,
+} from '../../utils/reauthHelpers';
+import { isBrokerSessionExpired } from '../../utils/brokerStateUtils';
+
+// Backend `connected_brokers[].broker` → ModalManager switch key. Keep in
+// sync with src/GlobalUIModals/ModalManager.js. Brokers not listed here
+// fall back to the onReconnect parent callback.
+const BROKER_MODAL_KEY_MAP = {
+  'Angel One': 'Angel One',
+  'Zerodha': 'Zerodha',
+  'Upstox': 'Upstox',
+  'Kotak': 'Kotak',
+  'Dhan': 'Dhan',
+  'Fyers': 'Fyers',
+  'AliceBlue': 'AliceBlue',
+  'Groww': 'Groww',
+  'ICICI Direct': 'ICICI',
+  'Hdfc Securities': 'HDFC',
+  'Motilal Oswal': 'Motilal',
+  'Axis Securities': 'Axis Securities',
+  'IIFL Securities': 'IIFL',
+};
 
 const ManageConnectionsModal = ({
   visible,
   onClose,
   onConnectionRemoved,
   onBrokerSwitched,
+  onReconnect,
+  onAddBroker,
 }) => {
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState([]);
   const [removing, setRemoving] = useState(null);
   const [switching, setSwitching] = useState(null);
-  const { configData, broker: currentBroker } = useTrade();
+  const [reauthing, setReauthing] = useState(null);
+  const { configData, broker: currentBroker, userDetails } = useTrade();
+  const freshConfig = useConfig();
+
+  // brokerConnectRedirectURL is what the broker redirects to after OAuth.
+  // Must match the per-advisor URL registered in each broker's dev
+  // portal — no `.env` fallback (the bundled
+  // `app-links.alphaquark.in/broker-callback` isn't registered
+  // anywhere, so using it silently fails reauth with "Invalid
+  // redirect_uri"). Same chain as upstoxModal / AxisConnectModal.
+  const brokerConnectRedirectURL =
+    freshConfig?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+    configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
+    '';
 
   const auth = getAuth();
   const user = auth.currentUser;
@@ -55,12 +99,18 @@ const ManageConnectionsModal = ({
       );
 
       if (response.data?.data?.connected_brokers) {
-        // Transform to our format
         const brokers = response.data.data.connected_brokers.map(b => ({
           broker: b.broker,
           connected_at: b.connected_at,
+          status: b.status,
+          token_expire: b.token_expire,
           is_active: b.broker === currentBroker,
           has_credentials: true,
+          // Cross-check status AND token_expire — backend sometimes
+          // keeps status='connected' past the token's actual expiry
+          // (e.g., ICICI after the daily morning reset), so the
+          // timestamp is the authoritative signal.
+          is_expired: isBrokerSessionExpired(b),
         }));
         setConnections(brokers);
       } else {
@@ -163,6 +213,100 @@ const ManageConnectionsModal = ({
     }
   };
 
+  const handleReconnect = async (brokerName) => {
+    const modalKey = BROKER_MODAL_KEY_MAP[brokerName];
+    if (!modalKey) {
+      // Broker not registered in ModalManager — let the parent handle it
+      // (e.g., open BrokerSelectionModal as a fallback).
+      onClose?.();
+      onReconnect?.(brokerName);
+      return;
+    }
+
+    setReauthing(brokerName);
+    try {
+      // Step 1: Flip primary to this broker up-front. Clicking Reconnect
+      // is the user's signal that they want this broker to be active,
+      // even if they back out of the OAuth step that follows. Mirrors
+      // web subscription.js:161 (setPrimaryBrokerRequest).
+      await flipPrimaryBroker(brokerName, userEmail, configData);
+
+      // Step 1b: Mark broker as `status=expired` so UI shows "Re-auth
+      // needed" until the subsequent OAuth/credentials flow succeeds.
+      // The per-broker connect-broker route will overwrite to 'connected'
+      // on success; on failure / back-out the expired state correctly
+      // sticks. Without this, brokers with future-dated token_expire
+      // (e.g. AliceBlue's hardcoded +24h) lingered as "Connected" even
+      // after a failed reconnect.
+      await markBrokerExpired(brokerName, userEmail, configData);
+
+      // Step 2: Try the smart credential-reauth path (Upstox/ICICI/HDFC/
+      // Motilal/Fyers). It hits /reauth-url, decrypts stored creds, and
+      // opens the per-broker modal with a reauthConfig payload so the
+      // user skips the credential form entirely.
+      const result = await handleSmartReauth({
+        brokerName,
+        userEmail,
+        userDetails,
+        configData,
+        brokerConnectRedirectURL,
+      });
+
+      if (result.handled && result.silent) {
+        // Groww silent refresh — backend regenerated the session token
+        // from stored Base32 seed; no per-broker modal needed at all.
+        // Refresh broker status + close ManageConnections; show a
+        // success toast.
+        console.log('[ManageConnections] silent refresh OK:', brokerName);
+        try {
+          if (typeof Toast?.show === 'function') {
+            Toast.show({
+              type: 'success',
+              text1: `${brokerName} reconnected`,
+              text2: 'Session refreshed using saved credentials.',
+              visibilityTime: 3000,
+            });
+          }
+        } catch (_) {}
+        // Tell parent to refresh broker status (no modal to open).
+        onReconnect?.(brokerName, null, null);
+        onClose?.();
+        return;
+      }
+
+      if (result.handled) {
+        // Credential broker — hand dispatch to parent, don't openModal
+        // here (would race with the parent's ManageConnections close).
+        console.log('[ManageConnections] credential reauth handed to parent:', brokerName, result.modalKey);
+        onReconnect?.(brokerName, result.modalKey, result.payload);
+        onClose?.();
+        return;
+      }
+
+      // Step 3: Fall back to the full per-broker modal (partner OAuth
+      // brokers, Kotak TOTP, Groww fresh creds, or any failure in the
+      // smart path — e.g., backend said requiresTotp/requiresForm, or
+      // we couldn't read local creds).
+      if (brokerName === 'Angel One') {
+        try {
+          await registerCallback('angelone', '/stock-recommendation');
+        } catch (err) {
+          console.warn('[ManageConnections] Angel One nonce registration failed:', err);
+        }
+      }
+      // Two transparent Modals can't be stacked on Android — opening
+      // the per-broker Modal while this one is still mounted just
+      // swallows it. Hand the broker key up to the parent via
+      // onReconnect; SubscriptionScreen opens the per-broker Modal from
+      // a useEffect that fires after this modal has fully unmounted.
+      console.log('[ManageConnections] handing reconnect to parent:', brokerName, 'modalKey:', modalKey);
+      onReconnect?.(brokerName, modalKey);
+      onClose?.();
+    } finally {
+      setReauthing(null);
+    }
+  };
+
   const renderConnection = ({ item }) => (
     <View style={styles.connectionItem}>
       <View style={styles.connectionInfo}>
@@ -172,18 +316,27 @@ const ManageConnectionsModal = ({
             <Text style={styles.activeBadgeText}>Active</Text>
           </View>
         )}
-        {item.has_credentials && !item.is_active && (
+        {item.is_expired && (
+          <View style={styles.expiredBadge}>
+            <Text style={styles.expiredBadgeText}>Session Expired</Text>
+          </View>
+        )}
+        {item.has_credentials && !item.is_active && !item.is_expired && (
           <View style={styles.credentialsBadge}>
             <Text style={styles.credentialsBadgeText}>Stored Credentials</Text>
           </View>
         )}
       </View>
       <View style={styles.actionButtons}>
-        {!item.is_active && (
+        {!item.is_active && !item.is_expired && (
           <TouchableOpacity
             style={[styles.switchBtn, switching === item.broker && styles.switchBtnDisabled]}
             onPress={() => handleSwitch(item.broker)}
-            disabled={switching === item.broker || removing === item.broker}
+            disabled={
+              switching === item.broker ||
+              removing === item.broker ||
+              reauthing === item.broker
+            }
           >
             {switching === item.broker ? (
               <ActivityIndicator size="small" color="#0056B7" />
@@ -192,10 +345,37 @@ const ManageConnectionsModal = ({
             )}
           </TouchableOpacity>
         )}
+        {/* Re-auth shows on every row — matches web /subscriptions where
+            every broker has a Re-auth button regardless of status. Button
+            uses the amber style when expired to draw attention, blue otherwise. */}
+        <TouchableOpacity
+          style={[
+            item.is_expired ? styles.reconnectBtn : styles.reauthBtn,
+            reauthing === item.broker && styles.reconnectBtnDisabled,
+          ]}
+          onPress={() => handleReconnect(item.broker)}
+          disabled={
+            removing === item.broker ||
+            switching === item.broker ||
+            reauthing === item.broker
+          }
+        >
+          {reauthing === item.broker ? (
+            <ActivityIndicator size="small" color={item.is_expired ? '#fff' : '#0056B7'} />
+          ) : (
+            <Text style={item.is_expired ? styles.reconnectBtnText : styles.reauthBtnText}>
+              {item.is_expired ? 'Reconnect' : 'Re-auth'}
+            </Text>
+          )}
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.disconnectBtn, removing === item.broker && styles.disconnectBtnDisabled]}
           onPress={() => handleDisconnect(item.broker)}
-          disabled={removing === item.broker || switching === item.broker}
+          disabled={
+            removing === item.broker ||
+            switching === item.broker ||
+            reauthing === item.broker
+          }
         >
           {removing === item.broker ? (
             <ActivityIndicator size="small" color="#dc2626" />
@@ -226,6 +406,18 @@ const ManageConnectionsModal = ({
           <Text style={styles.subtitle}>
             Manage your broker connections. Remove connections to free up slots for OAuth-based brokers like Groww.
           </Text>
+
+          {onAddBroker && (
+            <TouchableOpacity
+              style={styles.addBrokerBtn}
+              onPress={() => {
+                onClose?.();
+                onAddBroker();
+              }}
+            >
+              <Text style={styles.addBrokerBtnText}>+ Connect new broker</Text>
+            </TouchableOpacity>
+          )}
 
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -351,13 +543,61 @@ const styles = StyleSheet.create({
     color: '#92400e',
     fontWeight: '500',
   },
+  expiredBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+  },
+  expiredBadgeText: {
+    fontSize: 12,
+    color: '#92400e',
+    fontWeight: '600',
+  },
+  reconnectBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f59e0b',
+    minWidth: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reconnectBtnDisabled: {
+    opacity: 0.7,
+  },
+  reconnectBtnText: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  reauthBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#0056B7',
+    backgroundColor: '#fff',
+    minWidth: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reauthBtnText: {
+    fontSize: 13,
+    color: '#0056B7',
+    fontWeight: '600',
+  },
   actionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   switchBtn: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
@@ -367,12 +607,12 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   switchBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#0056B7',
     fontWeight: '500',
   },
   disconnectBtn: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
@@ -382,9 +622,25 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   disconnectBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#dc2626',
     fontWeight: '500',
+  },
+  addBrokerBtn: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#0056B7',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 86, 183, 0.06)',
+  },
+  addBrokerBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0056B7',
   },
   doneBtn: {
     marginHorizontal: 20,

@@ -12,6 +12,11 @@ import FyersConnectUI from '../../UIComponents/BrokerConnectionUI/FyersConnectUI
 import { useTrade } from '../../screens/TradeContext';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import {
+  useSdkBridge,
+  sdkConnectBroker,
+  sdkDualWriteSafely,
+} from '../../sdk/brokerSdkBridge';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06;
@@ -22,9 +27,11 @@ const FyersConnect = ({
   onClose,
   setShowBrokerModal,
   fetchBrokerStatusModal,
+  reauthConfig,
 }) => {
   const { configData } = useTrade();
   const showAlert = useModalStore((state) => state.showAlert);
+  const sdkBridge = useSdkBridge();
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -84,6 +91,11 @@ const FyersConnect = ({
 
   const userId = userDetails && userDetails._id;
 
+  // Egress-IP gate (see EgressIpCallout). Fyers requires a dedicated
+  // static IP whitelisted in the user's Fyers API dashboard.
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
+
   // Step 1: Extract auth_code from OAuth callback URL
   const handleWebViewNavigationStateChange = newNavState => {
     const { url } = newNavState;
@@ -107,6 +119,7 @@ const FyersConnect = ({
   const connectFyers = () => {
     if (fyersAuthCode !== null && apiKey && secretKey) {
       let data = JSON.stringify({
+        user_email: userEmail,
         clientId: secretKey,
         clientSecret: apiKey,
         authCode: fyersAuthCode,
@@ -172,9 +185,21 @@ const FyersConnect = ({
         data: JSON.stringify(brokerData),
       };
 
+      // SDK pilot dual-write — see brokerSdkBridge.js. Fired
+      // alongside the legacy save (PUT /api/user/connect-broker)
+      // so we can verify /sdk/v1/connections/Fyers/connect in
+      // production. Failure logged, never blocks legacy success.
+      if (sdkBridge.enabled && sdkBridge.ready && sdkBridge.client) {
+        sdkDualWriteSafely(
+          sdkConnectBroker(sdkBridge.client, 'Fyers', brokerData),
+          'Fyers',
+          'connect',
+        );
+      }
+
       axios
         .request(config)
-        .then(response => {
+        .then(async response => {
           console.log('[Fyers] Broker connection saved successfully');
 
           // Update model portfolio with broker information
@@ -199,15 +224,43 @@ const FyersConnect = ({
             console.warn('[Fyers] Model portfolio update failed (non-critical):', modelPortfolioError);
           }
 
-          fetchBrokerStatusModal();
-          eventEmitter.emit('refreshEvent', { source: 'Fyers broker connection' });
-          showAlert('success', 'Connected Successfully', 'Your Fyers broker has been connected successfully!');
           onClose();
           setShowBrokerModal(false);
+          // Wrap post-success steps so a downstream throw doesn't bubble
+          // to the outer .catch and get rewritten as "Connection Error".
+          // See KotakModal.js (commit 172767d) and BROKER_CONNECTION.md
+          // § Broker-connect post-success hygiene.
+          try {
+            const result = await fetchBrokerStatusModal();
+            eventEmitter.emit('refreshEvent', { source: 'Fyers broker connection' });
+            if (!result?.migrationWillShow) {
+              showAlert('success', 'Connected Successfully', 'Your Fyers broker has been connected successfully!');
+            }
+          } catch (postSuccessErr) {
+            console.warn(
+              '[Fyers] post-success step threw (connection IS saved DB-side):',
+              postSuccessErr?.message || postSuccessErr,
+            );
+          }
         })
         .catch(error => {
           console.error('[Fyers] connect-broker error:', error);
-          showAlert('error', 'Connection Error', 'Failed to save Fyers connection. Please try again.');
+          const isHttpError = !!error?.response;
+          const rawMessage =
+            error.response?.data?.message ||
+            error.response?.data?.details ||
+            '';
+          let alertTitle = 'Connection Error';
+          let alertBody;
+          if (isHttpError) {
+            alertBody =
+              rawMessage || 'Failed to save Fyers connection. Please try again.';
+          } else {
+            alertTitle = 'Connection Issue';
+            alertBody =
+              'We couldn\'t complete the connection because of a network or app error. Your credentials may already be saved — please refresh to check before retrying.';
+          }
+          showAlert('error', alertTitle, alertBody);
         });
     }
   };
@@ -231,6 +284,10 @@ const FyersConnect = ({
   };
 
   const updateSecretKey = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
     setLoading(true);
     let data = JSON.stringify({
       uid: userId,
@@ -276,8 +333,26 @@ const FyersConnect = ({
       sheet.current?.present();
     } else {
       sheet.current?.dismiss();
+      reauthHydratedRef.current = false;
     }
   }, [isVisible]);
+
+  // Smart-reauth hydration. Fyers swaps modal terminology vs. DB:
+  //   modal `apiKey` state  = OAuth secret (stored as credentials.secretKey)
+  //   modal `secretKey` state = clientId (stored as credentials.clientCode)
+  // reauthConfig follows DB naming — we translate here.
+  const reauthHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!isVisible || !reauthConfig || reauthHydratedRef.current) return;
+    if (!reauthConfig.authUrl || !reauthConfig.secretKey || !reauthConfig.clientCode) {
+      return;
+    }
+    reauthHydratedRef.current = true;
+    setApiKey(reauthConfig.secretKey);   // OAuth secret
+    setSecretKey(reauthConfig.clientCode); // clientId
+    setAuthUrl(reauthConfig.authUrl);
+    setShowWebView(true);
+  }, [isVisible, reauthConfig]);
 
   const [isPasswordVisibleup, setIsPasswordVisibleup] = useState(false);
 
@@ -310,6 +385,13 @@ const FyersConnect = ({
       helpVisible={helpVisible}
       setHelpVisible={setHelpVisible}
       styles={styles}
+      egressUserId={userId}
+      egressUserEmail={userEmail}
+      egressReady={egressReady}
+      setEgressReady={setEgressReady}
+      unmetAck={unmetAck}
+      setUnmetAck={setUnmetAck}
+      configData={configData}
     />
   );
 };

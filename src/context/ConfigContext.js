@@ -1,6 +1,7 @@
 
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from '../utils/safeConfig';
 import APP_VARIANTS from '../utils/Config';
 import { generateToken } from '../utils/SecurityTokenManager';
@@ -11,10 +12,36 @@ export const useConfig = () => {
     return useContext(ConfigContext);
 };
 
+// Default variant used when APP_VARIANT is missing or unknown. Was
+// 'rgxresearch' historically — but rgxresearch falls through to
+// sharedUIConfig, whose logo / theme is ZamZam-branded (sharedUIConfig
+// was originally the ZamZam variant config; logo file
+// `src/assets/AppLogo/logo.png` is byte-identical to
+// `src/assets/AppLogo/Zamzam.png`). On AlphaQuark builds we MUST NOT
+// silently degrade to ZamZam branding when the env var fails to
+// resolve (gradle missed the .env, react-native-config not linked,
+// dev build bundling stale config, etc.). 'alphaquark' is a safer
+// default for this codebase since the variant explicitly declares
+// AlphaQuarkLogo. White-label tenants who deploy this app from their
+// own fork should change DEFAULT_VARIANT to their own variant key.
+const DEFAULT_VARIANT = 'alphaquark';
+
 export const ConfigProvider = ({ children }) => {
-    const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
-    // Ensure the variant exists in APP_VARIANTS, otherwise use 'rgxresearch'
-    const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : 'rgxresearch';
+    const selectedVariant = Config?.APP_VARIANT || DEFAULT_VARIANT;
+    // Ensure the variant exists in APP_VARIANTS; otherwise fall back
+    // to DEFAULT_VARIANT (alphaquark) — never to a variant whose
+    // sharedUIConfig contains foreign branding.
+    const validVariant = APP_VARIANTS[selectedVariant] ? selectedVariant : DEFAULT_VARIANT;
+    if (!Config?.APP_VARIANT) {
+        // Loud warning so a missing env var is visible during dev /
+        // staging builds rather than silently picking the default.
+        // eslint-disable-next-line no-console
+        console.warn(
+            '[ConfigContext] APP_VARIANT not set in .env — defaulting to',
+            DEFAULT_VARIANT,
+            '. If this is a non-AlphaQuark tenant build, set APP_VARIANT explicitly.',
+        );
+    }
     const initialConfig = { ...APP_VARIANTS[validVariant], selectedVariant: validVariant };
     const [config, setConfig] = useState(initialConfig);
     const [loading, setLoading] = useState(true);
@@ -64,6 +91,13 @@ export const ConfigProvider = ({ children }) => {
                         hasApiKeys: !!apiData.apiKeys,
                         advisorSpecificTag: apiData.apiKeys?.advisorSpecificTag,
                         advisorRaCode: apiData.apiKeys?.advisorRaCode,
+                        brokerConnectRedirectUrl: apiData.brokerConnectRedirectUrl,
+                        customDomain: apiData.customDomain,
+                    });
+                    console.log('[ConfigContext] Redirect URL resolution:', {
+                        fromAPI: apiData.brokerConnectRedirectUrl,
+                        fromEnv: Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL,
+                        final: apiData.brokerConnectRedirectUrl || Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL || '',
                     });
 
                     // Map API response to APP_VARIANTS structure
@@ -121,6 +155,13 @@ export const ConfigProvider = ({ children }) => {
                         brokerConnectEnabled: apiData.featureFlags?.brokerConnectEnabled !== undefined
                             ? apiData.featureFlags.brokerConnectEnabled
                             : true,
+                        // When true, the client-side 09:15–15:30 IST gate is bypassed so
+                        // advisors can queue orders after hours (broker decides accept/AMO).
+                        // Default true — gate is bypassed unless an admin explicitly sets
+                        // this flag to false on the advisor config record.
+                        allowAfterHoursOrders: apiData.featureFlags?.allowAfterHoursOrders !== undefined
+                            ? apiData.featureFlags.allowAfterHoursOrders
+                            : (apiData.allowAfterHoursOrders !== undefined ? apiData.allowAfterHoursOrders : true),
 
                         // ============================================================================
                         // PAYMENT CONFIGURATION
@@ -191,6 +232,7 @@ export const ConfigProvider = ({ children }) => {
                         // ============================================================================
                         REACT_APP_ANGEL_ONE_API_KEY: apiData.apiKeys?.angelOneApiKey || Config.REACT_APP_ANGEL_ONE_API_KEY || '',
                         REACT_APP_ZERODHA_API_KEY: apiData.apiKeys?.zerodhaApiKey || Config.REACT_APP_ZERODHA_API_KEY || '',
+                        REACT_APP_BROKER_CONNECT_REDIRECT_URL: apiData.brokerConnectRedirectUrl || Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL || '',
 
                         // ============================================================================
                         // PAYMENT MODAL UI CUSTOMIZATION
@@ -207,6 +249,14 @@ export const ConfigProvider = ({ children }) => {
                             ...(APP_VARIANTS.EmptyStateUi || {}),
                             ...(apiData.EmptyStateUi || apiData.emptyStateUi || {}),
                         },
+
+                        // ============================================================================
+                        // SEMANTIC COLOR TOKENS (optional advisor override)
+                        // Nested object — partial overrides of the default semantic palette
+                        // defined in src/theme/colors.js. See docs/COLOR_TOKENS.md for the
+                        // full token catalog.
+                        // ============================================================================
+                        colorTokens: apiData.colorTokens || {},
                     };
 
                     console.log('✅ Using newConfig from API for APP_VARIANTS:', {
@@ -231,6 +281,27 @@ export const ConfigProvider = ({ children }) => {
                     });
 
                     setConfig(newConfig);
+
+                    // Sync fresh config to AsyncStorage so TradeContext also gets updated values
+                    try {
+                        const storedJson = await AsyncStorage.getItem('@app:advisorConfig');
+                        if (storedJson) {
+                            const stored = JSON.parse(storedJson);
+                            const updatedStored = {
+                                ...stored,
+                                config: {
+                                    ...(stored.config || {}),
+                                    REACT_APP_BROKER_CONNECT_REDIRECT_URL: newConfig.REACT_APP_BROKER_CONNECT_REDIRECT_URL,
+                                    REACT_APP_ANGEL_ONE_API_KEY: newConfig.REACT_APP_ANGEL_ONE_API_KEY,
+                                    REACT_APP_ZERODHA_API_KEY: newConfig.REACT_APP_ZERODHA_API_KEY,
+                                },
+                            };
+                            await AsyncStorage.setItem('@app:advisorConfig', JSON.stringify(updatedStored));
+                            console.log('[ConfigContext] Synced fresh config to AsyncStorage');
+                        }
+                    } catch (syncErr) {
+                        console.warn('[ConfigContext] Failed to sync to AsyncStorage:', syncErr.message);
+                    }
                 }
             } catch (error) {
                 console.error('❌ Error fetching app config:', error);

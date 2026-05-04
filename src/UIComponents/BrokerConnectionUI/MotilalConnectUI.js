@@ -22,15 +22,278 @@ import {
   ChevronLeft,
 } from 'lucide-react-native';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import {WebView} from 'react-native-webview';
 import motilalIcon from '../../assets/Motilalicon.png';
 import MotilalHelpContent from './HelpUI/MotilalHelpContent';
+import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
+
+/**
+ * Motilal in-page error watcher (port of tidi_new
+ * `_kMotilalErrorWatcher`).
+ *
+ * Motilal's hosted login page renders certain server-side errors INTO
+ * the page DOM (no navigation, no WebView error event, no HTTP error)
+ * as plain text in red:
+ *
+ *   - "Authorization is Invalid In Header Parameter"
+ *   - "MO1007 Two Factor Authentication Failed" / "MO1007"
+ *   - "Two Factor Authentication Failed"
+ *
+ * All three surface the same root cause documented at the top of this
+ * file and CHANGELOG `[3.9.24]`: Motilal binds OTP + page-side session
+ * cookie + apikey-derived `Authorization` header to a SINGLE page-load,
+ * and any reload (DNS retry, RESEND OTP press the page re-renders, app
+ * background/foreground cycle) rotates the server session. Existing
+ * onError / onLoadEnd hooks miss it because the error is rendered
+ * IN-PAGE — Motilal's submit endpoint returns 200 with the error text
+ * painted into the response HTML.
+ *
+ * This watcher polls `document.body.innerText` every 750ms; on the
+ * first hit it `window.ReactNativeWebView.postMessage()`s the parent
+ * RN component so the host can surface the existing post-load error
+ * UI ("Restart connection" CTA + 30s connect-cooldown still applies).
+ *
+ * Idempotent via `window.__aqMotilalWatcher`; stops polling after one
+ * hit so we don't spam the bridge.
+ */
+const _kMotilalErrorWatcher = `
+(function () {
+  if (window.__aqMotilalWatcher) return;
+  window.__aqMotilalWatcher = true;
+
+  var ERROR_PATTERNS = [
+    /Authorization is Invalid In Header Parameter/i,
+    /MO1007/i,
+    /Two Factor Authentication Failed/i,
+  ];
+  var fired = false;
+
+  function check() {
+    if (fired) return;
+    var t = '';
+    try { t = (document.body && document.body.innerText) || ''; } catch (e) { return; }
+    for (var i = 0; i < ERROR_PATTERNS.length; i++) {
+      if (ERROR_PATTERNS[i].test(t)) {
+        fired = true;
+        try {
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage('motilal_session_rotated');
+          }
+        } catch (e) {}
+        clearInterval(handle);
+        return;
+      }
+    }
+  }
+
+  var handle = setInterval(check, 750);
+  // Stop polling after 5 min — by then the user has either submitted
+  // successfully (page navigates to callback URL) or moved on.
+  setTimeout(function () { clearInterval(handle); }, 5 * 60 * 1000);
+  console.log('[AQ] Motilal in-page error watcher armed');
+  true; // RN injectedJavaScript requires the script to evaluate to a truthy value on Android
+})();
+`;
+
+/**
+ * Internal WebView wrapper with explicit error handling + single retry.
+ *
+ * Why this exists: `invest.motilaloswal.com` has only an A record (no
+ * AAAA). Chromium's DNS path on Android sometimes gets a SERVFAIL on
+ * the AAAA query and surfaces it as `net::ERR_NAME_NOT_RESOLVED`
+ * instead of falling back to the IPv4 address. Same root cause
+ * already fixed server-side in ccxt-india 48d49938 (forced urllib3
+ * to AF_INET). On the WebView we can't control the resolver, but a
+ * quick reload after failure usually succeeds because the DNS cache
+ * has populated by then.
+ *
+ * Also brings the WebView prop set into parity with every other
+ * broker (originWhitelist, cookie flags, mixedContentMode, UA,
+ * flex:1 style) so one-off rendering issues aren't confused with
+ * DNS failures.
+ */
+const MotilalWebViewWithRetry = ({authUrl, handleWebViewNavigationStateChange, onRequestRestart}) => {
+  const [key, setKey] = useState(0);
+  // Two distinct error states. `error` = pre-load network failure
+  // (DNS/IPv6 race) — recoverable by reloading the same authUrl.
+  // `postLoadError` = WebView crashed AFTER Motilal's page loaded —
+  // NOT recoverable by reloading, because reload silently rotates
+  // Motilal's session and the user's typed OTP / login state get
+  // wiped. In that case the only safe path is to close the WebView
+  // and re-fetch a fresh login URL from /motilal-oswal/login (see
+  // 2026-04-25 Motilal session-affinity notes in BROKER_CONNECTION.md).
+  const [error, setError] = useState(null);
+  const [postLoadError, setPostLoadError] = useState(null);
+  const retriedRef = useRef(false);
+  const pageLoadedOnceRef = useRef(false);
+
+  const onRetryPress = () => {
+    setError(null);
+    retriedRef.current = false;
+    pageLoadedOnceRef.current = false;
+    setKey((k) => k + 1);
+  };
+
+  const onRestartPress = () => {
+    // Tells the parent (MotilalModal) to close the WebView entirely
+    // and start a fresh /motilal-oswal/login round-trip. The parent's
+    // handleConnect debounce (30s) will gate against rapid restart.
+    setPostLoadError(null);
+    pageLoadedOnceRef.current = false;
+    if (typeof onRequestRestart === 'function') {
+      onRequestRestart();
+    }
+  };
+
+  return (
+    <View style={{flex: 1}}>
+      {postLoadError ? (
+        <View style={styles.wvErrorContainer}>
+          <Text style={styles.wvErrorTitle}>Motilal session interrupted</Text>
+          <Text style={styles.wvErrorBody}>
+            {postLoadError.description || 'The login page failed mid-flow.'}
+          </Text>
+          <Text style={styles.wvErrorHint}>
+            Motilal binds the OTP, the Authorization header, and the page
+            session to a single load — reloading would rotate the session
+            and invalidate any OTP you've already received. Please tap
+            "Restart" to start a fresh connection (you'll get a new OTP).
+          </Text>
+          <TouchableOpacity style={styles.wvRetryBtn} onPress={onRestartPress}>
+            <Text style={styles.wvRetryText}>Restart connection</Text>
+          </TouchableOpacity>
+        </View>
+      ) : error ? (
+        <View style={styles.wvErrorContainer}>
+          <Text style={styles.wvErrorTitle}>Couldn't reach Motilal Oswal</Text>
+          <Text style={styles.wvErrorBody}>
+            {error.description || 'Unable to load Motilal login page.'}
+          </Text>
+          <Text style={styles.wvErrorHint}>
+            If this persists, switch to mobile data and try again — Motilal
+            doesn't support IPv6 and some networks (including some emulators)
+            can't fall back to IPv4 cleanly.
+          </Text>
+          <TouchableOpacity style={styles.wvRetryBtn} onPress={onRetryPress}>
+            <Text style={styles.wvRetryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <WebView
+          key={key}
+          source={{uri: authUrl}}
+          style={{flex: 1}}
+          onNavigationStateChange={handleWebViewNavigationStateChange}
+          startInLoadingState
+          javaScriptEnabled
+          domStorageEnabled
+          thirdPartyCookiesEnabled
+          sharedCookiesEnabled
+          originWhitelist={['*']}
+          mixedContentMode="compatibility"
+          // Inject the Motilal in-page error watcher on every navigation.
+          // RN's `injectedJavaScript` injects ONCE on initial load;
+          // `injectedJavaScriptForMainFrameOnly={false}` plus
+          // `injectedJavaScriptBeforeContentLoaded` is the modern combo,
+          // but the watcher is idempotent (window.__aqMotilalWatcher
+          // guard) so plain `injectedJavaScript` is enough — first
+          // navigation wins and the IIFE early-returns on subsequent
+          // injections triggered by the WebView's internal page-finish
+          // hooks.
+          injectedJavaScript={_kMotilalErrorWatcher}
+          onMessage={(event) => {
+            const msg = event?.nativeEvent?.data;
+            if (msg === 'motilal_session_rotated') {
+              console.log('[Motilal][WebView] in-page error detected → surfacing Restart UI');
+              // Reuse the existing post-load error path. The string
+              // here is what the user sees in the red banner; it
+              // explains WHY they should Restart (rather than retry).
+              setPostLoadError({
+                description:
+                  "Motilal's login session has rotated. The OTP you entered " +
+                  'is no longer valid. Tap Restart and wait at least 30 ' +
+                  'seconds before tapping Connect again.',
+                code: 'MOTILAL_SESSION_ROTATED',
+              });
+            }
+          }}
+          userAgent={
+            Platform.OS === 'android'
+              ? 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
+              : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile Safari/604.1'
+          }
+          renderLoading={() => (
+            <ActivityIndicator
+              size="large"
+              color="#0056B7"
+              style={{marginTop: 20}}
+            />
+          )}
+          // First successful page load arms the post-load guard. After
+          // this fires, any subsequent onError must NOT silently
+          // remount the WebView — see comment on `postLoadError` above.
+          onLoadEnd={(syntheticEvent) => {
+            const {nativeEvent} = syntheticEvent;
+            // `nativeEvent.loading` is false on a successful load; if
+            // it's true we're still loading (some platforms call
+            // onLoadEnd repeatedly during navigation).
+            if (!nativeEvent?.loading) {
+              pageLoadedOnceRef.current = true;
+            }
+          }}
+          onError={(syntheticEvent) => {
+            const {nativeEvent} = syntheticEvent;
+            console.log(
+              '[Motilal][WebView onError]',
+              nativeEvent.url,
+              nativeEvent.code,
+              nativeEvent.description,
+              'pageLoadedOnce=', pageLoadedOnceRef.current,
+            );
+            // Post-load failure: surface "Restart connection" UI
+            // instead of silently reloading. Reload here would
+            // destroy the user's OTP / login state without warning
+            // (the trap that produced the 2026-04-25 incident:
+            // ERR_NAME_NOT_RESOLVED → silent reload → "Authorization
+            // is Invalid In Header Parameter" / MO1007 cascade).
+            if (pageLoadedOnceRef.current) {
+              setPostLoadError({
+                description: nativeEvent.description,
+                code: nativeEvent.code,
+              });
+              return;
+            }
+            // Pre-load failure: existing auto-retry-once behaviour
+            // for the IPv6 / DNS race on `invest.motilaloswal.com`.
+            if (!retriedRef.current) {
+              retriedRef.current = true;
+              setTimeout(() => setKey((k) => k + 1), 500);
+              return;
+            }
+            setError({
+              description: nativeEvent.description,
+              code: nativeEvent.code,
+            });
+          }}
+          onHttpError={(syntheticEvent) => {
+            const {nativeEvent} = syntheticEvent;
+            console.log(
+              '[Motilal][WebView onHttpError]',
+              nativeEvent.url,
+              nativeEvent.statusCode,
+            );
+          }}
+        />
+      )}
+    </View>
+  );
+};
 
 const MotilalConnectUI = ({
   isVisible,
@@ -51,6 +314,14 @@ const MotilalConnectUI = ({
   authUrl,
   handleWebViewNavigationStateChange,
   handleWebViewClose,
+  onRequestRestart,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
@@ -73,7 +344,7 @@ const MotilalConnectUI = ({
       <View style={styles.fullScreen}>
         <View style={{flex: 1, paddingTop: insets.top}}>
           {/* Header */}
-          <GradientView
+          <LinearGradient
             colors={['#0B3D91', '#0056B7']}
             start={{x: 0, y: 0}}
             end={{x: 1, y: 1}}
@@ -85,24 +356,15 @@ const MotilalConnectUI = ({
               <Text style={styles.headerTitle}>Connect to Motilal Oswal</Text>
             </View>
             <Image source={motilalIcon} style={styles.headerIcon} />
-          </GradientView>
+          </LinearGradient>
 
           {/* WebView Section */}
           {showWebView && authUrl ? (
             <View style={{flex: 1}}>
-              <WebView
-                source={{uri: authUrl}}
-                onNavigationStateChange={handleWebViewNavigationStateChange}
-                startInLoadingState
-                javaScriptEnabled
-                domStorageEnabled
-                renderLoading={() => (
-                  <ActivityIndicator
-                    size="large"
-                    color="#0056B7"
-                    style={{marginTop: 20}}
-                  />
-                )}
+              <MotilalWebViewWithRetry
+                authUrl={authUrl}
+                handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
+                onRequestRestart={onRequestRestart}
               />
             </View>
           ) : expanded ? (
@@ -151,6 +413,81 @@ const MotilalConnectUI = ({
                     <ChevronDown size={14} color="#000" />
                   </View>
                 </TouchableOpacity>
+
+                {/* Motilal is IPv4-only — all calls go through the
+                    server's shared static IPv4 (72.61.251.253) via the
+                    IPv4-pinned session on ccxt-india. Ports web 156589e:
+                    replace EgressIpCallout with a simple static callout
+                    showing the server IPv4, a Copy button, and an
+                    acknowledgment checkbox. `egressReady` gate is
+                    preserved so Connect stays locked until ticked;
+                    `unmetAck` still fires the red-flash signal. */}
+                <View style={styles.motilalIpCallout}>
+                  <Text style={styles.motilalIpTitle}>
+                    Server IPv4 to whitelist on Motilal
+                  </Text>
+                  <View style={styles.motilalIpRow}>
+                    <Text style={styles.motilalIpValue}>72.61.251.253</Text>
+                    {/* Matches the existing app-wide pattern (HelpModal.js,
+                        KotakConsumerKeySteps.js, DdpiModal.js) — Clipboard
+                        used as a runtime global without an explicit import.
+                        If the platform doesn't expose a Clipboard shim, the
+                        catch shows a toast asking the user to long-press. */}
+                    <TouchableOpacity
+                      onPress={() => {
+                        try {
+                          // eslint-disable-next-line no-undef
+                          Clipboard.setString('72.61.251.253');
+                          Toast.show({
+                            type: 'success',
+                            text1: 'Server IP copied',
+                            position: 'bottom',
+                            visibilityTime: 1500,
+                          });
+                        } catch {
+                          Toast.show({
+                            type: 'info',
+                            text1: 'Long-press the IP to copy manually',
+                            position: 'bottom',
+                            visibilityTime: 2500,
+                          });
+                        }
+                      }}
+                      style={styles.motilalIpCopy}>
+                      <Text style={styles.motilalIpCopyText}>Copy</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.motilalIpHint}>
+                    Paste the IP above into Motilal's "Allowed IPs" field on
+                    the API Key settings page. Motilal rejects every order
+                    from a non-whitelisted IP.
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setEgressReady && setEgressReady(!egressReady);
+                      if (unmetAck) setUnmetAck && setUnmetAck(false);
+                    }}
+                    style={[
+                      styles.motilalIpAckRow,
+                      unmetAck && !egressReady && styles.motilalIpAckRowFlash,
+                    ]}>
+                    <View
+                      style={[
+                        styles.motilalIpAckBox,
+                        egressReady && styles.motilalIpAckBoxChecked,
+                      ]}>
+                      {egressReady ? (
+                        <Text style={styles.motilalIpAckCheck}>✓</Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.motilalIpAckLabel}>
+                      I've whitelisted{' '}
+                      <Text style={{fontWeight: '700'}}>72.61.251.253</Text> on
+                      Motilal's API Key page.
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
                 {/* Input Card */}
                 <View style={styles.inputCard}>
@@ -205,13 +542,13 @@ const MotilalConnectUI = ({
                         styles.proceedButton,
                         {
                           backgroundColor:
-                            apiKey && clientCode
+                            apiKey && clientCode && egressReady
                               ? 'rgba(0, 86, 183, 1)'
                               : '#d3d3d3',
                         },
                       ]}
                       onPress={handleConnect}
-                      disabled={!(apiKey && clientCode)}>
+                      disabled={!(apiKey && clientCode && egressReady)}>
                       {loading ? (
                         <ActivityIndicator size={27} color="#fff" />
                       ) : (
@@ -241,6 +578,40 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
   },
+  wvErrorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
+  wvErrorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  wvErrorBody: {
+    fontSize: 13,
+    color: '#DC2626',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  wvErrorHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  wvRetryBtn: {
+    backgroundColor: '#0056B7',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+  },
+  wvRetryText: {color: '#fff', fontSize: 14, fontWeight: '600'},
   headerIcon: {width: 35, height: 35, borderRadius: 3, backgroundColor: '#fff'},
   backButton: {
     padding: 4,
@@ -351,6 +722,73 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   proceedButtonText: {color: '#fff', fontSize: 16, fontWeight: '600'},
+
+  // Motilal static server-IPv4 callout (replaces EgressIpCallout for
+  // this broker only — see web 156589e).
+  motilalIpCallout: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginHorizontal: 10,
+    marginTop: 10,
+  },
+  motilalIpTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400e',
+    marginBottom: 6,
+  },
+  motilalIpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  motilalIpValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    letterSpacing: 0.5,
+  },
+  motilalIpCopy: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#fde68a',
+  },
+  motilalIpCopyText: {fontSize: 12, fontWeight: '600', color: '#78350f'},
+  motilalIpHint: {fontSize: 12, color: '#92400e', lineHeight: 17, marginBottom: 10},
+  motilalIpAckRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 6,
+    borderRadius: 6,
+  },
+  motilalIpAckRowFlash: {
+    backgroundColor: '#fee2e2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  motilalIpAckBox: {
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderColor: '#92400e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  motilalIpAckBoxChecked: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  motilalIpAckCheck: {color: '#fff', fontSize: 12, fontWeight: '700'},
+  motilalIpAckLabel: {flex: 1, fontSize: 12, color: '#0f172a', lineHeight: 17},
 });
 
 export default MotilalConnectUI;

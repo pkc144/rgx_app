@@ -5,11 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Dimensions,
   ScrollView,
   RefreshControl,
 } from 'react-native';
-import GradientView from '../../components/GradientView';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
 import axios from 'axios';
 import { getAuth } from '@react-native-firebase/auth';
 import { useNavigation } from '@react-navigation/native';
@@ -27,10 +27,22 @@ import DisconnectBrokerModal from './DisconnectBrokerModal';
 import ManageConnectionsModal from './ManageConnectionsModal';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../../components/EventEmitter';
+import {
+  isBrokerSessionExpired,
+  getPrimaryBrokerEntry,
+} from '../../utils/brokerStateUtils';
 
 const cross = require('../../assets/cross.png');
 const tick = require('../../assets/checked.png');
-const { width: screenWidth } = Dimensions.get('window');
+
+// Module-scoped `Dimensions.get('window')` was frozen at RN init time
+// and diverged from the live screen width on foldables, split-screen,
+// Samsung DeX, and Android 15 edge-to-edge devices — producing the
+// "narrow content column + thick bottom black band" distortion. Width
+// is now read inside the component via `useWindowDimensions()` so it
+// updates on rotation / fold / multi-window, and the root uses
+// `SafeAreaView` so the header clears notches and the scroll area
+// ends above the gesture bar.
 
 const SubscriptionScreen = () => {
   const {
@@ -67,6 +79,28 @@ const SubscriptionScreen = () => {
   const [showDisconnectBroker, setShowDisconnectBroker] = useState(false);
   const [withoutBrokerLoader, setWithoutBrokerLoader] = useState(false);
   const [showManageConnections, setShowManageConnections] = useState(false);
+  // Queue for a per-broker Modal to open AFTER ManageConnectionsModal has
+  // fully unmounted. Android can't stack two transparent Modals, so
+  // ManageConnectionsModal.handleReconnect hands us the modalKey via
+  // onReconnect and then closes itself; the useEffect below fires
+  // openModal once showManageConnections flips to false.
+  const pendingReauthModalKey = React.useRef(null);
+  const pendingReauthPayload = React.useRef(null);
+
+  React.useEffect(() => {
+    if (showManageConnections || !pendingReauthModalKey.current) return;
+    const modalKey = pendingReauthModalKey.current;
+    const payload = pendingReauthPayload.current;
+    pendingReauthModalKey.current = null;
+    pendingReauthPayload.current = null;
+    // One animation frame after the modal's slide-out completes.
+    setTimeout(() => {
+      console.log('[SubscriptionScreen] opening queued modal:', modalKey, 'hasPayload:', !!payload);
+      require('../../GlobalUIModals/modalStore').default
+        .getState()
+        .openModal(modalKey, payload || null);
+    }, 250);
+  }, [showManageConnections]);
 
   const handleContinueWithoutBrokerSave = async () => {
     try {
@@ -98,7 +132,29 @@ const SubscriptionScreen = () => {
         }
       }
 
-      // First API call
+      // Step 1: Remove broker connection via Node backend (clears credentials + connected_brokers)
+      if (currentBroker && currentBroker !== 'DummyBroker') {
+        try {
+          await axios.delete(
+            `${server.server.baseUrl}api/user/brokers/${encodeURIComponent(currentBroker)}`,
+            {
+              params: { email: userEmail },
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            },
+          );
+        } catch (removeErr) {
+          console.warn('[Disconnect] removeBrokerConnection failed (continuing):', removeErr.message);
+        }
+      }
+
+      // Step 2: Set no-broker-required flag (sets connect_broker_status: Disconnected, user_broker: "")
       await axios.put(
         `${server.ccxtServer.baseUrl}comms/no-broker-required/save`,
         {
@@ -264,9 +320,9 @@ const SubscriptionScreen = () => {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header */}
-      <GradientView
+      <LinearGradient
         colors={[gradient1, gradient2]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -290,7 +346,7 @@ const SubscriptionScreen = () => {
             </Text>
           </View>
         </View>
-      </GradientView>
+      </LinearGradient>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -316,29 +372,59 @@ const SubscriptionScreen = () => {
             brokerStatus === null ||
             brokerStatus === 'Disconnected'
           ) ? (
-            <GradientView
-              colors={[gradient1, gradient2]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.brokerStatusCard}>
-              <View style={styles.brokerStatusContent}>
-                <View style={styles.brokerStatusLeft}>
-                  <Image source={tick} style={styles.statusIcon} />
-                  <View>
-                    <Text style={styles.brokerConnectedText}>
-                      {broker} Broker Connected
-                    </Text>
-                    <Text style={styles.brokerSubText}>{userEmail}</Text>
+            // Primary is set — but its session may be expired even if
+            // the top-level connect_broker_status still says connected.
+            // Check the actual primary entry's status + token_expire.
+            (() => {
+              const primaryEntry = getPrimaryBrokerEntry(userDetails);
+              const primaryExpired = isBrokerSessionExpired(primaryEntry);
+              if (primaryExpired) {
+                return (
+                  <View style={styles.expiredContainer}>
+                    <View style={styles.errorMessage}>
+                      <Image source={cross} style={styles.crossIcon} />
+                      <View>
+                        <Text style={styles.brokerExpiredText}>
+                          {broker} Session Expired
+                        </Text>
+                        <Text style={styles.brokerSubDisText}>{userEmail}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.changeButtonDis, {borderColor: '#f59e0b'}]}
+                      onPress={() => setShowManageConnections(true)}
+                      activeOpacity={0.8}>
+                      <Text style={[styles.changeButtonTextDis, {color: '#f59e0b'}]}>Re-auth</Text>
+                    </TouchableOpacity>
                   </View>
-                </View>
-                <TouchableOpacity
-                  style={styles.changeButton}
-                  onPress={handleOpen}
-                  activeOpacity={0.8}>
-                  <Pencil size={14} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </GradientView>
+                );
+              }
+              return (
+                <LinearGradient
+                  colors={[gradient1, gradient2]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.brokerStatusCard}>
+                  <View style={styles.brokerStatusContent}>
+                    <View style={styles.brokerStatusLeft}>
+                      <Image source={tick} style={styles.statusIcon} />
+                      <View>
+                        <Text style={styles.brokerConnectedText}>
+                          {broker} Broker Connected
+                        </Text>
+                        <Text style={styles.brokerSubText}>{userEmail}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.changeButton}
+                      onPress={handleOpen}
+                      activeOpacity={0.8}>
+                      <Pencil size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </LinearGradient>
+              );
+            })()
           ) : (
             <View style={styles.errorContainer}>
               <View style={styles.errorMessage}>
@@ -360,12 +446,19 @@ const SubscriptionScreen = () => {
           )}
         </View>
 
-        {/* Broker & Funds Info Card */}
-        <GradientView
-          colors={[gradient1, gradient2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.infoCard}>
+        {/* Broker & Funds Info Card.
+            Pre-2026-05-01 wrapped these rows in a <LinearGradient>;
+            user-reported on a real Android phone after connecting
+            Dhan that the title rendered but every row below was
+            invisible (zero height in the gradient subtree).
+            react-native-linear-gradient v3 has known Android cases
+            where multiple Text children inside the gradient lose
+            measurement when LinearGradient's native view is mounted
+            before its children's text has loaded, leaving the rows
+            sized to 0. Switched to a plain View with the solid
+            darker-end of the same gradient as backgroundColor —
+            decorative-only difference, robust on every device. */}
+        <View style={styles.infoCard}>
           <Text style={styles.infoCardTitle}>Your Broker & Funds Info</Text>
 
           <View style={styles.infoRow}>
@@ -415,13 +508,19 @@ const SubscriptionScreen = () => {
                 : 'N/A'}
             </Text>
           </View>
-        </GradientView>
+        </View>
       </ScrollView>
 
-      {!(
-        !brokerStatus ||
-        brokerStatus === null ||
-        brokerStatus === 'Disconnected'
+      {/* Manage Connections visible whenever the user has ANY saved broker
+          credentials, not just when the primary session is active.
+          brokerStatus='Disconnected' only means no active primary — the
+          user may still have other brokers in connected_brokers[] whose
+          sessions/credentials we want to expose for Re-auth / Remove.
+          Mirrors web /subscriptions which lists every connected_brokers[]
+          entry regardless of primary status. Disconnect button still
+          gated on an active primary since it only makes sense then. */}
+      {(userDetails?.connected_brokers || []).some(
+        b => b?.broker && b.broker !== 'DummyBroker',
       ) && (
           <View style={styles.buttonRow}>
             <TouchableOpacity
@@ -430,12 +529,18 @@ const SubscriptionScreen = () => {
               activeOpacity={0.8}>
               <Text style={styles.manageButtonText}>Manage Connections</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, styles.disconnectButton]}
-              onPress={() => setShowDisconnectBroker(true)}
-              activeOpacity={0.8}>
-              <Text style={styles.disconnectText}>Disconnect</Text>
-            </TouchableOpacity>
+            {!(
+              !brokerStatus ||
+              brokerStatus === null ||
+              brokerStatus === 'Disconnected'
+            ) && (
+                <TouchableOpacity
+                  style={[styles.button, styles.disconnectButton]}
+                  onPress={() => setShowDisconnectBroker(true)}
+                  activeOpacity={0.8}>
+                  <Text style={styles.disconnectText}>Disconnect</Text>
+                </TouchableOpacity>
+              )}
           </View>
         )}
 
@@ -487,8 +592,32 @@ const SubscriptionScreen = () => {
           fetchBrokerStatusModal();
           getAllFunds();
         }}
+        onReconnect={(expiredBroker, modalKey, payload) => {
+          console.log('[ManageConnections] Reconnect requested for:', expiredBroker, 'modalKey:', modalKey);
+          // Queue the per-broker modal — the useEffect on
+          // showManageConnections will open it after this modal
+          // unmounts. payload carries reauthConfig for credential
+          // brokers; null for partner OAuth.
+          if (modalKey) {
+            pendingReauthModalKey.current = modalKey;
+            pendingReauthPayload.current = payload || null;
+          }
+          // No optimistic setBroker(expiredBroker) here — it created stale
+          // state (broker='Dhan' locally but userDetails.user_broker='Groww'
+          // from backend) whenever the user aborted the per-broker modal.
+          // Per-broker modals' success path already calls
+          // fetchBrokerStatusModal + getUserDeatils, which sets broker and
+          // userDetails atomically from the same backend response.
+          fetchBrokerStatusModal();
+        }}
+        onAddBroker={() => {
+          // Close ManageConnections and open BrokerSelectionModal so the
+          // user can add a second/third broker without leaving Settings.
+          setShowManageConnections(false);
+          setTimeout(() => setModalVisible(true), 150);
+        }}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -502,7 +631,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   button: {
-    width: screenWidth - 100,
+    // No fixed width — buttons sit inside `buttonRow` (flexDirection:
+    // row + paddingHorizontal:20) and the composed `manageButton` /
+    // `disconnectButton` set `flex: 1` which overrides any width
+    // here. The prior `screenWidth - 100` was dead code *and* made
+    // the screen vulnerable to the frozen-Dimensions distortion on
+    // foldables/split-screen.
     paddingVertical: 10,
     borderRadius: 8,
     alignContent: 'center',
@@ -568,7 +702,10 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   loadingBar: {
-    width: screenWidth - 60,
+    // `alignSelf: 'stretch'` fills the parent (`statusContainer` has
+    // `marginHorizontal: 20`) at live width instead of the frozen
+    // `screenWidth - 60`, which broke on foldables / split-screen.
+    alignSelf: 'stretch',
     height: 20,
     borderRadius: 8,
   },
@@ -657,6 +794,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 4,
   },
+  expiredContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#FEF3C7',
+    elevation: 3,
+    shadowColor: '#f59e0b',
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+  },
+  brokerExpiredText: {
+    fontSize: 14,
+    color: '#92400E',
+    fontFamily: 'Poppins-Medium',
+  },
   errorMessage: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -696,6 +850,11 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingVertical: 22,
     paddingHorizontal: 25,
+    // Solid backgroundColor — same darker end of the original
+    // [gradient1, gradient2] pair the LinearGradient used. Switched
+    // away from LinearGradient 2026-05-01 after the on-device
+    // rows-invisible bug.
+    backgroundColor: '#002651',
     elevation: 8,
     shadowColor: '#2a4bd7',
     shadowOffset: { width: 0, height: 4 },

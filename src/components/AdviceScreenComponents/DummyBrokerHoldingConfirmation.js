@@ -15,6 +15,16 @@ import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import {useTrade} from '../../screens/TradeContext';
+import {useConfig} from '../../context/ConfigContext';
+import { computeTradeVariant } from '../../utils/tradeVariant';
+import Toast from 'react-native-toast-message';
+import portfolioEvents, {PORTFOLIO_EVENTS} from '../../utils/portfolioEvents';
+import useSdkClient from '../../sdk/useSdkClient';
+
+const isSdkExecuteAdviceEnabled = () => {
+  const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
+  return v === 'true' || v === '1';
+};
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -33,6 +43,10 @@ const DummyBrokerHoldingConfirmation = ({
   dummyBrokerCalculatedUniqueId,
 }) => {
   const {configData} = useTrade();
+  // For trade `variant` — see docs/APP_ARCHITECTURE.md § 4.5.2.
+  const { allowAfterHoursOrders } = useConfig() || {};
+  const sdkClient = useSdkClient();
+  const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   const [loading, setLoading] = useState(false);
 
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
@@ -69,10 +83,12 @@ const DummyBrokerHoldingConfirmation = ({
     setLoading(true);
 
     try {
+      // Trade variant per-trade — see docs/APP_ARCHITECTURE.md § 4.5.2.
+      const variant = computeTradeVariant(allowAfterHoursOrders);
       const getBasePayload = () => ({
         user_broker: 'DummyBroker',
         user_email: userEmail,
-        trades: stockDetails,
+        trades: stockDetails.map(s => ({ ...s, variant })),
         model_id: modelPortfolioModelId,
       });
 
@@ -111,40 +127,136 @@ const DummyBrokerHoldingConfirmation = ({
         },
       };
 
-      // First API call
-      const response = await axios.request(config);
-
-      // Second API call
-      const config2 = {
-        method: 'post',
-        url: `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
-        data: {
-          userEmail: userEmail,
-          modelName: storeModalName,
-          advisor: advisorTag,
-          broker: 'DummyBroker',
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
+      const requestHeaders = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
       };
 
-      await axios.request(config2);
+      // Step 1: Process trade
+      // SDK executeAdvice dual-path (Phase C). When the flag is on and SDK
+      // client is available, route through the SDK orchestrator. Legacy
+      // direct-ccxt path stays below as fallback.
+      let response;
+      if (sdkExecuteAdviceEnabled) {
+        try {
+          const sdkResult = await sdkClient.executeAdvice({
+            kind: 'mpRebalance',
+            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            brokerName: 'DummyBroker',
+            modelId: modelPortfolioModelId,
+            modelName: payload.modelName,
+            uniqueId: payload.unique_id,
+            trades: payload.trades || [],
+          });
+          const mappedRows = (sdkResult?.rows || []).map(row => ({
+            ...row,
+            orderStatus: row.status,
+            tradingSymbol: row.symbol,
+          }));
+          response = { data: { results: mappedRows } };
+          console.log('[DummyBrokerHoldingConfirmation] SDK executeAdvice result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+        } catch (sdkErr) {
+          console.error('[DummyBrokerHoldingConfirmation] SDK executeAdvice failed, falling back to legacy:', sdkErr?.message);
+          response = null;
+        }
+      }
+      if (!response) {
+        response = await axios.request(config);
+      }
+
+      // Step 2: Update subscriber execution status to 'executed' (matching prod)
+      try {
+        await axios.put(
+          `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+          {
+            userEmail: userEmail,
+            modelName: storeModalName,
+            model_id: modelPortfolioModelId,
+            executionStatus: 'executed',
+            user_broker: 'DummyBroker',
+          },
+          {headers: requestHeaders},
+        );
+      } catch (statusErr) {
+        console.error('Error updating subscriber execution status for DummyBroker:', statusErr);
+        // Retry once after 2 seconds
+        try {
+          await new Promise(r => setTimeout(r, 2000));
+          await axios.put(
+            `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
+            {
+              userEmail: userEmail,
+              modelName: storeModalName,
+              model_id: modelPortfolioModelId,
+              executionStatus: 'executed',
+              user_broker: 'DummyBroker',
+            },
+            {headers: requestHeaders},
+          );
+        } catch (retryErr) {
+          console.error('Retry also failed:', retryErr);
+          Toast.show({
+            type: 'error',
+            text1: 'Status update failed',
+            text2: 'Rebalance recorded but status may be stale. Pull to refresh.',
+          });
+        }
+      }
+
+      // Step 3: Enroll in status-check-queue
+      try {
+        await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/add-user/status-check-queue`,
+          {
+            userEmail: userEmail,
+            modelName: storeModalName,
+            advisor: advisorTag,
+            broker: 'DummyBroker',
+          },
+          {headers: requestHeaders},
+        );
+      } catch (queueErr) {
+        console.error('Error adding DummyBroker to status-check-queue:', queueErr);
+      }
+
+      // Emit HOLDINGS_REFRESH event (matching prod — only this event, not REBALANCE_EXECUTED)
+      portfolioEvents.emit(PORTFOLIO_EVENTS.HOLDINGS_REFRESH, {
+        userEmail,
+        modelName: storeModalName,
+      });
+
       getRebalanceRepair();
+
+      Toast.show({
+        type: 'success',
+        text1: 'Rebalance recorded successfully!',
+        visibilityTime: 3000,
+      });
 
       // Success actions
       setLoading(false);
       setOpenRebalanceModal(false);
-      getModelPortfolioStrategyDetails();
+      // Delayed refresh to allow cross-server DB sync (matching prod: 2s, 5s)
+      setTimeout(() => getModelPortfolioStrategyDetails(), 2000);
+      setTimeout(() => getModelPortfolioStrategyDetails(), 5000);
       onClose();
     } catch (error) {
-      console.error('Error in DummyBroker confirmation:', error);
       setLoading(false);
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to record trades';
+      Toast.show({
+        type: 'error',
+        text1: errorMessage,
+        visibilityTime: 5000,
+      });
+      console.error('Trade recording error:', error);
     }
   };
 
