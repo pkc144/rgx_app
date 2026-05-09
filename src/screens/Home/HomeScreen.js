@@ -1316,8 +1316,12 @@ const HomeScreen = ({ }) => {
   const [hasMPData, setHasMPData] = useState(false);
   const [hasBespokeData, setHasBespokeData] = useState(false);
 
-  // Whether user has active recommendations or rebalances
-  const hasActiveContent = filteredAndSortedStrategies.length > 0 || stockRecoNotExecutedfinal?.length > 0;
+  // Whether user has active recommendations or rebalances.
+  // planList is truthy only when the user has an active subscription (set by
+  // api/sendnotification). Unsubscribed users who received a demo reco must
+  // still see the Plans section — so we gate on planList here to prevent a
+  // blurred demo card from hiding the Plans discovery section.
+  const hasActiveContent = !!planList && (filteredAndSortedStrategies.length > 0 || stockRecoNotExecutedfinal?.length > 0);
 
   // Data for All Tab
   // If user has active subscriptions (recos/rebalances), show those first, plans after.
