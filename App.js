@@ -18,6 +18,7 @@ import Navigation from './src/components/Navigation';
 import {CartProvider} from './src/components/CartContext';
 import {ModalProvider} from './src/components/ModalContext';
 import {SocialProofProvider} from './src/components/SocialProofProvider';
+import DesignProvider from './src/design/DesignProvider';
 import server from './src/utils/serverConfig';
 import {TradeProvider} from './src/screens/TradeContext';
 import {ConfigProvider} from './src/context/ConfigContext';
@@ -25,6 +26,9 @@ import {GstConfigProvider} from './src/context/GstConfigContext';
 import ModalManager from './src/GlobalUIModals/ModalManager';
 import BrokerAlertModal from './src/GlobalUIModals/BrokerAlertModal';
 import UpdateAppModal from './src/UpdateAppModal';
+import SdkProviderRoot, {
+  isSdkIntegrationEnabled,
+} from './src/sdk/SdkProviderRoot';
 
 const App = () => {
   const [isSplashCompleted, setSplashCompleted] = useState(false);
@@ -195,33 +199,43 @@ const App = () => {
     );
   };
 
+  const SdkRootWrapper = isSdkIntegrationEnabled()
+    ? ({children}) => (
+        <SdkProviderRoot userEmail={userEmail}>{children}</SdkProviderRoot>
+      )
+    : ({children}) => <>{children}</>;
+
   return (
     <SafeAreaProvider style={{flex: 1}}>
       <UpdateAppModal />
       <CustomStatusBar barStyle={'dark-content'} />
       <GestureHandlerRootView style={{flex: 1}}>
-        <SocialProofProvider>
-          <CartProvider>
-            <ConfigProvider>
-              <TradeProvider>
-                <GstConfigProvider>
-                <ModalProvider>
-                  <SafeAreaView style={{flex: 1}}>
-                    <Navigation
-                      iscomplete={iscomplete}
-                      userEmail={userEmail}
-                      isAuthenticated={!!user}
-                    />
-                    <Toast />
-                  </SafeAreaView>
-                  <ModalManager />
-                  <BrokerAlertModal />
-                </ModalProvider>
-                </GstConfigProvider>
-              </TradeProvider>
-            </ConfigProvider>
-          </CartProvider>
-        </SocialProofProvider>
+        <DesignProvider>
+          <SocialProofProvider>
+            <CartProvider>
+              <ConfigProvider>
+                <TradeProvider>
+                  <GstConfigProvider>
+                  <ModalProvider>
+                    <SdkRootWrapper>
+                    <SafeAreaView style={{flex: 1}}>
+                      <Navigation
+                        iscomplete={iscomplete}
+                        userEmail={userEmail}
+                        isAuthenticated={!!user}
+                      />
+                      <Toast />
+                    </SafeAreaView>
+                    <ModalManager />
+                    <BrokerAlertModal />
+                    </SdkRootWrapper>
+                  </ModalProvider>
+                  </GstConfigProvider>
+                </TradeProvider>
+              </ConfigProvider>
+            </CartProvider>
+          </SocialProofProvider>
+        </DesignProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );
