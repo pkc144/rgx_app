@@ -4,6 +4,7 @@ import {View, Text, Image, StyleSheet, Dimensions} from 'react-native';
 import Config from '../utils/safeConfig';
 import {useConfig} from '../context/ConfigContext';
 import APP_VARIANTS from '../utils/Config';
+import AlphanomyLogo from './AlphanomyLogo';
 const screenWidth = Dimensions.get('window').width;
 
 const LogoSection = () => {
@@ -16,9 +17,17 @@ const LogoSection = () => {
   const logo = config?.logo || fallbackConfig.logo;
   const themeColor = config?.themeColor || fallbackConfig.themeColor;
   const appName = Config.REACT_APP_WHITE_LABEL_TEXT;
+  const isAlphanomy = Config?.DESIGN_VARIANT === 'alphanomy';
 
   // Render logo based on type: URL string, function (SVG component), or require() object
   const renderLogo = () => {
+    // Alphanomy variant: render the JS-drawn gradient brand mark.
+    // The variant config nulls out `logo`/`toolbarlogo` so we don't
+    // leak the AlphaQuark/Zamzam PNG; fall through to AlphanomyLogo.
+    if (isAlphanomy) {
+      return <AlphanomyLogo size={80} />;
+    }
+
     if (!logo) {
       return null;
     }

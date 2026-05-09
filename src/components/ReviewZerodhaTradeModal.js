@@ -4,6 +4,7 @@ import { useWindowDimensions } from 'react-native';
 import { XIcon, Trash2Icon,CandlestickChartIcon, ChevronRight,ShoppingBag,Minus,Plus } from 'lucide-react-native';
 import Icon1 from 'react-native-vector-icons/Feather';
 import server from '../utils/serverConfig'
+import Config from 'react-native-config';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import axios from 'axios';
 
@@ -25,6 +26,9 @@ import ReviewTradeText from './AdviceScreenComponents/ReviewTradeText';
 import { generateToken } from '../utils/SecurityTokenManager';
 import { useTrade } from '../screens/TradeContext';
 import { useConfig } from '../context/ConfigContext';
+import Toast from 'react-native-toast-message';
+import { validateStockExchanges, getPublisherWebViewBaseUrl, resolveZerodhaSymbol } from '../utils/brokerPublisher';
+import useZerodhaSymbolMap from '../hooks/useZerodhaSymbolMap';
 
 const ReviewZerodhaTradeModal = ({
   visible,
@@ -60,10 +64,18 @@ const ReviewZerodhaTradeModal = ({
   setCartCount,
   handleSelectStock,
   broker,
+  skipToWebView = false,
 }) => {
   const {configData}=useTrade();
   const config = useConfig();
-  const { logo: LogoComponent, themeColor, mainColor, secondaryColor, toolbarlogo: Toolbarlogo1 } = config || {};
+  const { logo: LogoComponent, themeColor, mainColor, secondaryColor, toolbarlogo: Toolbarlogo1, allowAfterHoursOrders } = config || {};
+  const marketGateOpen = IsMarketHours() || allowAfterHoursOrders;
+  // Scripmaster-corrected Kite symbol/exchange map (handles -EQ suffix,
+  // BE→BSE diversion, BSE-primary symbols mislabeled as NSE). Published
+  // baskets read `resolveZerodhaSymbol(stock, symbolMap)` for the outgoing
+  // `tradingsymbol`/`exchange`; `cachedLtp` covers applyKiteMarketProtection
+  // when the websocket hasn't emitted a price (common for BE-series).
+  const symbolMap = useZerodhaSymbolMap(stockDetails, isVisible);
   //console.log('trade id i am getting---',stockDetails);
   useEffect(()=>{
     if(basketData?.length>0){
@@ -74,7 +86,6 @@ const ReviewZerodhaTradeModal = ({
   //console.log('Stock Zerodha Detais:',stockDetails);
   //const pendingOrderData =AsyncStorage.getItem("stockDetailsZerodhaOrder");
  // console.log('Here yours pending Data:',JSON.parse(pendingOrderData));
-  const isMarketHours = IsMarketHours();
   const { width } = useWindowDimensions();
   const handleIncreaseStockQty = (symbol, tradeId) => {
     const newData = stockDetails.map((stock) =>
@@ -264,8 +275,8 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
     if (selectedOption === "fix" && inputFixSizeValue) {
       const fixedSize = parseFloat(inputFixSizeValue);
       const updatedStockDetails = stockDetails.map((stock) => {
-        const currentPrice = parseFloat(getLTPForSymbol(stock.tradingSymbol));
-        const newQuantity = Math.floor(fixedSize / currentPrice);
+        const currentPrice = parseFloat(getLTPForSymbol(stock.tradingSymbol)) || 0;
+        const newQuantity = currentPrice > 0 ? Math.floor(fixedSize / currentPrice) : 0;
         return { ...stock, quantity: newQuantity };
       });
       setStockDetails(updatedStockDetails);
@@ -286,7 +297,7 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
 
   const [isWebView,setWebView]=useState(false);
   const webViewRef = useRef(null);
-  const [htmlContentfinal, setHtmlContent] = useState("");
+  const [htmlContentfinal, setHtmlContent] = useState(htmlContent || "");
 
 
   
@@ -307,7 +318,7 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
 
 
   const getUpdatedBasket = async (stockDetails) => {
-    const apiUrl = `${server.ccxtServer.baseUrl}zerodha/fno/symbol-lotsize`;
+    const apiUrl = `${server.ccxtWs.httpUrl}/zerodha/fno/symbol-lotsize`;
 
   
     // Filter relevant symbols
@@ -384,7 +395,22 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
  // console.log('stock details i get zerodha--0',stockDetails);
 
   const handleZerodhaRedirect = async () => {
-    
+    // Pre-flight: refuse to send orders with missing exchange. Kite Publisher
+    // silently drops basket items whose symbol/exchange combo it can't resolve
+    // (e.g. a BSE-only symbol sent with exchange=NSE).
+    const exchangeCheck = validateStockExchanges(stockDetails);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      console.error('[ZerodhaPublisher] Blocked due to missing exchange:', missingList);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        visibilityTime: 8000,
+      });
+      return;
+    }
+
     const storageKey = "stockDetailsZerodhaOrder";
     try {
       // Clear the existing value
@@ -404,37 +430,80 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
 
     console.log('stock detailskkkkkk  i get here-',stock);
 
-    // Use LTP for price calculation
-    const ltp = getLastKnownPrice(stock.tradingSymbol);
-    let orderPrice = 0;
+    // Scripmaster-resolved symbol/exchange (strips -EQ, routes BE→BSE, etc.)
+    const resolved = resolveZerodhaSymbol(stock, symbolMap);
 
+    // Use LTP for price calculation. Prefer live ws LTP on the resolved
+    // symbol, fall back to live LTP on raw symbol, fall back to the
+    // server-side Redis-cached LTP returned by /zerodha/convert-symbol.
+    const liveLtp =
+      getLastKnownPrice(resolved.tradingsymbol) ||
+      getLastKnownPrice(stock.tradingSymbol);
+    const ltp =
+      liveLtp && liveLtp !== '-' && parseFloat(liveLtp) > 0
+        ? liveLtp
+        : resolved.cachedLtp || 0;
+    const ltpNumeric = ltp && ltp !== "-" ? parseFloat(ltp) : 0;
+    let orderPrice = 0;
+    let kiteOrderType = mapKiteOrderType(stock.orderType);
+    let kiteValidity = null;
+
+    // MARKET -> LIMIT with 1% market-protection buffer (IOC on NSE, DAY on BSE).
+    // Mirrors ICICI (48f1fb47) / AliceBlue (84a9bf94) / web fix to dodge Kite's
+    // "MARKET orders are blocked — enable market protection" rejection on
+    // GSM/T2T/BE-series stocks (e.g. VIKASECO). Falls through to plain MARKET
+    // when no LTP is available.
     if (stock.orderType === "LIMIT") {
       orderPrice = parseFloat(stock.price || 0);
+    } else if ((stock.orderType === "MARKET" || stock.orderType === "SL") && ltpNumeric > 0) {
+      const isBuy = (stock.transactionType || "BUY").toUpperCase() === "BUY";
+      const MARKET_PROTECTION_BUFFER_PCT = 0.01;
+      const bufferedPrice = isBuy
+        ? Math.round(ltpNumeric * (1 + MARKET_PROTECTION_BUFFER_PCT) * 100) / 100
+        : Math.round(ltpNumeric * (1 - MARKET_PROTECTION_BUFFER_PCT) * 100) / 100;
+      if (stock.orderType === "MARKET") {
+        kiteOrderType = "LIMIT";
+        kiteValidity = (resolved.exchange || "").toUpperCase() === "BSE" ? "DAY" : "IOC";
+        orderPrice = bufferedPrice;
+        console.log(`[ZerodhaPublisher] MARKET→LIMIT for ${resolved.tradingsymbol}: ltp=${ltpNumeric} ${isBuy ? "BUY" : "SELL"} limit=${bufferedPrice} validity=${kiteValidity}`);
+      } else {
+        // SL path — keep original (trigger-based, not MARKET-blocked)
+        orderPrice = ltpNumeric;
+      }
     } else if (stock.orderType === "MARKET" || stock.orderType === "SL") {
-      orderPrice = ltp !== "-" ? parseFloat(ltp) : 0;
+      orderPrice = 0;
+      console.warn(`[ZerodhaPublisher] MARKET order for ${stock.tradingSymbol} has no LTP — sending as plain MARKET`);
     }
 
-    // If the stock is in 'NFO' or 'BFO', update with fetched data
+    // If the stock is in 'NFO' or 'BFO', update with fetched data. The
+    // NFO/BFO branch overrides the scripmaster result since derivatives
+    // need the exact lot-size-aligned tradingsymbol from getUpdatedBasket.
     let finalQuantity = stock.quantity;
-    let finalSymbol = stock.tradingSymbol;
+    let finalSymbol = resolved.tradingsymbol;
+    let finalExchange = resolved.exchange;
     if (fetchedData[stock.tradingSymbol]) {
       const { lotsize, new_symbol } = fetchedData[stock.tradingSymbol];
       finalSymbol = new_symbol;
       finalQuantity = parseInt(lotsize, 10);
+      // Derivatives: preserve the advice-side exchange (NFO/BFO);
+      // scripmaster's equity-side answer doesn't apply here.
+      finalExchange = stock.exchange;
     }
 
     let baseOrder = {
       variety: "regular",
       tradingsymbol: finalSymbol,
-      exchange: stock.exchange || "NSE",
+      // exchange is guaranteed non-empty by validateStockExchanges() above
+      exchange: finalExchange,
       transaction_type: (stock.transactionType || "BUY").toUpperCase(),
-      order_type: mapKiteOrderType(stock.orderType),
+      order_type: kiteOrderType,
       quantity: finalQuantity,
       product: mapKiteProductType(stock.productType),
       readonly: false,
       price: orderPrice,
       tag: stock.zerodhaTradeId,
     };
+    if (kiteValidity) baseOrder.validity = kiteValidity;
 
     if (stock.quantity > 100) {
       baseOrder.readonly = true;
@@ -483,10 +552,12 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
 
   useEffect(() => {
     if(htmlContent){
-    
       setHtmlContent(htmlContent);
+      if (skipToWebView) {
+        setWebView(true);
+      }
     }
-  }, [htmlContent]);
+  }, [htmlContent, skipToWebView]);
 
   const generateHtmlForm = async (basket, apiKey) => {
     return `<html>
@@ -696,8 +767,8 @@ console.log('Review Modal in AsyncStorage:', storedCartItems);
 
 
   const handleClose = () => {
-    console.log('here i  am');
     setWebView(false);
+    onClose();
   };
 
 
@@ -900,7 +971,10 @@ if (basketData?.length > 0) {
                   borderTopRightRadius: 10,
                   borderTopLeftRadius: 10,
                 }}
-                source={{ html: htmlContentfinal }} // Ensure you use `uri` instead of `url`.
+                source={{
+                  html: htmlContentfinal,
+                  baseUrl: getPublisherWebViewBaseUrl(configData),
+                }}
                 onLoadStart={() => setIsLoading(true)}
                 onLoadEnd={() => setIsLoading(false)}
                 onNavigationStateChange={handleWebViewNavigationStateChange}
@@ -910,6 +984,14 @@ if (basketData?.length > 0) {
                   console.error('WebView error:', e.nativeEvent)
                 }
               />
+            </View>
+          ) : skipToWebView ? (
+            <View style={{ height: 300, alignItems: 'center', justifyContent: 'center', backgroundColor: 'white', borderTopRightRadius: 10, borderTopLeftRadius: 10 }}>
+              <ActivityIndicator size="large" color="#0056B7" />
+              <Text style={{ marginTop: 12, fontFamily: 'Satoshi-Medium', color: '#666' }}>Preparing Kite Publisher...</Text>
+              <TouchableOpacity onPress={handleClose} style={{ marginTop: 20 }}>
+                <Text style={{ color: '#0056B7', fontFamily: 'Satoshi-Medium' }}>Cancel</Text>
+              </TouchableOpacity>
             </View>
           ) : (
            <SafeAreaView
@@ -987,12 +1069,12 @@ if (basketData?.length > 0) {
                     <SliderButton
                       loading={loading}
                       text={
-                        !isMarketHours
+                        !marketGateOpen
                           ? 'Market is Closed'
                           : `Slide to Place Order || ₹${totalAmount || '0.00'}`
                       }
                       onSlideComplete={handleZerodhaRedirect}
-                      disabled={hasZeroQuantity || !isMarketHours}
+                      disabled={hasZeroQuantity || !marketGateOpen}
                     />
                   </View>
                 </GestureHandlerRootView>
@@ -1027,7 +1109,10 @@ if (basketData?.length > 0) {
              <WebView
                ref={webViewRef}
                style={{ flex: 1,borderTopRightRadius:100,borderTopLeftRadius:100,}}
-               source={{ html: htmlContentfinal}} // Replace with a test static HTML to debug
+               source={{
+                 html: htmlContentfinal,
+                 baseUrl: getPublisherWebViewBaseUrl(configData),
+               }}
                onLoadStart={() => setIsLoading(true)}
                onLoadEnd={() => setIsLoading(false)}
                onNavigationStateChange={handleWebViewNavigationStateChange}
@@ -1130,8 +1215,8 @@ if (basketData?.length > 0) {
 <View style={{paddingVertical:5,paddingHorizontal:10,borderTopColor:'#e4e4e4',borderTopWidth:0.5,elevation:1,backgroundColor:'#fff'}}>
         <SliderButton
         loading={loading}
-        disabled={hasZeroQuantity  ||  !isMarketHours}
-        text= {!isMarketHours ? 'Market is Closed' : `Slide to Place Order || ₹${totalAmount || '0.00'}` }
+        disabled={hasZeroQuantity || !marketGateOpen}
+        text={!marketGateOpen ? 'Market is Closed' : `Slide to Place Order || ₹${totalAmount || '0.00'}`}
         onSlideComplete={handleZerodhaRedirect} />
       </View>
     </GestureHandlerRootView>

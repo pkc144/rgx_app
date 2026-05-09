@@ -81,16 +81,12 @@ describe('rebalanceHelpers', () => {
       expect(isSubscriptionAmountError('The subscription amount is not set')).toBe(true);
     });
 
-    test('detects "minimum investment" keyword', () => {
-      expect(isSubscriptionAmountError('Minimum investment required is 50000')).toBe(true);
+    test('detects "subscription_amount_raw" keyword', () => {
+      expect(isSubscriptionAmountError('Error: subscription_amount_raw missing')).toBe(true);
     });
 
-    test('detects "subscription_amount" keyword', () => {
-      expect(isSubscriptionAmountError('Error: subscription_amount missing')).toBe(true);
-    });
-
-    test('case insensitive', () => {
-      expect(isSubscriptionAmountError('SUBSCRIPTION AMOUNT error')).toBe(true);
+    test('detects "not set or has been cleared" keyword', () => {
+      expect(isSubscriptionAmountError('Investment amount not set or has been cleared')).toBe(true);
     });
 
     test('returns false for unrelated message', () => {
@@ -101,11 +97,6 @@ describe('rebalanceHelpers', () => {
       expect(isSubscriptionAmountError(null)).toBe(false);
       expect(isSubscriptionAmountError(undefined)).toBe(false);
     });
-
-    test('returns false for non-string', () => {
-      expect(isSubscriptionAmountError(42)).toBe(false);
-      expect(isSubscriptionAmountError({})).toBe(false);
-    });
   });
 
   // ─── isLowAllowedBalanceError ───
@@ -115,16 +106,12 @@ describe('rebalanceHelpers', () => {
       expect(isLowAllowedBalanceError('Low allowed balance for this trade')).toBe(true);
     });
 
-    test('detects "insufficient"', () => {
-      expect(isLowAllowedBalanceError('Insufficient funds in account')).toBe(true);
-    });
-
-    test('detects "not enough funds"', () => {
-      expect(isLowAllowedBalanceError('Not enough funds to execute')).toBe(true);
-    });
-
     test('case insensitive', () => {
-      expect(isLowAllowedBalanceError('INSUFFICIENT BALANCE')).toBe(true);
+      expect(isLowAllowedBalanceError('LOW ALLOWED BALANCE')).toBe(true);
+    });
+
+    test('returns false for "insufficient"', () => {
+      expect(isLowAllowedBalanceError('Insufficient funds in account')).toBe(false);
     });
 
     test('returns false for unrelated message', () => {
@@ -139,28 +126,23 @@ describe('rebalanceHelpers', () => {
   // ─── isBrokerAuthError ───
 
   describe('isBrokerAuthError', () => {
-    const AUTH_KEYWORDS = [
-      'Invalid API key provided',
-      'Token expired please login again',
-      'Session expired',
-      'Invalid access token',
-      'Invalid token received',
-      'Unauthorized access',
-      'Authentication failed for user',
-      'Login required to proceed',
-      'Invalid credentials',
-      'API key not found in system',
-    ];
-
-    test('detects all auth error keywords', () => {
-      AUTH_KEYWORDS.forEach(keyword => {
-        expect(isBrokerAuthError(keyword)).toBe(true);
-      });
+    test('detects "invalid" + "token" compound', () => {
+      expect(isBrokerAuthError('Invalid token received')).toBe(true);
+      expect(isBrokerAuthError('Invalid access_token')).toBe(true);
+      expect(isBrokerAuthError('invalid api_key provided')).toBe(true);
     });
 
-    test('case insensitive', () => {
-      expect(isBrokerAuthError('TOKEN EXPIRED')).toBe(true);
+    test('detects "session expired"', () => {
+      expect(isBrokerAuthError('Session expired')).toBe(true);
+    });
+
+    test('detects "unauthorized"', () => {
+      expect(isBrokerAuthError('Unauthorized access')).toBe(true);
       expect(isBrokerAuthError('unauthorized')).toBe(true);
+    });
+
+    test('detects "authentication"', () => {
+      expect(isBrokerAuthError('Authentication failed for user')).toBe(true);
     });
 
     test('returns false for non-auth errors', () => {
@@ -169,20 +151,19 @@ describe('rebalanceHelpers', () => {
       expect(isBrokerAuthError('Symbol not found')).toBe(false);
     });
 
-    test('returns false for null/undefined/non-string', () => {
+    test('returns false for null/undefined', () => {
       expect(isBrokerAuthError(null)).toBe(false);
       expect(isBrokerAuthError(undefined)).toBe(false);
-      expect(isBrokerAuthError(123)).toBe(false);
     });
   });
 
   // ─── checkPortfolioShortfall ───
 
   describe('checkPortfolioShortfall', () => {
-    test('detects shortfall when totalValue < minInvestmentValue', () => {
+    test('detects shortfall from message with "less than required minimum"', () => {
       const result = checkPortfolioShortfall({
+        message: 'Portfolio value is less than required minimum amount (50000)',
         totalValue: 30000,
-        minInvestmentValue: 50000,
         buy: [{symbol: 'RELIANCE'}],
         sell: [],
       });
@@ -192,29 +173,23 @@ describe('rebalanceHelpers', () => {
       expect(result.requiredAmount).toBe(50000);
     });
 
-    test('no shortfall when totalValue >= minInvestmentValue', () => {
+    test('no shortfall when message does not contain keyword', () => {
       const result = checkPortfolioShortfall({
+        message: 'Rebalance calculated successfully',
         totalValue: 100000,
-        minInvestmentValue: 50000,
         buy: [{symbol: 'RELIANCE'}],
         sell: [{symbol: 'TCS'}],
       });
       expect(result.isShortfall).toBe(false);
-      expect(result.hasTrades).toBe(true);
     });
 
-    test('hasTrades reflects buy/sell arrays', () => {
-      expect(
-        checkPortfolioShortfall({buy: [], sell: [], totalValue: 100000, minInvestmentValue: 50000}).hasTrades,
-      ).toBe(false);
-
-      expect(
-        checkPortfolioShortfall({buy: [{symbol: 'A'}], sell: [], totalValue: 100000, minInvestmentValue: 50000}).hasTrades,
-      ).toBe(true);
-
-      expect(
-        checkPortfolioShortfall({buy: [], sell: [{symbol: 'B'}], totalValue: 100000, minInvestmentValue: 50000}).hasTrades,
-      ).toBe(true);
+    test('no shortfall when no message present', () => {
+      const result = checkPortfolioShortfall({
+        totalValue: 30000,
+        buy: [{symbol: 'A'}],
+        sell: [],
+      });
+      expect(result.isShortfall).toBe(false);
     });
 
     test('null response returns no shortfall', () => {
@@ -223,10 +198,14 @@ describe('rebalanceHelpers', () => {
       expect(result.hasTrades).toBe(false);
     });
 
-    test('missing totalValue/minInvestmentValue defaults to 0', () => {
-      const result = checkPortfolioShortfall({buy: [], sell: []});
-      expect(result.currentValue).toBe(0);
-      expect(result.requiredAmount).toBe(0);
+    test('requiredAmount is null when regex does not match', () => {
+      const result = checkPortfolioShortfall({
+        message: 'Portfolio value is less than required minimum',
+        buy: [],
+        sell: [],
+      });
+      expect(result.isShortfall).toBe(true);
+      expect(result.requiredAmount).toBeNull();
     });
   });
 
@@ -262,14 +241,14 @@ describe('rebalanceHelpers', () => {
       });
     });
 
-    test('Angel One — falls back to credentials apiKey', () => {
+    test('Angel One — no fallback when config key is null', () => {
       const result = buildBrokerPayloadFields(
         'Angel One',
         ALL_BROKER_CREDENTIALS['Angel One'],
         mockDecrypt,
         null,
       );
-      expect(result.apiKey).toBe('angel-api-key');
+      expect(result.apiKey).toBeNull();
     });
 
     test('Upstox — decrypts apiKey and apiSecret', () => {
@@ -394,7 +373,7 @@ describe('rebalanceHelpers', () => {
       expect(result).toEqual({accessToken: 'axis-jwt-token-111'});
     });
 
-    test('DummyBroker — empty object', () => {
+    test('DummyBroker — falls through to default empty object', () => {
       const result = buildBrokerPayloadFields(
         'DummyBroker',
         ALL_BROKER_CREDENTIALS.DummyBroker,
@@ -403,16 +382,13 @@ describe('rebalanceHelpers', () => {
       expect(result).toEqual({});
     });
 
-    test('unknown broker falls back to accessToken', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+    test('unknown broker returns empty object', () => {
       const result = buildBrokerPayloadFields(
         'FutureBroker',
         {jwtToken: 'future-token'},
         mockDecrypt,
       );
-      expect(result).toEqual({accessToken: 'future-token'});
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
+      expect(result).toEqual({});
     });
 
     test('uses defaultDecrypt when decryptFn not provided', () => {

@@ -117,14 +117,16 @@ const buildOrderBookPayload = (broker, credentials) => {
       };
 
     case 'Kotak':
-      if (!jwtToken || !apiKey || !secretKey || !sid) {
+      // Kotak NEO UUID flow (2026-04-22): apiKey is the UUID API Access
+      // Token; there is no secondary consumer secret. ccxt's
+      // get_kotak_credentials_with_fallback no longer expects one.
+      if (!jwtToken || !apiKey || !sid) {
         throw new Error('Kotak: Missing required credentials');
       }
       return {
         url: `${server.ccxtServer.baseUrl}kotak/order-book`,
         data: {
           consumerKey: decryptCredential(apiKey),
-          consumerSecret: decryptCredential(secretKey),
           accessToken: jwtToken,
           sid,
           serverId: serverId || '',
@@ -270,7 +272,6 @@ const buildCancelOrderPayload = (broker, credentials, orderId, orderDetails = {}
         url: `${server.ccxtServer.baseUrl}kotak/order-cancel`,
         data: {
           consumerKey: decryptCredential(apiKey),
-          consumerSecret: decryptCredential(secretKey),
           accessToken: jwtToken,
           sid,
           serverId: serverId || '',

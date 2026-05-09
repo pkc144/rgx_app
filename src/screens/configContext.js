@@ -4,7 +4,6 @@ import Config from 'react-native-config';
 import axios from 'axios';
 import server from '../utils/serverConfig';
 import {generateToken} from '../utils/SecurityTokenManager';
-import { getAdvisorSubdomain } from '../utils/variantHelper';
 
 const ConfigContext = createContext();
 
@@ -15,7 +14,7 @@ export const useConfig = () => {
 export const ConfigProvider = ({children}) => {
   const [advisorDetails, setAdvisorDetails] = useState(null);
   const [appConfig, setAppConfig] = useState({
-    advisorName: Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+    advisorName: Config.REACT_APP_URL || 'defaultAdvisor',
     baseUrl: server.server.baseUrl,
     themeColor: '#0056B7',
   });
@@ -33,7 +32,7 @@ export const ConfigProvider = ({children}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': 'common',
             'aq-encrypted-key': token,
           },
         },

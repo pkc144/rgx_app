@@ -6,6 +6,10 @@
 
 /**
  * Compute rebalance diff between current holdings and target allocation.
+ * @param {Array} currentHoldings - [{ symbol, quantity, avgPrice, exchange }]
+ * @param {Array} targetAllocation - [{ symbol, value (% weight), price, exchange }]
+ * @param {number} totalInvestment - Total investment amount
+ * @returns {Array} [{ symbol, currentQty, targetQty, diffQty, action, currentWeight, targetWeight }]
  */
 export function computeRebalanceDiff(
   currentHoldings = [],
@@ -30,6 +34,7 @@ export function computeRebalanceDiff(
 
   const diffs = [];
 
+  // Process target allocation
   targetAllocation.forEach(target => {
     const sym = (target.symbol || '').toUpperCase();
     const targetWeight = Number(target.value || 0);
@@ -60,9 +65,11 @@ export function computeRebalanceDiff(
       price,
     });
 
+    // Remove from map (remaining = stocks to exit)
     delete holdingsMap[sym];
   });
 
+  // Stocks in holdings but not in target (should be sold)
   Object.entries(holdingsMap).forEach(([sym, holding]) => {
     const currentValue = holding.quantity * holding.avgPrice;
     const currentWeight =
@@ -85,6 +92,7 @@ export function computeRebalanceDiff(
   });
 
   return diffs.sort((a, b) => {
+    // Sort: SELL first, then BUY, then HOLD
     const order = {SELL: 0, BUY: 1, HOLD: 2};
     return (order[a.action] || 3) - (order[b.action] || 3);
   });
@@ -92,13 +100,17 @@ export function computeRebalanceDiff(
 
 /**
  * Computes the diff between two consecutive rebalance row arrays.
- * Returns null when there is no previous rebalance.
+ *
+ * @param {Array} currentRows  - rows from the current (newer) rebalance
+ * @param {Array|null} previousRows - rows from the previous (older) rebalance, or null/undefined for the first rebalance
+ * @returns {{ added: Array, removed: Array, increased: Array, decreased: Array } | null}
+ *   Returns null when there is no previous rebalance (i.e. the first/oldest rebalance).
  */
 export function computeRowsDiff(currentRows, previousRows) {
   if (!previousRows || previousRows.length === 0) return null;
   if (!currentRows) return null;
 
-  const THRESHOLD = 0.01;
+  const THRESHOLD = 0.01; // ignore weight changes smaller than 0.01%
 
   const normalize = sym =>
     (sym || '')
@@ -108,6 +120,7 @@ export function computeRowsDiff(currentRows, previousRows) {
 
   const isCash = sym => normalize(sym) === 'CASH';
 
+  // Build lookup maps keyed by normalized symbol
   const prevMap = new Map();
   for (const row of previousRows) {
     if (isCash(row.symbol)) continue;
@@ -125,10 +138,15 @@ export function computeRowsDiff(currentRows, previousRows) {
   const increased = [];
   const decreased = [];
 
+  // Stocks in current but not in previous → added
+  // Stocks in both → check weight change
   for (const [sym, curr] of currMap) {
     const prev = prevMap.get(sym);
     if (!prev) {
-      added.push({symbol: curr.symbol, newWeight: curr.targetW});
+      added.push({
+        symbol: curr.symbol,
+        newWeight: curr.targetW,
+      });
     } else {
       const delta = curr.targetW - prev.targetW;
       if (delta > THRESHOLD) {
@@ -147,15 +165,22 @@ export function computeRowsDiff(currentRows, previousRows) {
     }
   }
 
+  // Stocks in previous but not in current → removed
   for (const [sym, prev] of prevMap) {
     if (!currMap.has(sym)) {
-      removed.push({symbol: prev.symbol, oldWeight: prev.targetW});
+      removed.push({
+        symbol: prev.symbol,
+        oldWeight: prev.targetW,
+      });
     }
   }
 
   return {added, removed, increased, decreased};
 }
 
+/**
+ * Summarize rebalance diff.
+ */
 export function summarizeRebalanceDiff(diffs) {
   const buys = diffs.filter(d => d.action === 'BUY');
   const sells = diffs.filter(d => d.action === 'SELL');

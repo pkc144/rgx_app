@@ -16,7 +16,7 @@ import moment from 'moment';
 import server from '../../utils/serverConfig';
 import CryptoJS from 'react-native-crypto-js';
 import Toast from 'react-native-toast-message';
-import IsMarketHours from '../../utils/isMarketHours';
+import {classifyFundsResponse} from '../../utils/brokerSessionValidator';
 import eventEmitter from '../../components/EventEmitter';
 import LinearGradient from 'react-native-linear-gradient';
 import Config from 'react-native-config';
@@ -32,13 +32,13 @@ import logo from '../../assets/fadedlogo.png';
 
 import {generateToken} from '../../utils/SecurityTokenManager';
 import RebalancePreferenceModal from './RebalancePreferenceModal';
-import RebalanceDetailsModal from '../../components/AdviceScreenComponents/RebalanceDetailsModal';
+import { useComponent } from '../../design/useDesign';
 import RebalanceChangeDetailModal from '../../components/RebalanceChangeDetailModal';
 import PendingOrdersModal from '../../components/ModelPortfolioComponents/PendingOrdersModal';
 import {cancelOrder} from '../../services/BrokerOrderBookAPI';
 import {useTrade} from '../../screens/TradeContext';
 import {isFundsErrorOrMissing} from '../../utils/rebalanceHelpers';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
+import {useRefreshBrokerStatus} from '../../hooks/useRefreshBrokerStatus';
 
 const RebalanceCard = ({
   openRebalModal,
@@ -90,46 +90,14 @@ const RebalanceCard = ({
   const angelOneApiKey = configData?.config.REACT_APP_ANGEL_ONE_API_KEY;
   const zerodhaApiKey = configData?.config.REACT_APP_ZERODHA_API_KEY;
 
-  // Refresh and get current broker connection status from API
-  // This ensures we have the latest state even if user disconnected from another app/session
-  const refreshBrokerStatus = async () => {
-    try {
-      const response = await axios.get(
-        `${server.server.baseUrl}api/user/getUser/${userEmail}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-          timeout: 10000,
-        },
-      );
-      const freshUserDetails = response.data.User;
-      // Update parent state with fresh data
-      if (getUserDetails) {
-        getUserDetails();
-      }
-      return {
-        brokerStatus: freshUserDetails?.connect_broker_status,
-        broker: freshUserDetails?.user_broker,
-        userDetails: freshUserDetails,
-      };
-    } catch (error) {
-      console.error('Error refreshing broker status:', error);
-      return {
-        brokerStatus: brokerStatus,
-        broker: broker,
-        userDetails: null,
-      };
-    }
-  };
+  // Inline-fresh {brokerStatus, broker, funds} — closure lag would re-pop
+  // the TokenExpire modal immediately after a successful reconnect.
+  // See `docs/REBALANCING.md § Closure-bound funds`.
+  const refreshBrokerStatus = useRefreshBrokerStatus(userEmail);
 
   // Get dynamic config from API
   const config = useConfig();
+  const RebalanceDetailsModal = useComponent('composites.RebalanceDetailsModal');
   const themeColor = config?.themeColor || '#0056B7';
   const mainColor = config?.mainColor || '#4CAAA0';
   const gradient1 = config?.gradient1 || '#002651';
@@ -199,18 +167,32 @@ const RebalanceCard = ({
   const handleCheckStatus = async () => {
     try {
       // Refresh broker status before checking (matching web)
-      const freshStatus = await refreshBrokerStatus();
+      const freshStatus = await refreshBrokerStatus({forceNetwork: true});
       const currentBrokerStatus = freshStatus?.brokerStatus || brokerStatus;
 
-      if (freshStatus?.broker === undefined || currentBrokerStatus !== 'connected') {
-        if (setBrokerModel) {
+      if (currentBrokerStatus !== 'connected') {
+        if (freshStatus?.broker && setOpenTokenExpireModel) {
+          setOpenTokenExpireModel(true);
+        } else if (setBrokerModel) {
           setBrokerModel(true);
         }
         return;
       }
 
-      // Check funds validity (matching web)
-      if (isFundsErrorOrMissing(funds, currentBrokerStatus)) {
+      // Check funds validity (matching web). Use freshStatus.funds, not
+      // the closure-bound `funds` prop — the prop lags by one render
+      // cycle after a reconnect and would trigger a false TokenExpire.
+      const currentFunds = freshStatus?.funds ?? funds;
+      const _fundsPreflight = classifyFundsResponse(currentFunds, currentBrokerStatus, freshStatus?.broker || broker);
+      if (_fundsPreflight.reason === 'TRANSIENT') {
+        Toast.show({
+          type: 'info',
+          text1: `${freshStatus?.broker || broker || 'Broker'} temporarily unavailable`,
+          text2: _fundsPreflight.message,
+          visibilityTime: 4500,
+          position: 'bottom',
+        });
+      } else if (!_fundsPreflight.ok) {
         if (setOpenTokenExpireModel) {
           setOpenTokenExpireModel(true);
         }
@@ -222,7 +204,7 @@ const RebalanceCard = ({
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -242,6 +224,16 @@ const RebalanceCard = ({
       } else if (userNetPfModel?.order_results) {
         // Fallback: single object format
         orderResults = userNetPfModel.order_results;
+      }
+      // Final fallback: advice_executed.order_results — populated by
+      // ccxt-india `_save_results` for ALL attempts (success + failed).
+      // user_net_pf_model is empty when ALL trades were rejected (e.g.
+      // margin shortfall) because `_save_successful_trades` returns
+      // early when there are no successes (rebalancing.py:1453).
+      if (orderResults.length === 0) {
+        const ae = response.data?.data?.advice_executed;
+        const aeLatest = Array.isArray(ae) ? ae[ae.length - 1] : ae;
+        orderResults = aeLatest?.order_results || [];
       }
       if (setApiResponseData) {
         setApiResponseData(response.data);
@@ -292,7 +284,7 @@ const RebalanceCard = ({
 
   const requestHeaders = {
     'Content-Type': 'application/json',
-    'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+    'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
     'aq-encrypted-key': generateToken(
       Config.REACT_APP_AQ_KEYS,
       Config.REACT_APP_AQ_SECRET,
@@ -563,27 +555,43 @@ const RebalanceCard = ({
       setLoading(true);
 
       // Refresh broker status from API to get latest connection state
-      const freshStatus = await refreshBrokerStatus();
+      const freshStatus = await refreshBrokerStatus({forceNetwork: true});
       const currentBroker = freshStatus?.broker || broker;
       const currentBrokerStatus = freshStatus?.brokerStatus || brokerStatus;
 
       if (currentBrokerStatus !== 'connected' || !currentBroker) {
         setShowCheckboxModal(false);
         setCurrentStep(2);
-        if (setBrokerModel) {
+        if (currentBroker && setOpenTokenExpireModel) {
+          setOpenTokenExpireModel(true);
+        } else if (setBrokerModel) {
           setBrokerModel(true);
         }
         setLoading(false);
       } else {
-        const isMarketHours = IsMarketHours();
-        if (funds?.status === 1 || funds?.status === 2 || funds === null) {
+        // Use freshStatus.funds — closure `funds` lags after reconnect.
+        // Typed pre-flight: TRANSIENT (Upstox 00:00–05:30 IST maintenance,
+        // ICICI base-64 hiccup) → soft toast, no reconnect modal.
+        // TOKEN_EXPIRED → TokenExpire modal as before.
+        const currentFunds = freshStatus?.funds ?? funds;
+        const _fundsPreflight = classifyFundsResponse(currentFunds, currentBrokerStatus, freshStatus?.broker || broker);
+        if (_fundsPreflight.reason === 'TRANSIENT') {
+          Toast.show({
+            type: 'info',
+            text1: `${freshStatus?.broker || broker || 'Broker'} temporarily unavailable`,
+            text2: _fundsPreflight.message,
+            visibilityTime: 4500,
+            position: 'bottom',
+          });
+        } else if (!_fundsPreflight.ok) {
           setShowCheckboxModal(false);
           if (setOpenTokenExpireModel) {
             setOpenTokenExpireModel(true);
           }
           setLoading(false);
           return;
-        } else {
+        }
+        {
           setShowCheckboxModal(false);
           setCurrentStep(2);
           await handleCheckStatus();

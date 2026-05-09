@@ -113,7 +113,7 @@ export async function createPayUOrder({
   const headers = getHeaders(configData);
 
   // For React Native, we'll use deep link URLs for return
-  const appScheme = Config.REACT_APP_DEEP_LINK_SCHEME || 'rgxapp';
+  const appScheme = Config.REACT_APP_DEEP_LINK_SCHEME || 'alphab2b';
   const redirectLocation = `${appScheme}://payu/return`;
 
   const response = await axios.post(
@@ -257,7 +257,7 @@ export async function registerPayUSI({
   const headers = getHeaders(configData);
 
   // For React Native, we'll use deep link URLs for return
-  const appScheme = Config.REACT_APP_DEEP_LINK_SCHEME || 'rgxapp';
+  const appScheme = Config.REACT_APP_DEEP_LINK_SCHEME || 'alphab2b';
   const redirectLocation = `${appScheme}://payu/si/return`;
 
   // Calculate SI start and end dates

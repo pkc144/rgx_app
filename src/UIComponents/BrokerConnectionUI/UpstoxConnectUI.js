@@ -55,6 +55,7 @@ const UpstoxConnectUI = ({
   unmetAck,
   setUnmetAck,
   configData,
+  brokerConnectRedirectURL,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const insets = useSafeAreaInsets();
@@ -112,7 +113,7 @@ const UpstoxConnectUI = ({
                 style={{flex: 1}}
                 contentContainerStyle={{padding: 10, paddingBottom: 20}}
                 showsVerticalScrollIndicator={true}>
-                <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} />
+                <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} brokerConnectRedirectURL={brokerConnectRedirectURL} />
                 <View style={[styles.toggleWrapper, {marginTop: 15, paddingBottom: insets.bottom + 10}]}>
                   <TouchableOpacity
                     style={styles.toggleContainer}
@@ -138,7 +139,7 @@ const UpstoxConnectUI = ({
                 keyboardShouldPersistTaps="handled">
                 {/* Help content */}
                 <View style={[styles.guideBox, {maxHeight: 280}]}>
-                  <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} />
+                  <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} brokerConnectRedirectURL={brokerConnectRedirectURL} />
                 </View>
                 <TouchableOpacity
                   onPress={() => setExpanded(true)}

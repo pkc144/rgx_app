@@ -1,5 +1,6 @@
 /**
  * Tests for portfolioEvents.js
+ * Matches: Web src/__tests__/utils/portfolioEvents.test.js
  * Validates EventEmitter pattern for cross-component communication.
  */
 

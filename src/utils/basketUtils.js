@@ -11,6 +11,7 @@
 export function parseFnOSymbol(symbol) {
   if (!symbol) return null;
 
+  // Match pattern: UNDERLYING + EXPIRY_DATE + STRIKE + OPTION_TYPE
   const match = symbol.match(
     /^([A-Z]+)(\d{2}[A-Z]\d{2})(\d+)(CE|PE|FUT)?$/i,
   );
@@ -28,17 +29,27 @@ export function parseFnOSymbol(symbol) {
 
 /**
  * Calculate quantity adjusted for lot size.
+ * @param {number} rawQuantity - Desired quantity
+ * @param {number} lotSize - Lot size for the instrument
+ * @returns {number} Adjusted quantity (multiple of lotSize)
  */
 export function adjustForLotSize(rawQuantity, lotSize) {
   if (!lotSize || lotSize <= 0) return rawQuantity;
   return Math.max(lotSize, Math.round(rawQuantity / lotSize) * lotSize);
 }
 
+/**
+ * Get number of lots from quantity and lot size.
+ */
 export function getLotsCount(quantity, lotSize) {
   if (!lotSize || lotSize <= 0) return quantity;
   return Math.floor(quantity / lotSize);
 }
 
+/**
+ * Format quantity display with lot information.
+ * e.g., "3 lots (75)" for lotSize=25, qty=75
+ */
 export function formatQuantityWithLots(quantity, lotSize) {
   if (!lotSize || lotSize <= 1) return `${quantity}`;
   const lots = getLotsCount(quantity, lotSize);
@@ -47,6 +58,9 @@ export function formatQuantityWithLots(quantity, lotSize) {
 
 /**
  * Build a basket of orders from trade recommendations.
+ * @param {Array} trades - Trade recommendations
+ * @param {string} broker - Broker name
+ * @returns {Array} Formatted basket items
  */
 export function buildBasket(trades, broker) {
   return trades.map((trade, index) => ({
@@ -65,6 +79,9 @@ export function buildBasket(trades, broker) {
   }));
 }
 
+/**
+ * Separate basket into BUY and SELL groups.
+ */
 export function separateByTransactionType(basket) {
   const buyOrders = basket.filter(
     t => (t.transactionType || '').toUpperCase() === 'BUY',
@@ -75,6 +92,12 @@ export function separateByTransactionType(basket) {
   return {buyOrders, sellOrders};
 }
 
+/**
+ * Calculate total basket value.
+ * @param {Array} basket - Basket items with price and quantity
+ * @param {function} getLTP - Optional function to get live price
+ * @returns {{ buyValue: number, sellValue: number, netValue: number }}
+ */
 export function calculateBasketValue(basket, getLTP) {
   let buyValue = 0;
   let sellValue = 0;
@@ -95,6 +118,10 @@ export function calculateBasketValue(basket, getLTP) {
   return {buyValue, sellValue, netValue: buyValue - sellValue};
 }
 
+/**
+ * Validate basket before submission.
+ * @returns {{ isValid: boolean, errors: string[] }}
+ */
 export function validateBasket(basket) {
   const errors = [];
 
@@ -141,6 +168,9 @@ export function parseExpiryFromSymbol(searchSymbol) {
   return new Date(year, month, day, 23, 59, 59);
 }
 
+/**
+ * Check if basket is expired based on searchSymbol in trades.
+ */
 export function isBasketExpired(trades) {
   if (!trades || trades.length === 0) return false;
   for (const trade of trades) {
@@ -156,6 +186,9 @@ export function isBasketExpired(trades) {
  * Net basket trades - cancels out equal BUY and SELL quantities for each symbol.
  * Only nets trades with "recommend" status.
  * For closure positions, consolidates by symbol to show net toTradeQty per symbol.
+ *
+ * @param {Array} trades - Array of basket trades
+ * @returns {Array} Netted trades (only trades with net quantity > 0) + closure positions + rejected trades
  */
 export function netBasketTrades(trades) {
   if (!trades || trades.length === 0) return [];

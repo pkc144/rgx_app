@@ -23,7 +23,6 @@ import axios from 'axios';
 import Config from 'react-native-config';
 import { getAuth } from '@react-native-firebase/auth';
 import server from '../utils/serverConfig';
-import { getAdvisorSubdomain } from '../utils/variantHelper';
 
 /**
  * Detect the correct exchange for a symbol.
@@ -44,9 +43,11 @@ function detectExchange(symbol, providedExchange) {
   return providedExchange || 'NSE';
 }
 
-// Strip trailing slash so ${ccxtUrl}/ltp and ${ccxtUrl}/subscribe-array
-// resolve correctly regardless of how serverConfig is written.
-const rawBase = server.ccxtServer.baseUrl || '';
+// Web hits https://websocket.alphaquark.in (NOT ccxtprod) for both the
+// socket.io /ltp namespace and the /subscribe-array REST call. The app
+// already has this URL in serverConfig.js as `server.websocket.baseUrl`;
+// it just wasn't being used. Strip trailing slash so the path joins work.
+const rawBase = server.websocket.baseUrl || '';
 const ccxtUrl = rawBase.replace(/\/+$/, '');
 
 const useWebSocketCurrentPrice = (symbols) => {
@@ -61,7 +62,7 @@ const useWebSocketCurrentPrice = (symbols) => {
     Config.REACT_APP_HEADER_NAME ||
     Config.REACT_APP_URL ||
     Config.REACT_APP_ADVISOR_SUBDOMAIN ||
-    getAdvisorSubdomain();
+    '';
 
   const memoizedSymbols = useMemo(() => {
     if (!symbols) return [];

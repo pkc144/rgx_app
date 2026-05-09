@@ -117,7 +117,7 @@ export const TradeProvider = ({children}) => {
       const subdomain =
         configData?.config?.REACT_APP_HEADER_NAME ||
         configData?.subdomain ||
-        getAdvisorSubdomain();
+        'common';
       const response = await axios.get(
         `${server.server.baseUrl}api/admin/frontend-config`,
         {
@@ -398,7 +398,7 @@ export const TradeProvider = ({children}) => {
         const response = await axios.get(requesturl, {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -798,6 +798,8 @@ const getAllTrades = async () => {
   const [userDetails, setUserDetails] = useState(null);
   const [brokerStatus, setBrokerStatus] = useState(null);
   const [funds, setFunds] = useState({});
+  const [showMigrationModal, setShowMigrationModal] = useState(false);
+  const [migrationBroker, setMigrationBroker] = useState(null);
 
   // Broker Order Book State for reconciliation
   const [brokerOrders, setBrokerOrders] = useState([]);
@@ -1006,15 +1008,94 @@ const getAllTrades = async () => {
     }
   };
 
-  const fetchBrokerStatusModal = async () => {
-    if (userEmail) {
-      try {
-        const updatedUserDetails = await getUserDeatils();
-      } catch (error) {
-        setIsBrokerConnected(false);
-      } finally {
-        const updatedUserDetails = await getUserDeatils();
+  const fetchBrokerStatusModal = async (opts = {}) => {
+    // `silent: true` skips the post-fetch migration-modal trigger.
+    // Used by the app-start refresh (line ~1302) where popping
+    // "Reconnected to {broker}" is misleading — the broker may not
+    // actually be connected, may need re-auth, and the user did not
+    // just reconnect. Migration modal should only fire after an
+    // explicit reconnect action by the user. User-reported 2026-04-29.
+    const silent = opts.silent === true;
+    if (!userEmail) return;
+    try {
+      const updatedUser = await getUserDeatils();
+      // After a reconnect we must refresh funds immediately. Relying on
+      // the [userDetails, configData] useEffect alone is flaky: it gates
+      // on the stale `broker` state (so a reconnect into the same broker
+      // can still see the old `funds` object) and `getAllFunds` closes
+      // over a userDetails snapshot that may not be committed yet.
+      // `handleCheckStatus` / `isFundsErrorOrMissing` in RebalanceCard
+      // then reads stale funds and re-pops the TokenExpire modal — the
+      // "Login to {broker} loops forever after successful reconnect"
+      // bug. Call fetchFunds directly with the fresh user object.
+      if (updatedUser?.user_broker) {
+        try {
+          const {
+            clientCode,
+            apiKey,
+            jwtToken,
+            secretKey,
+            sid,
+            serverId,
+          } = updatedUser;
+          const fetchedFunds = await fetchFunds(
+            updatedUser.user_broker,
+            clientCode,
+            apiKey,
+            jwtToken,
+            secretKey,
+            sid,
+            serverId,
+            userEmail,
+          );
+          if (fetchedFunds) {
+            setFunds(fetchedFunds);
+          }
+        } catch (fundsErr) {
+          console.warn(
+            '[fetchBrokerStatusModal] funds refresh failed:',
+            fundsErr?.message,
+          );
+        }
+
+        // Check if this broker switch requires holdings migration
+        try {
+          const migrationRes = await axios.get(
+            `${server.server.baseUrl}api/model-portfolio-db-update/broker-migration-summary/${encodeURIComponent(userEmail)}`,
+            {
+              params: {newBroker: updatedUser.user_broker},
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+                'aq-encrypted-key': generateToken(
+                  Config.REACT_APP_AQ_KEYS,
+                  Config.REACT_APP_AQ_SECRET,
+                ),
+              },
+            },
+          );
+          if (migrationRes.data?.data?.requiresMigration && !silent) {
+            setMigrationBroker(updatedUser.user_broker);
+            // Delay so navigation.goBack() animation (~300ms) fully completes
+            // before the bottom sheet slides up. Without this delay the sheet
+            // renders mid-navigation, truncating the SubscriptionScreen's
+            // "Your Broker & Funds Info" card rows (they are hidden behind the
+            // white sheet). Web prod equivalent: migration check only fires
+            // after user clicks "Continue" on the success dialog — the delay
+            // here achieves the same settled-screen guarantee on mobile.
+            setTimeout(() => setShowMigrationModal(true), 700);
+            return {migrationWillShow: true};
+          }
+          return {migrationWillShow: false};
+        } catch (migErr) {
+          console.warn('[fetchBrokerStatusModal] migration check failed:', migErr?.message);
+          return {migrationWillShow: false};
+        }
       }
+      return {migrationWillShow: false};
+    } catch (error) {
+      setIsBrokerConnected(false);
+      return {migrationWillShow: false};
     }
   };
 
@@ -1224,8 +1305,12 @@ const getAllTrades = async () => {
       console.log('✅ TradeContext: Config available, fetching user data...');
       getUserDeatils();
       getPlanList();
-      // Refresh broker status on app launch to ensure correct state on new devices
-      fetchBrokerStatusModal();
+      // Refresh broker status on app launch — silent mode so the
+      // migration modal doesn't pop "Reconnected to {broker}" at app
+      // start (misleading; broker may actually need re-auth and user
+      // didn't just reconnect). Migration modal only fires after an
+      // explicit user reconnect action.
+      fetchBrokerStatusModal({silent: true});
     } else {
       console.log(
         '⚠️ TradeContext: Waiting for config data before fetching user data...',
@@ -1379,7 +1464,7 @@ const getAllTrades = async () => {
         url: `${server.ccxtServer.baseUrl}angelone/market-data`,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -1441,6 +1526,9 @@ const getAllTrades = async () => {
         bestPerformer,
         isPerformerLoading,
         fetchBrokerStatusModal,
+        showMigrationModal,
+        setShowMigrationModal,
+        migrationBroker,
         getAllBestPerformers,
         fetchPdf,
         setUserDetails,

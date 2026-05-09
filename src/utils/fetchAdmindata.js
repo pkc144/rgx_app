@@ -2,7 +2,6 @@ import server from "./serverConfig";
 import Config from "react-native-config";
 import { generateToken } from "./SecurityTokenManager";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getAdvisorSubdomain } from "./variantHelper";
 
 
 
@@ -17,7 +16,7 @@ export default async function fetchAdminData() {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "X-Advisor-Subdomain": Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        "X-Advisor-Subdomain": Config.REACT_APP_URL,
         "aq-encrypted-key": generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET

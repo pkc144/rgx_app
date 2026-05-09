@@ -29,7 +29,6 @@ import eventEmitter from './EventEmitter';
 import IsMarketHours from '../utils/isMarketHours';
 import server from '../utils/serverConfig';
 import {generateToken} from '../utils/SecurityTokenManager';
-import {getAdvisorSubdomain} from '../utils/variantHelper';
 
 import CheckBox from '@react-native-community/checkbox';
 
@@ -69,8 +68,9 @@ const ReviewTradeModal = ({
   const secondaryColor = config?.secondaryColor || '#F0F0F0';
   const gradient1 = config?.gradient1 || '#F0F0F0';
   const gradient2 = config?.gradient2 || '#F0F0F0';
+  const allowAfterHoursOrders = config?.allowAfterHoursOrders;
+  const marketGateOpen = IsMarketHours() || allowAfterHoursOrders;
 
-  const isMarketHours = IsMarketHours();
   const {width} = useWindowDimensions();
   const [multiplier, setMultiplier] = useState('1');
 
@@ -98,7 +98,7 @@ const ReviewTradeModal = ({
         data: symbols,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': Config.REACT_APP_URL,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -779,17 +779,16 @@ const ReviewTradeModal = ({
                 <TouchableOpacity
                   style={[
                     styles.buttonPlace,
-                    (hasZeroQuantityBasket || !isMarketHours) &&
-                      styles.buttonDisabled, // disabled styling
-                    loading && styles.buttonLoading, // optional: add extra styling when loading
+                    (hasZeroQuantityBasket || !marketGateOpen) && styles.buttonDisabled,
+                    loading && styles.buttonLoading,
                   ]}
-                  disabled={hasZeroQuantityBasket || !isMarketHours || loading} // disable while loading
+                  disabled={hasZeroQuantityBasket || !marketGateOpen || loading}
                   onPress={() => placeOrder(basketData)}>
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <Text style={styles.buttonTextPlace}>
-                      {!isMarketHours ? 'Market is Closed' : 'Place Order'}
+                      {!marketGateOpen ? 'Market is Closed' : 'Place Order'}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -1051,16 +1050,16 @@ const ReviewTradeModal = ({
             <TouchableOpacity
               style={[
                 styles.buttonPlace,
-                (hasZeroQuantity || !isMarketHours) && styles.buttonDisabled, // disabled styling
-                loading && styles.buttonLoading, // optional: add extra styling when loading
+                (hasZeroQuantity || !marketGateOpen) && styles.buttonDisabled,
+                loading && styles.buttonLoading,
               ]}
-              disabled={hasZeroQuantity || !isMarketHours || loading}
+              disabled={hasZeroQuantity || !marketGateOpen || loading}
               onPress={() => placeOrder(stockDetails)}>
               {loading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text style={styles.buttonTextPlace}>
-                  {!isMarketHours ? 'Market is Closed' : 'Place Order'}
+                  {!marketGateOpen ? 'Market is Closed' : 'Place Order'}
                 </Text>
               )}
             </TouchableOpacity>

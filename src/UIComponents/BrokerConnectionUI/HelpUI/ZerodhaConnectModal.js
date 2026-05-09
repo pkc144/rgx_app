@@ -1,15 +1,15 @@
 import React, {useRef, useState, useEffect} from 'react';
 import {View, StyleSheet, Dimensions} from 'react-native';
 import {getAuth} from '@react-native-firebase/auth';
-import server from '../../../utils/serverConfig';
+import server from '../../utils/serverConfig';
 import axios from 'axios';
 import CryptoJS from 'react-native-crypto-js';
 import Config from 'react-native-config';
 import Toast from 'react-native-toast-message';
-import {generateToken} from '../../../utils/SecurityTokenManager';
-import ZerodhaConnectUI from '../ZerodhaConnectUI';
+import {generateToken} from '../../utils/SecurityTokenManager';
+import ZerodhaConnectUI from '../../UIComponents/BrokerConnectionUI/ZerodhaConnectUI';
 import {useTrade} from '../../../screens/TradeContext';
-import {getAdvisorSubdomain} from '../../../utils/variantHelper';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06;
 
@@ -192,7 +192,7 @@ const ZerodhaConnectModal = ({
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -248,7 +248,7 @@ const ZerodhaConnectModal = ({
         url: `${server.ccxtServer.baseUrl}zerodha/gen-access-token`,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -312,7 +312,7 @@ const ZerodhaConnectModal = ({
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -379,7 +379,7 @@ const ZerodhaConnectModal = ({
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,

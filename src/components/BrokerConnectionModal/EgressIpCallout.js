@@ -57,6 +57,7 @@ import Config from 'react-native-config';
 import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
+import LinkifiedUrl from '../../UIComponents/BrokerConnectionUI/HelpUI/LinkifiedUrl';
 
 // Brokers requiring per-customer IP whitelisting. Partners short-
 // circuit to null without hitting /egress/me. Keep keys in sync with
@@ -88,7 +89,7 @@ const BROKER_DISPLAY_NAMES = {
 const BROKER_DEV_PORTAL_URLS = {
   upstox: 'https://account.upstox.com/developer/apps',
   angelone: 'https://smartapi.angelone.in/',
-  fyers: 'https://myapi.fyers.in/dashboard',
+  fyers: 'https://fyers.in/web/api-dashboard/user-apps',
   motilaloswal: 'https://openapi.motilaloswal.com/',
   kotak: 'https://npapi.kotaksecurities.com/',
   icicidirect: 'https://api.icicidirect.com/apiuser/home',
@@ -106,7 +107,7 @@ const BROKER_WHITELIST_HINT = {
   icicidirect: 'Breeze API app → IP Whitelist',
   iifl: 'XTS connect → App → Allowed IPs',
   hdfcsec: 'InvestRight API app → Allowed IPs',
-  groww: 'Trade API → Create API Key + Secret → Whitelisted IPs',
+  groww: 'Trade API → Generate TOTP token → Whitelisted IPs',
 };
 
 function buildHeaders(configData) {
@@ -419,11 +420,10 @@ const EgressIpCallout = ({
             {brokerDevPortal && (
               <Text style={styles.stepText}>
                 <Text style={styles.bold}>a.</Text> Open{' '}
-                <Text
-                  style={styles.link}
-                  onPress={() => Linking.openURL(brokerDevPortal)}>
-                  {brokerDevPortal.replace(/^https?:\/\//, '')}
-                </Text>
+                <LinkifiedUrl
+                  url={brokerDevPortal}
+                  display={brokerDevPortal.replace(/^https?:\/\//, '')}
+                />
               </Text>
             )}
             {brokerHint && (

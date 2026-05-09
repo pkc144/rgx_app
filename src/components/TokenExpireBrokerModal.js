@@ -7,16 +7,13 @@ import server from '../utils/serverConfig';
 import { generateToken } from '../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import useModalStore from '../GlobalUIModals/modalStore';
-import { getAdvisorSubdomain } from '../utils/variantHelper';
+import { refreshGrowwSession } from '../utils/growwRefresh';
 
-// OAuth/re-consent brokers — the reconnect modal shows a single
-// "Reconnect {broker}" button for each. Axis Securities was missing
-// (2026-04-18): Axis sessions expiring would render the modal with no
-// button and no form, leaving the user stuck. Added Axis so the same
-// partner-OAuth path applies (matches web TokenExpireBrokarModal.js:1027).
-// Groww removed 2026-04-20 — migrated from partner OAuth to credential
-// form (API Key + API Secret + per-customer IP whitelist). Groww session
-// expiry now goes through the credential-form reconnect path.
+// OAuth/re-consent brokers — the reconnect modal renders a single
+// "Reconnect {broker}" button for each. Groww is NOT in this list as
+// of 2026-04-21: it migrated to credential + TOTP-seed and has its
+// own dedicated branch (see broker === 'Groww' render block below)
+// that renders "Refresh Groww session" and calls refreshGrowwSession.
 const OAUTH_BROKERS = ['Zerodha', 'Angel One', 'Dhan', 'Fyers', 'Upstox', 'AliceBlue', 'Hdfc Securities', 'Motilal Oswal', 'Axis Securities'];
 
 const TokenExpireBrokerModal = ({
@@ -55,7 +52,7 @@ const TokenExpireBrokerModal = ({
     axios.post(`${server.server.baseUrl}api/iifl/generate-session`, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -103,7 +100,7 @@ const TokenExpireBrokerModal = ({
     axios.post(`${server.server.baseUrl}api/kotak/update-key`, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -146,7 +143,7 @@ const TokenExpireBrokerModal = ({
     axios.put(`${server.server.baseUrl}api/kotak/connect-broker`, data, {
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'X-Advisor-Subdomain': Config.REACT_APP_HEADER_NAME,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -185,6 +182,38 @@ const TokenExpireBrokerModal = ({
     }
   };
 
+  // Groww takes a different steady-state path than the other
+  // OAuth brokers: we already store the customer's TOTP seed
+  // server-side (AES-256 at rest), so daily refresh is a single
+  // POST to /api/groww/refresh-token — no browser redirect, no
+  // re-pasting creds. Fall through to the connect modal only
+  // when the stored seed is missing (NO_TOTP_SEED → legacy
+  // upgrade) or rejected (INVALID_SEED → revoked key recovery).
+  const showModalAlert = useModalStore((state) => state.showAlert);
+  const handleGrowwRefresh = async () => {
+    setLoginLoading(true);
+    try {
+      await refreshGrowwSession({
+        userId,
+        advisorSubdomain: Config.REACT_APP_HEADER_NAME,
+        showAlert: showModalAlert,
+        onClose: () => setOpenTokenExpireModel(false),
+        onSuccess: () => {
+          if (getUserDetails) getUserDetails();
+        },
+        // NO_TOTP_SEED / INVALID_SEED → re-open the Groww connect
+        // modal so the customer can capture (or recapture) a seed.
+        onOpenConnectModal: () => {
+          if (checkValidApiAnSecret) {
+            checkValidApiAnSecret('Groww');
+          }
+        },
+      });
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (showSuccessMsg) {
       const timer = setTimeout(() => {
@@ -195,18 +224,6 @@ const TokenExpireBrokerModal = ({
   }, [showSuccessMsg]);
 
   const isOAuthBroker = OAUTH_BROKERS.includes(broker);
-
-  // Groww session expired → open the new credential form via the
-  // global ModalManager (ported from web e73bd81, which dispatches
-  // the "aq:open-broker-connect" DOM event — RN equivalent is the
-  // zustand modalStore openModal('Groww') → ModalManager renders
-  // GrowwConnectModal). Prevents users getting stuck on a modal
-  // that would otherwise render neither the OAuth button nor a
-  // credential form after Groww left OAUTH_BROKERS.
-  const handleGrowwReconnect = () => {
-    setOpenTokenExpireModel(false);
-    useModalStore.getState().openModal('Groww');
-  };
 
   if (!openTokenExpireModel) return null;
 
@@ -231,27 +248,32 @@ const TokenExpireBrokerModal = ({
           <Text style={styles.title}>
             {broker === 'Zerodha'
               ? 'Your Zerodha session has expired. Please reconnect to Kite to continue.'
-              : isOAuthBroker
-                ? `Your ${broker} session has expired. Please reconnect to continue.`
-                : 'Please login to your broker to continue investments'}
+              : broker === 'Groww'
+                ? 'Your Groww session has expired. Tap Refresh — no re-pasting credentials.'
+                : isOAuthBroker
+                  ? `Your ${broker} session has expired. Please reconnect to continue.`
+                  : 'Please login to your broker to continue investments'}
           </Text>
           <View style={styles.inputContainer}>
-            {isOAuthBroker && (
+            {broker === 'Groww' ? (
+              <TouchableOpacity
+                style={styles.submitButton}
+                onPress={handleGrowwRefresh}
+                disabled={loginLoading}
+              >
+                {loginLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Refresh Groww session</Text>
+                )}
+              </TouchableOpacity>
+            ) : isOAuthBroker && (
               <TouchableOpacity
                 style={styles.submitButton}
                 onPress={handleOAuthReconnect}
                 disabled={loginLoading}
               >
                 <Text style={styles.submitButtonText}>Reconnect {broker}</Text>
-              </TouchableOpacity>
-            )}
-            {broker === 'Groww' && (
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={handleGrowwReconnect}
-                disabled={loginLoading}
-              >
-                <Text style={styles.submitButtonText}>Reconnect Groww</Text>
               </TouchableOpacity>
             )}
             {broker === 'IIFL Securities' && (

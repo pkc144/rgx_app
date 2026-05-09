@@ -31,10 +31,21 @@ import {useTrade} from '../../screens/TradeContext';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { detectTransientOrderWindowError } from '../../utils/rebalanceHelpers';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import { validateStockExchanges, getPublisherWebViewBaseUrl, resolveZerodhaSymbol, applyKiteMarketProtection } from '../../utils/brokerPublisher';
+import useZerodhaSymbolMap from '../../hooks/useZerodhaSymbolMap';
 import { convertResponse } from '../../utils/tradeUtils';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import moment from 'moment';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import { useConfig } from '../../context/ConfigContext';
+import { computeTradeVariant } from '../../utils/tradeVariant';
+import useSdkClient from '../../sdk/useSdkClient';
+
+const isSdkExecuteAdviceEnabled = () => {
+  const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
+  return v === 'true' || v === '1';
+};
+
 const MPReviewTradeModal = ({
   visible,
   onCloseReviewTrade,
@@ -64,9 +75,19 @@ const MPReviewTradeModal = ({
   setShowOtherBrokerModel,
   isReturningFromOtherBrokerModal,
   setIsReturningFromOtherBrokerModal,
+  // Optional — sibling setter for the outgoing trade list at submit
+  // time (used by RecommendationSuccessModal to recover the trade
+  // `variant` per row when ccxt-india doesn't echo it). See
+  // utils/tradeVariant.js § resolveResultVariant.
+  setLastSubmittedTrades,
 }) => {
   const {configData} = useTrade();
   const openBrokerModal = useModalStore(state => state.openModal);
+  // For trade `variant` computation at submit. See
+  // docs/APP_ARCHITECTURE.md § 4.5.2 Trade variant field.
+  const { allowAfterHoursOrders } = useConfig() || {};
+  const sdkClient = useSdkClient();
+  const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   console.log('MPBROKER:', broker);
   const {width} = useWindowDimensions();
 
@@ -264,6 +285,8 @@ const MPReviewTradeModal = ({
   };
 
   const stockDetails = convertResponse(totalArray, broker);
+  // ccxt-india scripmaster map — see brokerPublisher.resolveZerodhaSymbol.
+  const symbolMap = useZerodhaSymbolMap(stockDetails, visible);
   const [loading, setLoading] = useState(false);
   const clientCode = userDetails && userDetails?.clientCode;
   const apiKey = userDetails && userDetails?.apiKey;
@@ -293,6 +316,7 @@ const MPReviewTradeModal = ({
 
     setLoading(true);
 
+    try {
     // Pre-order: validate exchange information
     const hasExchangeEmpty = stockDetails.some((item) => item.exchange === ' ');
     if (hasExchangeEmpty) {
@@ -323,14 +347,19 @@ const MPReviewTradeModal = ({
       return;
     }
 
+    // Trade variant tagged on every per-trade object — see
+    // docs/APP_ARCHITECTURE.md § 4.5.2 Trade variant field. Display-only.
+    const variant = computeTradeVariant(allowAfterHoursOrders);
+    const tradesWithVariant = stockDetails.map(s => ({ ...s, variant }));
+
     const getBasePayload = () => ({
       modelName: strategyDetails?.model_name,
       advisor: strategyDetails?.advisor,
-      model_id: latestRebalance.model_Id,
+      model_id: latestRebalance?.model_Id,
       unique_id: calculatedPortfolioData?.uniqueId,
       user_broker: broker,
       user_email: userEmail,
-      trades: stockDetails,
+      trades: tradesWithVariant,
     });
 
     const getBrokerSpecificPayload = () => {
@@ -398,8 +427,36 @@ const MPReviewTradeModal = ({
       }
     };
 
-    try {
-      const response = await axios.request(config);
+    // SDK executeAdvice dual-path (Phase C) — main broker path.
+      // When the SDK is enabled, try the orchestrator first. On failure,
+      // fall through to legacy. SDK result wrapped to match response shape.
+      let response;
+      if (sdkExecuteAdviceEnabled) {
+        try {
+          const sdkResult = await sdkClient.executeAdvice({
+            kind: 'mpRebalance',
+            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            brokerName: broker,
+            modelId: latestRebalance?.model_Id,
+            modelName: strategyDetails?.model_name,
+            uniqueId: calculatedPortfolioData?.uniqueId,
+            trades: payload.trades,
+          });
+          const mappedRows = (sdkResult?.rows || []).map(row => ({
+            ...row,
+            orderStatus: row.status,
+            tradingSymbol: row.symbol,
+          }));
+          response = { data: { results: mappedRows } };
+          console.log('[MPReviewTradeModal] SDK executeAdvice result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+        } catch (sdkErr) {
+          console.error('[MPReviewTradeModal] SDK executeAdvice failed, falling back to legacy:', sdkErr?.message);
+          response = null;
+        }
+      }
+      if (!response) {
+        response = await axios.request(config);
+      }
       console.log('[OrderPlacement] API Response full:', JSON.stringify(response.data));
       console.log('[OrderPlacement] Results:', response.data.results);
       const checkData = response?.data?.results;
@@ -458,6 +515,9 @@ const MPReviewTradeModal = ({
 
       const results = checkData;
       setOrderPlacementResponse(results);
+      // Outgoing trade list (variant-tagged) — fallback source for the
+      // success modal's `variant` lookups.
+      setLastSubmittedTrades?.(tradesWithVariant);
 
       // 2. Always call model-portfolio-db-update first (before EDIS checks)
       const updateData = {
@@ -640,6 +700,7 @@ const MPReviewTradeModal = ({
       }
 
       // Fallback: Build synthetic rejected response from stockDetails for the modal
+      const syntheticVariant = computeTradeVariant(allowAfterHoursOrders);
       const syntheticResponse = stockDetails.map(stock => ({
         symbol: stock.tradingSymbol,
         tradingSymbol: stock.tradingSymbol,
@@ -651,8 +712,10 @@ const MPReviewTradeModal = ({
         orderPlacement: 'failed',
         orderStatusMessage: errorMessage,
         message_aq: errorMessage,
+        variant: syntheticVariant,
       }));
       setOrderPlacementResponse(syntheticResponse);
+      setLastSubmittedTrades?.(syntheticResponse);
       setOpenSucessModal(true);
       onCloseReviewTrade();
     }
@@ -778,6 +841,46 @@ const MPReviewTradeModal = ({
       }
     }
 
+    // Pre-flight: refuse to send orders with missing exchange. Kite Publisher
+    // silently drops basket items whose symbol/exchange combo it can't resolve
+    // (e.g. a BSE-only symbol sent with exchange=NSE), leaving the user with
+    // a mystery "not in order book" state. Fail here with the offending symbols.
+    const exchangeCheck = validateStockExchanges(stockDetails);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      const userMsg = `Cannot place order — exchange is missing for: ${missingList}. Please contact your advisor to correct the trade before retrying.`;
+      console.error('[ZerodhaPublisher] Blocked due to missing exchange:', missingList);
+      const syntheticResponse = stockDetails.map(stock => {
+        const stockMissing = !(stock.exchange && String(stock.exchange).trim());
+        const perStockMsg = stockMissing
+          ? 'Exchange missing — advisor must correct this trade.'
+          : 'Blocked: another trade in this batch was missing exchange.';
+        return {
+          symbol: stock.tradingSymbol,
+          tradingSymbol: stock.tradingSymbol,
+          transactionType: stock.transactionType || 'BUY',
+          quantity: stock.quantity,
+          orderType: stock.orderType || 'MARKET',
+          exchange: stock.exchange || '',
+          orderStatus: 'rejected',
+          orderPlacement: 'failed',
+          orderStatusMessage: perStockMsg,
+          message_aq: perStockMsg,
+        };
+      });
+      setOrderPlacementResponse(syntheticResponse);
+      setOpenSucessModal(true);
+      onCloseReviewTrade();
+      setLoading(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: userMsg,
+        visibilityTime: 8000,
+      });
+      return;
+    }
+
     // Debug: Verify API key is available
     console.log('[ZerodhaPublisher] handleZerodhaRedirect called, API Key:', zerodhaApiKey);
     if (!zerodhaApiKey) {
@@ -814,20 +917,27 @@ const MPReviewTradeModal = ({
     }
     const apiKey = zerodhaApiKey;
     const basket = stockDetails.map(stock => {
-      // Use LTP for price calculation
-      const ltp = getLastKnownPrice(stock.tradingSymbol);
+      // Scripmaster-resolved symbol/exchange (-EQ strip, BE→BSE, etc).
+      const resolved = resolveZerodhaSymbol(stock, symbolMap);
+      // LTP: live ws → live raw → server-cached from /zerodha/convert-symbol.
+      const liveLtp = getLastKnownPrice(resolved.tradingsymbol) || getLastKnownPrice(stock.tradingSymbol);
+      const ltp = liveLtp && liveLtp !== '-' && parseFloat(liveLtp) > 0
+        ? liveLtp
+        : resolved.cachedLtp || 0;
       let orderPrice = 0;
 
       if (stock.orderType === 'LIMIT') {
         orderPrice = parseFloat(stock.price || 0);
       } else if (stock.orderType === 'MARKET' || stock.orderType === 'SL') {
-        orderPrice = ltp !== '-' ? parseFloat(ltp) : 0;
+        orderPrice = ltp && ltp !== '-' ? parseFloat(ltp) : 0;
       }
 
       let baseOrder = {
         variety: 'regular',
-        tradingsymbol: stock.tradingSymbol,
-        exchange: stock.exchange || 'NSE',
+        tradingsymbol: resolved.tradingsymbol,
+        // exchange from scripmaster; validateStockExchanges() above
+        // guarantees stock.exchange was non-empty as a fallback.
+        exchange: resolved.exchange,
         transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
         order_type: mapKiteOrderType(stock.orderType),
         quantity: parseInt(stock.quantity, 10) || 1,
@@ -841,9 +951,10 @@ const MPReviewTradeModal = ({
         baseOrder.readonly = true;
       }
 
-      console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(baseOrder));
-
-      return baseOrder;
+      // MARKET → LIMIT-IOC with 1% market-protection buffer (GSM/T2T/BE stocks).
+      const protectedOrder = applyKiteMarketProtection(baseOrder, ltp, stock.transactionType);
+      console.log('[ZerodhaPublisher] Basket item:', JSON.stringify(protectedOrder));
+      return protectedOrder;
     });
 
     const currentISTDateTime = new Date();
@@ -1193,6 +1304,23 @@ const MPReviewTradeModal = ({
     const sessionValid = await validateBrokerSession(broker, jwtToken, { checkFreshness: true });
     if (!sessionValid) return;
 
+    // Pre-flight: refuse to send orders with missing exchange. Fyers symbols
+    // encode the exchange in the form "NSE:SBIN-EQ"; a blank exchange would
+    // produce ":SBIN-EQ" which Fyers rejects or mis-routes silently.
+    const exchangeCheck = validateStockExchanges(stockDetails);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      console.error('[FyersPublisher] Blocked due to missing exchange:', missingList);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        visibilityTime: 8000,
+      });
+      onCloseReviewTrade();
+      return;
+    }
+
     setLoading(true);
     try {
       const currentISTDateTime = new Date();
@@ -1223,7 +1351,10 @@ const MPReviewTradeModal = ({
         console.warn('[FyersPublisher] update-reco failed (non-critical):', recoErr);
       }
 
-      // Place orders via Fyers API through process-trade
+      // Place orders via Fyers API through process-trade.
+      // Variant tagged per-trade — see docs/APP_ARCHITECTURE.md § 4.5.2.
+      const fyersVariant = computeTradeVariant(allowAfterHoursOrders);
+      const fyersTrades = stockDetails.map(s => ({ ...s, variant: fyersVariant }));
       const payload = {
         clientId: clientCode,
         accessToken: jwtToken,
@@ -1234,14 +1365,41 @@ const MPReviewTradeModal = ({
         model_id: latestRebalance?.model_Id,
         unique_id: calculatedPortfolioData?.uniqueId,
         returnDateTime: istDatetime,
-        trades: stockDetails,
+        trades: fyersTrades,
       };
 
-      const response = await axios.post(
-        `${server.ccxtServer.baseUrl}rebalance/process-trade`,
-        payload,
-        { headers: requestHeaders, timeout: 120000 },
-      );
+      // SDK executeAdvice dual-path (Phase C) — Fyers publisher path.
+      let response;
+      if (sdkExecuteAdviceEnabled) {
+        try {
+          const sdkResult = await sdkClient.executeAdvice({
+            kind: 'mpRebalance',
+            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            brokerName: 'Fyers',
+            modelId: latestRebalance?.model_Id,
+            modelName: strategyDetails?.model_name,
+            uniqueId: calculatedPortfolioData?.uniqueId,
+            trades: fyersTrades,
+          });
+          const mappedRows = (sdkResult?.rows || []).map(row => ({
+            ...row,
+            orderStatus: row.status,
+            tradingSymbol: row.symbol,
+          }));
+          response = { data: { results: mappedRows } };
+          console.log('[MPReviewTradeModal] SDK executeAdvice (Fyers) result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+        } catch (sdkErr) {
+          console.error('[MPReviewTradeModal] SDK executeAdvice (Fyers) failed, falling back to legacy:', sdkErr?.message);
+          response = null;
+        }
+      }
+      if (!response) {
+        response = await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+          payload,
+          { headers: requestHeaders, timeout: 120000 },
+        );
+      }
 
       const checkData = response?.data?.results;
 
@@ -1570,7 +1728,10 @@ const MPReviewTradeModal = ({
                   borderTopRightRadius: 10,
                   borderTopLeftRadius: 10,
                 }}
-                source={{html: htmlContentfinal}}
+                source={{
+                  html: htmlContentfinal,
+                  baseUrl: getPublisherWebViewBaseUrl(configData),
+                }}
                 onLoadStart={() => setIsLoading(true)}
                 onLoadEnd={() => setIsLoading(false)}
                 onNavigationStateChange={handleWebViewNavigationStateChange}

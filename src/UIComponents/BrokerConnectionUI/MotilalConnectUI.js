@@ -33,6 +33,268 @@ import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 const commonHeight = 40;
 
+/**
+ * Motilal in-page error watcher (port of tidi_new
+ * `_kMotilalErrorWatcher`).
+ *
+ * Motilal's hosted login page renders certain server-side errors INTO
+ * the page DOM (no navigation, no WebView error event, no HTTP error)
+ * as plain text in red:
+ *
+ *   - "Authorization is Invalid In Header Parameter"
+ *   - "MO1007 Two Factor Authentication Failed" / "MO1007"
+ *   - "Two Factor Authentication Failed"
+ *
+ * All three surface the same root cause documented at the top of this
+ * file and CHANGELOG `[3.9.24]`: Motilal binds OTP + page-side session
+ * cookie + apikey-derived `Authorization` header to a SINGLE page-load,
+ * and any reload (DNS retry, RESEND OTP press the page re-renders, app
+ * background/foreground cycle) rotates the server session. Existing
+ * onError / onLoadEnd hooks miss it because the error is rendered
+ * IN-PAGE — Motilal's submit endpoint returns 200 with the error text
+ * painted into the response HTML.
+ *
+ * This watcher polls `document.body.innerText` every 750ms; on the
+ * first hit it `window.ReactNativeWebView.postMessage()`s the parent
+ * RN component so the host can surface the existing post-load error
+ * UI ("Restart connection" CTA + 30s connect-cooldown still applies).
+ *
+ * Idempotent via `window.__aqMotilalWatcher`; stops polling after one
+ * hit so we don't spam the bridge.
+ */
+const _kMotilalErrorWatcher = `
+(function () {
+  if (window.__aqMotilalWatcher) return;
+  window.__aqMotilalWatcher = true;
+
+  var ERROR_PATTERNS = [
+    /Authorization is Invalid In Header Parameter/i,
+    /MO1007/i,
+    /Two Factor Authentication Failed/i,
+  ];
+  var fired = false;
+
+  function check() {
+    if (fired) return;
+    var t = '';
+    try { t = (document.body && document.body.innerText) || ''; } catch (e) { return; }
+    for (var i = 0; i < ERROR_PATTERNS.length; i++) {
+      if (ERROR_PATTERNS[i].test(t)) {
+        fired = true;
+        try {
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage('motilal_session_rotated');
+          }
+        } catch (e) {}
+        clearInterval(handle);
+        return;
+      }
+    }
+  }
+
+  var handle = setInterval(check, 750);
+  // Stop polling after 5 min — by then the user has either submitted
+  // successfully (page navigates to callback URL) or moved on.
+  setTimeout(function () { clearInterval(handle); }, 5 * 60 * 1000);
+  console.log('[AQ] Motilal in-page error watcher armed');
+  true; // RN injectedJavaScript requires the script to evaluate to a truthy value on Android
+})();
+`;
+
+/**
+ * Internal WebView wrapper with explicit error handling + single retry.
+ *
+ * Why this exists: `invest.motilaloswal.com` has only an A record (no
+ * AAAA). Chromium's DNS path on Android sometimes gets a SERVFAIL on
+ * the AAAA query and surfaces it as `net::ERR_NAME_NOT_RESOLVED`
+ * instead of falling back to the IPv4 address. Same root cause
+ * already fixed server-side in ccxt-india 48d49938 (forced urllib3
+ * to AF_INET). On the WebView we can't control the resolver, but a
+ * quick reload after failure usually succeeds because the DNS cache
+ * has populated by then.
+ *
+ * Also brings the WebView prop set into parity with every other
+ * broker (originWhitelist, cookie flags, mixedContentMode, UA,
+ * flex:1 style) so one-off rendering issues aren't confused with
+ * DNS failures.
+ */
+const MotilalWebViewWithRetry = ({authUrl, handleWebViewNavigationStateChange, onRequestRestart}) => {
+  const [key, setKey] = useState(0);
+  // Two distinct error states. `error` = pre-load network failure
+  // (DNS/IPv6 race) — recoverable by reloading the same authUrl.
+  // `postLoadError` = WebView crashed AFTER Motilal's page loaded —
+  // NOT recoverable by reloading, because reload silently rotates
+  // Motilal's session and the user's typed OTP / login state get
+  // wiped. In that case the only safe path is to close the WebView
+  // and re-fetch a fresh login URL from /motilal-oswal/login (see
+  // 2026-04-25 Motilal session-affinity notes in BROKER_CONNECTION.md).
+  const [error, setError] = useState(null);
+  const [postLoadError, setPostLoadError] = useState(null);
+  const retriedRef = useRef(false);
+  const pageLoadedOnceRef = useRef(false);
+
+  const onRetryPress = () => {
+    setError(null);
+    retriedRef.current = false;
+    pageLoadedOnceRef.current = false;
+    setKey((k) => k + 1);
+  };
+
+  const onRestartPress = () => {
+    // Tells the parent (MotilalModal) to close the WebView entirely
+    // and start a fresh /motilal-oswal/login round-trip. The parent's
+    // handleConnect debounce (30s) will gate against rapid restart.
+    setPostLoadError(null);
+    pageLoadedOnceRef.current = false;
+    if (typeof onRequestRestart === 'function') {
+      onRequestRestart();
+    }
+  };
+
+  return (
+    <View style={{flex: 1}}>
+      {postLoadError ? (
+        <View style={styles.wvErrorContainer}>
+          <Text style={styles.wvErrorTitle}>Motilal session interrupted</Text>
+          <Text style={styles.wvErrorBody}>
+            {postLoadError.description || 'The login page failed mid-flow.'}
+          </Text>
+          <Text style={styles.wvErrorHint}>
+            Motilal binds the OTP, the Authorization header, and the page
+            session to a single load — reloading would rotate the session
+            and invalidate any OTP you've already received. Please tap
+            "Restart" to start a fresh connection (you'll get a new OTP).
+          </Text>
+          <TouchableOpacity style={styles.wvRetryBtn} onPress={onRestartPress}>
+            <Text style={styles.wvRetryText}>Restart connection</Text>
+          </TouchableOpacity>
+        </View>
+      ) : error ? (
+        <View style={styles.wvErrorContainer}>
+          <Text style={styles.wvErrorTitle}>Couldn't reach Motilal Oswal</Text>
+          <Text style={styles.wvErrorBody}>
+            {error.description || 'Unable to load Motilal login page.'}
+          </Text>
+          <Text style={styles.wvErrorHint}>
+            If this persists, switch to mobile data and try again — Motilal
+            doesn't support IPv6 and some networks (including some emulators)
+            can't fall back to IPv4 cleanly.
+          </Text>
+          <TouchableOpacity style={styles.wvRetryBtn} onPress={onRetryPress}>
+            <Text style={styles.wvRetryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <WebView
+          key={key}
+          source={{uri: authUrl}}
+          style={{flex: 1}}
+          onNavigationStateChange={handleWebViewNavigationStateChange}
+          startInLoadingState
+          javaScriptEnabled
+          domStorageEnabled
+          thirdPartyCookiesEnabled
+          sharedCookiesEnabled
+          originWhitelist={['*']}
+          mixedContentMode="compatibility"
+          // Inject the Motilal in-page error watcher on every navigation.
+          // RN's `injectedJavaScript` injects ONCE on initial load;
+          // `injectedJavaScriptForMainFrameOnly={false}` plus
+          // `injectedJavaScriptBeforeContentLoaded` is the modern combo,
+          // but the watcher is idempotent (window.__aqMotilalWatcher
+          // guard) so plain `injectedJavaScript` is enough — first
+          // navigation wins and the IIFE early-returns on subsequent
+          // injections triggered by the WebView's internal page-finish
+          // hooks.
+          injectedJavaScript={_kMotilalErrorWatcher}
+          onMessage={(event) => {
+            const msg = event?.nativeEvent?.data;
+            if (msg === 'motilal_session_rotated') {
+              console.log('[Motilal][WebView] in-page error detected → surfacing Restart UI');
+              // Reuse the existing post-load error path. The string
+              // here is what the user sees in the red banner; it
+              // explains WHY they should Restart (rather than retry).
+              setPostLoadError({
+                description:
+                  "Motilal's login session has rotated. The OTP you entered " +
+                  'is no longer valid. Tap Restart and wait at least 30 ' +
+                  'seconds before tapping Connect again.',
+                code: 'MOTILAL_SESSION_ROTATED',
+              });
+            }
+          }}
+          userAgent={
+            Platform.OS === 'android'
+              ? 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
+              : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile Safari/604.1'
+          }
+          renderLoading={() => (
+            <ActivityIndicator
+              size="large"
+              color="#0056B7"
+              style={{marginTop: 20}}
+            />
+          )}
+          // First successful page load arms the post-load guard. After
+          // this fires, any subsequent onError must NOT silently
+          // remount the WebView — see comment on `postLoadError` above.
+          onLoadEnd={(syntheticEvent) => {
+            const {nativeEvent} = syntheticEvent;
+            // `nativeEvent.loading` is false on a successful load; if
+            // it's true we're still loading (some platforms call
+            // onLoadEnd repeatedly during navigation).
+            if (!nativeEvent?.loading) {
+              pageLoadedOnceRef.current = true;
+            }
+          }}
+          onError={(syntheticEvent) => {
+            const {nativeEvent} = syntheticEvent;
+            console.log(
+              '[Motilal][WebView onError]',
+              nativeEvent.url,
+              nativeEvent.code,
+              nativeEvent.description,
+              'pageLoadedOnce=', pageLoadedOnceRef.current,
+            );
+            // Post-load failure: surface "Restart connection" UI
+            // instead of silently reloading. Reload here would
+            // destroy the user's OTP / login state without warning
+            // (the trap that produced the 2026-04-25 incident:
+            // ERR_NAME_NOT_RESOLVED → silent reload → "Authorization
+            // is Invalid In Header Parameter" / MO1007 cascade).
+            if (pageLoadedOnceRef.current) {
+              setPostLoadError({
+                description: nativeEvent.description,
+                code: nativeEvent.code,
+              });
+              return;
+            }
+            // Pre-load failure: existing auto-retry-once behaviour
+            // for the IPv6 / DNS race on `invest.motilaloswal.com`.
+            if (!retriedRef.current) {
+              retriedRef.current = true;
+              setTimeout(() => setKey((k) => k + 1), 500);
+              return;
+            }
+            setError({
+              description: nativeEvent.description,
+              code: nativeEvent.code,
+            });
+          }}
+          onHttpError={(syntheticEvent) => {
+            const {nativeEvent} = syntheticEvent;
+            console.log(
+              '[Motilal][WebView onHttpError]',
+              nativeEvent.url,
+              nativeEvent.statusCode,
+            );
+          }}
+        />
+      )}
+    </View>
+  );
+};
+
 const MotilalConnectUI = ({
   isVisible,
   onClose,
@@ -52,6 +314,7 @@ const MotilalConnectUI = ({
   authUrl,
   handleWebViewNavigationStateChange,
   handleWebViewClose,
+  onRequestRestart,
   egressUserId,
   egressUserEmail,
   egressReady,
@@ -98,19 +361,10 @@ const MotilalConnectUI = ({
           {/* WebView Section */}
           {showWebView && authUrl ? (
             <View style={{flex: 1}}>
-              <WebView
-                source={{uri: authUrl}}
-                onNavigationStateChange={handleWebViewNavigationStateChange}
-                startInLoadingState
-                javaScriptEnabled
-                domStorageEnabled
-                renderLoading={() => (
-                  <ActivityIndicator
-                    size="large"
-                    color="#0056B7"
-                    style={{marginTop: 20}}
-                  />
-                )}
+              <MotilalWebViewWithRetry
+                authUrl={authUrl}
+                handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
+                onRequestRestart={onRequestRestart}
               />
             </View>
           ) : expanded ? (
@@ -324,6 +578,40 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
   },
+  wvErrorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
+  wvErrorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  wvErrorBody: {
+    fontSize: 13,
+    color: '#DC2626',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  wvErrorHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  wvRetryBtn: {
+    backgroundColor: '#0056B7',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+  },
+  wvRetryText: {color: '#fff', fontSize: 14, fontWeight: '600'},
   headerIcon: {width: 35, height: 35, borderRadius: 3, backgroundColor: '#fff'},
   backButton: {
     padding: 4,

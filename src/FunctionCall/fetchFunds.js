@@ -2,7 +2,6 @@ import axios from 'axios';
 import server from '../utils/serverConfig';
 import {generateToken} from '../utils/SecurityTokenManager';
 import Config from 'react-native-config';
-import {getAdvisorSubdomain} from '../utils/variantHelper';
 
 export const fetchFunds = async (
   broker,
@@ -20,8 +19,8 @@ export const fetchFunds = async (
 
   let data, url;
 
-  // Server fetches apiKey/secretKey from DB using userEmail.
-  // We only pass accessToken, userEmail, and broker-specific identifiers.
+  // Server fetches apiKey/secretKey from DB using userEmail
+  // We only need to pass accessToken, userEmail, and broker-specific identifiers
   switch (broker) {
     case 'IIFL Securities':
       if (!jwtToken) return;
@@ -135,7 +134,7 @@ export const fetchFunds = async (
       url = `${server.ccxtServer.baseUrl}axis/funds`;
       break;
     default:
-      return;
+      return; // If the broker is not recognized
   }
 
   try {
@@ -143,7 +142,7 @@ export const fetchFunds = async (
       headers: {
         'Content-Type': 'application/json',
         'X-Advisor-Subdomain':
-          Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          Config.REACT_APP_HEADER_NAME || '',
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,

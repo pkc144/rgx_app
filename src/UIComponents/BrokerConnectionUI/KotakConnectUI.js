@@ -38,27 +38,21 @@ const KotakConnectUI = ({
   helpVisible,
   setHelpVisible,
   shouldRenderContent,
-  openOtpBox,
   mpin,
   setMpin,
   totp,
   settotp,
   mobileNumber,
   setMobileNumber,
-  consumerKey,
-  setConsumerKey,
-  consumerSecret,
-  setConsumerSecret,
+  apiKey,
+  setApiKey,
   ucc,
   setucc,
   iskeyVisible,
   setIskeyVisible,
-  issecretVisible,
-  setIssecretVisible,
   ismpinVisible,
   setIsmpinVisible,
   updateKotakSecretKey,
-  submitOtp,
   isLoading,
   egressUserId,
   egressUserEmail,
@@ -164,108 +158,101 @@ const KotakConnectUI = ({
                   onUnmetAckHandled={() => setUnmetAck && setUnmetAck(false)}
                 />
 
-                {/* OTP Flow */}
-                {openOtpBox ? (
-                  <View style={styles.inputCard}>
-                    <Text style={styles.headerLabel}>Enter OTP:</Text>
-                    <TextInput
-                      value={mpin}
-                      placeholder="Enter OTP"
-                      placeholderTextColor="grey"
-                      keyboardType="numeric"
-                      style={styles.inputBox}
-                      onChangeText={text => setMpin(text.trim())}
-                    />
-                    <TouchableOpacity
-                      onPress={submitOtp}
-                      style={[
-                        styles.proceedButton,
-                        (!mpin || !totp || !egressReady) && {backgroundColor: '#d3d3d3'},
-                      ]}
-                      disabled={!mpin || !totp || !egressReady}>
-                      {isLoading ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Text style={styles.proceedButtonText}>Submit OTP</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  /* Input Fields */
-                  <View style={styles.inputCard}>
-                    {[
-                      {
-                        label: 'Consumer Key',
-                        value: consumerKey,
-                        setValue: setConsumerKey,
-                      },
-                      {
-                        label: 'Consumer Secret',
-                        value: consumerSecret,
-                        setValue: setConsumerSecret,
-                      },
-                      {
-                        label: 'Mobile Number',
-                        value: mobileNumber,
-                        setValue: setMobileNumber,
-                      },
-                      {
-                        label: 'MPIN',
-                        value: mpin,
-                        setValue: setMpin,
-                        secure: !ismpinVisible,
-                        toggle: () => setIsmpinVisible(!ismpinVisible),
-                      },
-                      {label: 'UCC', value: ucc, setValue: setucc},
-                      {label: 'TOTP', value: totp, setValue: settotp},
-                    ].map((input, idx) => (
-                      <View key={idx} style={styles.inputWrapper}>
-                        <Text style={styles.headerLabel}>{input.label}:</Text>
-                        <View style={styles.inputContainer}>
-                          <TextInput
-                            value={input.value}
-                            placeholder={`Enter your ${input.label}`}
-                            placeholderTextColor="grey"
-                            style={[styles.inputStyles, {flex: 1}]}
-                            secureTextEntry={input.secure}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            onChangeText={input.setValue}
-                          />
-                          {input.toggle && input.value ? (
-                            <TouchableOpacity onPress={input.toggle}>
-                              {input.secure ? (
-                                <EyeOffIcon size={22} color="#000" />
-                              ) : (
-                                <EyeIcon size={22} color="#000" />
-                              )}
-                            </TouchableOpacity>
-                          ) : null}
-                        </View>
+                {/* Input Fields — matches web source of truth:
+                    single API Access Token (UUID from NEO → TradeAPI →
+                    API Dashboard), UCC, Mobile, M-PIN, TOTP. */}
+                <View style={styles.inputCard}>
+                  {[
+                    {
+                      label: 'Unique Client Code',
+                      value: ucc,
+                      setValue: setucc,
+                      placeholder: 'Enter your UCC Code',
+                    },
+                    {
+                      label: 'API Access Token',
+                      value: apiKey,
+                      setValue: setApiKey,
+                      placeholder: 'e.g. ec6a746c-e44b-455e-abf2-c13352b2fc45',
+                      secure: !iskeyVisible,
+                      toggle: () => setIskeyVisible(!iskeyVisible),
+                    },
+                    {
+                      label: 'Mobile Number',
+                      value: mobileNumber,
+                      setValue: setMobileNumber,
+                      placeholder: 'Enter 10-digit mobile number',
+                    },
+                    {
+                      label: 'M-PIN',
+                      value: mpin,
+                      setValue: setMpin,
+                      placeholder: 'Enter 6-digit M-PIN',
+                      secure: !ismpinVisible,
+                      toggle: () => setIsmpinVisible(!ismpinVisible),
+                    },
+                    {
+                      label: 'TOTP',
+                      value: totp,
+                      setValue: settotp,
+                      placeholder: 'Enter 6-digit TOTP',
+                    },
+                  ].map((input, idx) => (
+                    <View key={idx} style={styles.inputWrapper}>
+                      <Text style={styles.headerLabel}>{input.label}:</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          value={input.value}
+                          placeholder={input.placeholder}
+                          placeholderTextColor="grey"
+                          style={[styles.inputStyles, {flex: 1}]}
+                          secureTextEntry={input.secure}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          onChangeText={input.setValue}
+                        />
+                        {input.toggle && input.value ? (
+                          <TouchableOpacity onPress={input.toggle}>
+                            {input.secure ? (
+                              <EyeOffIcon size={22} color="#000" />
+                            ) : (
+                              <EyeIcon size={22} color="#000" />
+                            )}
+                          </TouchableOpacity>
+                        ) : null}
                       </View>
-                    ))}
+                    </View>
+                  ))}
 
-                    {/* Connect Button. Also gated on egressReady — the
-                        user cannot proceed until they've claimed a
-                        dedicated IP AND ticked the "I've whitelisted this
-                        IP" acknowledgment in EgressIpCallout above. */}
-                    <TouchableOpacity
-                      onPress={updateKotakSecretKey}
-                      style={[
-                        styles.proceedButton,
-                        (!mpin || !consumerKey || !consumerSecret || !egressReady) && {
-                          backgroundColor: '#d3d3d3',
-                        },
-                      ]}
-                      disabled={!mpin || !consumerKey || !consumerSecret || !egressReady}>
-                      {isLoading ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <Text style={styles.proceedButtonText}>Connect Kotak</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  {/* Connect Button. Also gated on egressReady — the
+                      user cannot proceed until they've claimed a
+                      dedicated IP AND ticked the "I've whitelisted this
+                      IP" acknowledgment in EgressIpCallout above. */}
+                  <TouchableOpacity
+                    onPress={updateKotakSecretKey}
+                    style={[
+                      styles.proceedButton,
+                      (!apiKey || !mobileNumber || !mpin || !ucc || !totp || !egressReady || isLoading) && {
+                        backgroundColor: '#d3d3d3',
+                      },
+                    ]}
+                    // `isLoading` MUST be in the disabled list — without it
+                    // the button stays tappable while the spinner is up,
+                    // letting users fire a second Connect mid-request. Kotak
+                    // rejects TOTP reuse / TOTPs older than ~30s, so the
+                    // second submit lands an "Incorrect credentials" alert
+                    // ON TOP of the first request's "Reconnected" migration
+                    // sheet (the first call had already succeeded server-
+                    // side). Single-flight gate fixes the conflicting-UI
+                    // class that produced the 2026-04-25 screenshot.
+                    disabled={!apiKey || !mobileNumber || !mpin || !ucc || !totp || !egressReady || isLoading}>
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.proceedButtonText}>Connect Kotak</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </ScrollView>
             </KeyboardAvoidingView>
           )}

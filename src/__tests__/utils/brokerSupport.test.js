@@ -221,7 +221,7 @@ describe('brokerSupport', () => {
 
     test('is case-insensitive via normalization', () => {
       expect(getBrokerSupport('zerodha')).toBeDefined();
-      expect(getBrokerSupport('ZERODHA')).toBeDefined();
+      expect(getBrokerSupport('ZERODHA')).toBeDefined(); // normalizeBrokerName lowercases
     });
   });
 

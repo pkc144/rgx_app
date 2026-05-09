@@ -99,10 +99,10 @@ export const fetchBrokerSpecificHoldings = async (
       break;
 
     case 'Kotak':
-      if (!jwtToken || !apiKey || !secretKey || !sid) return null;
+      // Kotak NEO UUID flow (2026-04-22) — no consumer secret.
+      if (!jwtToken || !apiKey || !sid) return null;
       data = JSON.stringify({
         consumerKey: checkValidApiAnSecret(apiKey),
-        consumerSecret: checkValidApiAnSecret(secretKey),
         accessToken: jwtToken,
         viewToken,
         sid,

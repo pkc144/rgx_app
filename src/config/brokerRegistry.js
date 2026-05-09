@@ -56,16 +56,34 @@ export const brokerRegistry = [
   {
     name: 'Groww',
     key: 'groww',
-    // Migrated 2026-04-20 from OAUTH → CREDENTIAL per prod 9ee7aed +
-    // 1b090e3. Groww deprecated partner-API order placement in 2026-04;
-    // the only supported path is user-created API Key + API Secret
-    // (approval-mode) at groww.in/trade-api/api-keys with per-customer
-    // IP whitelist. Session access tokens reset daily at 6 AM IST.
+    // Migrated 2026-04-20 OAUTH → CREDENTIAL (approval-mode), then
+    // 2026-04-21 approval-mode → TOTP-seed (parity with web 9ed5c25).
+    // Groww deprecated partner-API order placement in 2026-04. The
+    // supported path as of 2026-04-21 is user-created API Key + Base32
+    // TOTP seed via Groww's "Generate TOTP token" dialog on
+    // groww.in/trade-api/api-keys, with a per-customer IP whitelist.
+    // Seed is stored AES-256-CBC encrypted server-side; daily refresh
+    // is a one-tap call to /api/groww/refresh-token. Session access
+    // tokens reset daily at 6 AM IST.
     authType: BROKER_AUTH_TYPE.CREDENTIAL,
     logoKey: 'groww',
     fields: [
-      { name: 'apiKey', label: 'API Key', type: 'text' },
-      { name: 'secretKey', label: 'API Secret', type: 'text' },
+      {
+        label: 'API Key',
+        key: 'apiKey',
+        isSecret: false,
+        placeholder: 'Paste your Groww API Key',
+      },
+      {
+        label: 'TOTP Secret Key (Base32)',
+        key: 'totp_seed',
+        isSecret: true,
+        // NB: this must be the Base32 string shown BELOW the QR on
+        // Groww's "Generate TOTP token" dialog, NOT the long JWT-style
+        // value in the "TOTP Token" field at the top of that dialog.
+        // Field label mirrors GrowwConnectModal.js for consistency.
+        placeholder: 'Paste the ~32-char Base32 secret below the QR (A–Z, 2–7)',
+      },
     ],
   },
   {
@@ -140,7 +158,7 @@ export const brokerRegistry = [
     authType: BROKER_AUTH_TYPE.HYBRID,
     logoKey: 'motilal',
     youtubeVideoId: 'gGKedxU-sQ0',
-    redirectUrl: 'https://ccxt.alphaquark.in/motilal-oswal/callback',
+    redirectUrl: 'https://ccxtprod.alphaquark.in/motilal-oswal/callback',
     fields: [
       { label: 'Client Code', key: 'clientCode', isSecret: false, placeholder: 'Enter client code' },
       { label: 'API Key', key: 'apiKey', isSecret: false, placeholder: 'Enter API key' },
@@ -153,9 +171,8 @@ export const brokerRegistry = [
     apiBrokerName: 'Kotak Neo',
     logoKey: 'kotak',
     fields: [
-      { label: 'UCC', key: 'ucc', isSecret: false, placeholder: 'Enter Unique Client Code' },
-      { label: 'Consumer Key', key: 'apiKey', isSecret: false, placeholder: 'Enter consumer key' },
-      { label: 'Consumer Secret', key: 'secretKey', isSecret: true, placeholder: 'Enter consumer secret' },
+      { label: 'Unique Client Code', key: 'ucc', isSecret: false, placeholder: 'Enter your UCC Code' },
+      { label: 'API Access Token', key: 'apiKey', isSecret: true, placeholder: 'e.g. ec6a746c-e44b-455e-abf2-c13352b2fc45' },
       {
         label: 'Mobile Number', key: 'mobileNumber', isSecret: false,
         placeholder: 'Enter 10-digit mobile number',

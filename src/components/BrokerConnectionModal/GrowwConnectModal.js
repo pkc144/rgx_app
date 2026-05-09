@@ -1,20 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
+  Dimensions,
   ActivityIndicator,
+  Text,
+  TouchableOpacity,
+  TextInput,
   Linking,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+
 import { getAuth } from '@react-native-firebase/auth';
 import axios from 'axios';
 import CryptoJS from 'react-native-crypto-js';
 import Config from 'react-native-config';
-import Toast from 'react-native-toast-message';
-import { ExternalLink } from 'lucide-react-native';
 
 import server from '../../utils/serverConfig';
 import { generateToken } from '../../utils/SecurityTokenManager';
@@ -23,149 +25,393 @@ import { useTrade } from '../../screens/TradeContext';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
+import { saveBrokerSessionTime } from '../../utils/brokerSessionUtils';
 import EgressIpCallout from './EgressIpCallout';
+import {ChevronDown, ChevronUp} from 'lucide-react-native';
+import GrowwHelpContent from '../../UIComponents/BrokerConnectionUI/HelpUI/GrowwHelpContent';
+import {
+  useSdkBridge,
+  sdkConnectBroker,
+  sdkDualWriteSafely,
+} from '../../sdk/brokerSdkBridge';
 
-// Matches the symmetric AES pattern the backend decrypts with
-// checkValidApiAnSecret() in aq_backend_github/Routes/Broker/*.js.
+const { height: screenHeight } = Dimensions.get('window');
+
+// Transport-layer wrap. The backend re-encrypts the seed with its
+// own AES-256-CBC env key before Mongo write — this CryptoJS layer
+// is only for wire protection. Same pattern as FyersConnect.js.
 const encryptForTransport = (plain) =>
   CryptoJS.AES.encrypt(plain, 'ApiKeySecret').toString();
 
-const GROWW_PORTAL_URL = 'https://groww.in/trade-api/api-keys';
+const GROWW_API_KEYS_URL = 'https://groww.in/trade-api/api-keys';
 
 const GrowwConnectModal = ({
   isVisible,
-  onClose,
   setShowBrokerModal,
+  onClose,
   fetchBrokerStatusModal,
 }) => {
   const { configData } = useTrade();
   const showAlert = useModalStore((state) => state.showAlert);
+  const sdkBridge = useSdkBridge();
+
+  const [apiKey, setApiKey] = useState('');
+  const [totpToken, setTotpToken] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [userDetails, setUserDetails] = useState();
+  // Read More / See Less toggle — mirrors ZerodhaConnectUI's expanded
+  // help pattern. Collapsed by default so the form stays the
+  // primary action; tapping Read More expands the GrowwHelpContent
+  // panel to show Important Notes + Need Help sections.
+  const [helpExpanded, setHelpExpanded] = useState(false);
+  // Gated by EgressIpCallout acknowledgment. Customers must claim a
+  // dedicated egress IP, whitelist it on Groww's side, and tick the
+  // acknowledgment checkbox before the Connect button does anything.
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
 
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;
 
-  const [userDetails, setUserDetails] = useState(null);
-  const [apiKey, setApiKey] = useState('');
-  const [secretKey, setSecretKey] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [egressReady, setEgressReady] = useState(false);
-  const [unmetAck, setUnmetAck] = useState(false);
+  const advisorSubdomain =
+    configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain();
 
-  const userId = userDetails?._id;
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    'X-Advisor-Subdomain': advisorSubdomain,
+    'aq-encrypted-key': generateToken(
+      Config.REACT_APP_AQ_KEYS,
+      Config.REACT_APP_AQ_SECRET,
+    ),
+  };
 
   useEffect(() => {
-    if (!isVisible || !userEmail) return;
+    if (!userEmail) return;
     axios
       .get(`${server.server.baseUrl}api/user/getUser/${userEmail}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
+        headers: authHeaders,
       })
       .then((res) => setUserDetails(res.data.User))
       .catch((err) =>
         console.log('[Groww] Failed to fetch user details:', err?.message),
       );
-  }, [isVisible, userEmail, configData?.config?.REACT_APP_HEADER_NAME]);
+  }, [userEmail, server.server.baseUrl]);
 
-  const openGrowwPortal = () => {
-    Linking.openURL(GROWW_PORTAL_URL).catch(() =>
-      Toast.show({
-        type: 'error',
-        text1: 'Could not open link',
-        text2: GROWW_PORTAL_URL,
-      }),
+  const userId = userDetails?._id;
+
+  const openGrowwDashboard = () => {
+    Linking.openURL(GROWW_API_KEYS_URL).catch((err) =>
+      console.warn('[Groww] Failed to open API keys page:', err?.message),
     );
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!egressReady) {
       setUnmetAck(true);
       return;
     }
-    if (!apiKey || !secretKey) return;
     if (!userId) {
-      showAlert('error', 'User not ready', 'Please try again in a moment.');
+      showAlert('error', 'Error', 'User not found. Please try again.');
+      return;
+    }
+    const trimmedApiKey = apiKey.trim();
+    const trimmedToken = totpToken.trim();
+    if (!trimmedApiKey || !trimmedToken) {
+      showAlert(
+        'error',
+        'Missing Credentials',
+        'Paste both the API Key and the TOTP Secret Key (the Base32 string shown below the QR on Groww\'s "Generate TOTP token" dialog — not the JWT-style token at the top).',
+      );
       return;
     }
 
     setLoading(true);
+    try {
+      const payload = {
+        uid: userId,
+        user_email: userEmail,
+        user_broker: 'Groww',
+        apiKey: encryptForTransport(trimmedApiKey),
+        totp_seed: encryptForTransport(trimmedToken),
+      };
+      const res = await axios.post(
+        `${server.server.baseUrl}api/groww/update-key`,
+        payload,
+        { headers: authHeaders, timeout: 25000 },
+      );
+      if (res.data?.success) {
+        try {
+          await saveBrokerSessionTime('Groww');
+        } catch (_) {
+          // non-critical
+        }
 
-    // apiKey = Groww "API Key" long string from the "API key and secret"
-    // popup on groww.in/trade-api/api-keys.
-    // secretKey = Groww "API Secret" (approval-mode secret used by the
-    // backend SDK to compute the HMAC checksum for daily token minting).
-    // NOT a TOTP seed, NOT a one-time code — shown once at key creation.
-    const payload = JSON.stringify({
-      uid: userId,
-      user_email: userEmail,
-      user_broker: 'Groww',
-      apiKey: encryptForTransport(apiKey),
-      secretKey: encryptForTransport(secretKey),
-    });
+        // SDK pilot dual-write — see brokerSdkBridge.js. Groww uses
+        // /api/groww/update-key (no /api/user/connect-broker step
+        // because update-key persists directly), so we mirror with
+        // /sdk/v1/connections/Groww/connect.
+        if (sdkBridge.enabled && sdkBridge.ready && sdkBridge.client) {
+          sdkDualWriteSafely(
+            sdkConnectBroker(sdkBridge.client, 'Groww', payload),
+            'Groww',
+            'connect',
+          );
+        }
 
-    axios
-      .request({
-        method: 'post',
-        url: `${server.server.baseUrl}api/groww/update-key`,
-        data: payload,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Advisor-Subdomain':
-            configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-          'aq-encrypted-key': generateToken(
-            Config.REACT_APP_AQ_KEYS,
-            Config.REACT_APP_AQ_SECRET,
-          ),
-        },
-      })
-      .then(() => {
-        fetchBrokerStatusModal?.();
-        eventEmitter.emit('refreshEvent', { source: 'Groww broker connection' });
-        showAlert(
-          'success',
-          'Connected Successfully',
-          'Your Groww broker has been connected successfully!',
-        );
+        // Non-critical — model-portfolio broker sync, same as FyersConnect.
+        try {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/change_broker_model_pf`,
+            { user_email: userEmail, user_broker: 'Groww' },
+            { headers: authHeaders },
+          );
+        } catch (mpErr) {
+          console.warn(
+            '[Groww] Model portfolio update failed (non-critical):',
+            mpErr?.message,
+          );
+        }
+
         setShowBrokerModal?.(false);
         onClose?.();
-      })
-      .catch((error) => {
-        console.log('[Groww] update-key error:', error?.response?.data);
-        const msg =
-          error?.response?.data?.message ||
-          'Incorrect credentials or IP not yet whitelisted. Please try again.';
-        showAlert('error', 'Connection Error', msg);
-      })
-      .finally(() => setLoading(false));
+        // Wrap post-success steps so a downstream throw doesn't bubble
+        // to the outer catch and get rewritten as a granular Groww error
+        // code or "Connection Error". See KotakModal.js (commit 172767d)
+        // and BROKER_CONNECTION.md § Broker-connect post-success hygiene.
+        try {
+          const result = await fetchBrokerStatusModal?.();
+          eventEmitter.emit('refreshEvent', {
+            source: 'Groww broker connection',
+          });
+          if (!result?.migrationWillShow) {
+            showAlert(
+              'success',
+              'Connected Successfully',
+              'Your Groww broker has been connected. Daily session refresh is now one tap.',
+            );
+          }
+        } catch (postSuccessErr) {
+          console.warn(
+            '[Groww] post-success step threw (connection IS saved DB-side):',
+            postSuccessErr?.message || postSuccessErr,
+          );
+        }
+        return;
+      }
+      showAlert(
+        'error',
+        'Connection Error',
+        res.data?.message ||
+          'Failed to connect Groww. Please verify your API Key, TOTP Secret Key (Base32 string below the QR), and that your dedicated IP is whitelisted on Groww.',
+      );
+    } catch (err) {
+      const errorCode = err?.response?.data?.error_code;
+      const serverMessage = err?.response?.data?.message;
+      console.error('[Groww] update-key failed:', err?.message, errorCode);
+      // Granular codes come from ccxt-india app_groww.py:_normalize_totp_token
+      // (NOT_BASE32, WRONG_LENGTH) and _mint_groww_access_token
+      // (GROWW_REJECTED). INVALID_SEED / INVALID_CREDENTIALS are the
+      // pre-normalization codes, kept for rollout compat.
+      if (errorCode === 'NOT_BASE32') {
+        showAlert(
+          'error',
+          'TOTP Secret Key format is off',
+          serverMessage ||
+            'The TOTP Secret Key needs to be the Base32 string from BELOW the QR code on Groww\'s "Generate TOTP token" dialog — ~32 characters of A–Z and 2–7 only (e.g. HYSRYAALJ3NPKVQH2K4VW4FQH4AKEENP). The API Key field takes the JWT at the top of the same dialog, but the TOTP Secret Key must be the Base32 below the QR.',
+        );
+      } else if (errorCode === 'WRONG_LENGTH') {
+        showAlert(
+          'error',
+          'TOTP Secret Key looks incomplete',
+          serverMessage ||
+            'The Base32 secret you pasted is shorter than Groww\'s minimum. Make sure you copied the full ~32-character string shown below the QR on the "Generate TOTP token" dialog — it\'s shown only once.',
+        );
+      } else if (errorCode === 'GROWW_REJECTED') {
+        showAlert(
+          'error',
+          'Groww rejected the credentials',
+          serverMessage ||
+            'Groww did not accept the combination. Most common causes: (1) the API Key field is missing or has the wrong value — it should be the long JWT-style "TOTP Token" from the TOP of Groww\'s "Generate TOTP token" dialog. (2) the TOTP Secret Key is from a different "Generate TOTP token" dialog than the JWT you pasted. (3) your dedicated static IP is not whitelisted — click "Update static IP" on Groww and add the IP shown below.',
+        );
+      } else if (
+        errorCode === 'INVALID_SEED' ||
+        errorCode === 'INVALID_CREDENTIALS'
+      ) {
+        showAlert(
+          'error',
+          'Groww rejected the credentials',
+          serverMessage ||
+            'Same mismatch as above. Verify (1) the API Key is the JWT from the TOP of the "Generate TOTP token" dialog, (2) the TOTP Secret Key is the Base32 string below the QR in the SAME dialog, and (3) your dedicated static IP is whitelisted via Groww\'s "Update static IP".',
+        );
+      } else {
+        // Gate the generic "Connection Error" wording on whether axios
+        // actually got an HTTP response. If err.response is missing,
+        // it's a network/runtime error and we shouldn't claim Groww
+        // rejected the credentials. See KotakModal.js (commit 172767d).
+        const isHttpError = !!err?.response;
+        if (isHttpError) {
+          showAlert(
+            'error',
+            'Connection Error',
+            serverMessage ||
+              err?.message ||
+              'Failed to connect to Groww. Please try again.',
+          );
+        } else {
+          showAlert(
+            'error',
+            'Connection Issue',
+            'We couldn\'t complete the connection because of a network or app error. Your credentials may already be saved — please refresh to check before retrying.',
+          );
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const submitDisabled = !apiKey || !secretKey || loading;
+  const submitDisabled = loading || !apiKey.trim() || !totpToken.trim();
 
   return (
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
-      <View style={styles.container}>
-        <View style={styles.sheet}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Connect Groww</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeBtn}>Close</Text>
-            </TouchableOpacity>
-          </View>
-
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.container}>
+        <View style={styles.content}>
           <ScrollView
-            style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled">
-            {/* EgressIpCallout — claim dedicated IP + whitelist ack.
-                Submit stays gated until the customer ticks the
-                acknowledgment checkbox inside this component. */}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}>
+            <Text style={styles.title}>Connect to Groww</Text>
+            <Text style={styles.description}>
+              One-time setup. After this, refreshing your Groww session is a
+              single tap — no re-pasting credentials each day.
+            </Text>
+
+            <View style={styles.stepsBlock}>
+              <View style={styles.stepRow}>
+                <View style={styles.stepBullet}>
+                  <Text style={styles.stepNumber}>1</Text>
+                </View>
+                <View style={styles.stepBody}>
+                  <Text style={styles.stepTitle}>
+                    Open Groww's Trade API page
+                  </Text>
+                  <TouchableOpacity onPress={openGrowwDashboard}>
+                    <Text style={styles.linkText}>
+                      groww.in/trade-api/api-keys
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.stepRow}>
+                <View style={styles.stepBullet}>
+                  <Text style={styles.stepNumber}>2</Text>
+                </View>
+                <View style={styles.stepBody}>
+                  <Text style={styles.stepTitle}>
+                    Click "Generate API key" (top right) → "Generate TOTP token"
+                  </Text>
+                  <Text style={styles.stepBodyText}>
+                    On Groww's Trade API keys page, open the{' '}
+                    <Text style={styles.boldText}>Generate API key</Text>{' '}
+                    dropdown at the top right and pick{' '}
+                    <Text style={styles.boldText}>Generate TOTP token</Text>{' '}
+                    (not "Generate Access Token"). Groww opens a "TOTP
+                    token" dialog with <Text style={styles.boldText}>two
+                    values you need — both come from this single dialog</Text>.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.stepRow}>
+                <View style={styles.stepBullet}>
+                  <Text style={styles.stepNumber}>3</Text>
+                </View>
+                <View style={styles.stepBody}>
+                  <Text style={styles.stepTitle}>
+                    Copy both values from the TOTP dialog
+                  </Text>
+                  <Text style={styles.stepBodyText}>
+                    Groww's "TOTP token" dialog shows two values — both
+                    are needed, both come from this single dialog:
+                    {'\n\n'}
+                    • <Text style={styles.boldText}>JWT at the top</Text>{' '}
+                    (starts with{' '}
+                    <Text style={styles.monoText}>eyJraWQi…</Text>) → paste
+                    into our <Text style={styles.boldText}>"TOTP Token
+                    (used as API Key)"</Text> field below. Groww uses this
+                    as the Bearer token.
+                    {'\n\n'}
+                    • <Text style={styles.boldText}>Base32 secret below
+                    the QR</Text> (~32 chars, A–Z and 2–7, e.g.{' '}
+                    <Text style={styles.monoText}>
+                      HYSRYAALJ3NPKVQH2K4VW4FQH4AKEENP
+                    </Text>
+                    ) → paste into our <Text style={styles.boldText}>"TOTP
+                    QR Secret (Base32)"</Text> field below. Our backend
+                    uses it to mint a fresh 6-digit TOTP every daily
+                    refresh.
+                    {'\n\n'}
+                    Both values are shown only once — copy them carefully
+                    before closing the dialog.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.stepRow}>
+                <View style={styles.stepBullet}>
+                  <Text style={styles.stepNumber}>4</Text>
+                </View>
+                <View style={styles.stepBody}>
+                  <Text style={styles.stepTitle}>
+                    Click "Update static IP" and whitelist the dedicated IP
+                  </Text>
+                  <Text style={styles.stepBodyText}>
+                    Still on the Trade API keys page, click{' '}
+                    <Text style={styles.boldText}>Update static IP</Text>{' '}
+                    (top right, next to Generate API key) and paste the
+                    dedicated IP we issue you (shown below) into the
+                    whitelist. Groww rejects access-token requests and
+                    orders from non-whitelisted IPs — the most common
+                    cause of the "Groww rejected the credentials" error.
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Read More / See Less expandable help — mirrors
+                ZerodhaConnectUI's pattern. Collapsed shows a one-line
+                "About this connection"; expanded reveals Important
+                Notes + Need Help sections (matching Zerodha's yellow
+                callout + gray support box). */}
+            <View style={styles.guideBox}>
+              <GrowwHelpContent
+                expanded={helpExpanded}
+                onExpandChange={setHelpExpanded}
+              />
+            </View>
+            <TouchableOpacity
+              onPress={() => setHelpExpanded(prev => !prev)}
+              style={styles.toggleContainer}>
+              <Text style={styles.toggleText}>
+                {helpExpanded ? 'See Less' : 'Read More'}
+              </Text>
+              <View style={styles.toggleIconContainer}>
+                {helpExpanded ? (
+                  <ChevronUp size={14} color="#000" />
+                ) : (
+                  <ChevronDown size={14} color="#000" />
+                )}
+              </View>
+            </TouchableOpacity>
+
+            {/* Per-customer dedicated IP claim/whitelist gate.
+                Submit button is locked until the customer has claimed
+                an IP, whitelisted it on Groww's side, and ticked the
+                acknowledgment checkbox. */}
             <EgressIpCallout
               broker="groww"
               customerId={userId}
@@ -173,119 +419,65 @@ const GrowwConnectModal = ({
               onAcknowledgeChange={setEgressReady}
               showUnmetAck={unmetAck}
               onUnmetAckHandled={() => setUnmetAck(false)}
-              configData={configData}
             />
 
-            <Text style={styles.sectionTitle}>Setup Instructions</Text>
-
-            <View style={styles.step}>
-              <Text style={styles.stepNum}>1</Text>
-              <View style={styles.stepBody}>
-                <Text style={styles.stepTitle}>Open Groww Trade API page</Text>
-                <Text style={styles.stepText}>
-                  Log in to Groww and open the Trade API section.
-                </Text>
-                <TouchableOpacity style={styles.linkBtn} onPress={openGrowwPortal}>
-                  <Text style={styles.linkText}>groww.in/trade-api/api-keys</Text>
-                  <ExternalLink size={14} color="#2563eb" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.step}>
-              <Text style={styles.stepNum}>2</Text>
-              <View style={styles.stepBody}>
-                <Text style={styles.stepTitle}>Create an API Key + Secret</Text>
-                <Text style={styles.stepText}>
-                  Click "Create API Key" on the dashboard and choose the{' '}
-                  <Text style={styles.bold}>API Key &amp; Secret</Text> option
-                  (not "Access Token"). Groww will show a popup titled "API
-                  key and secret" with two long strings — copy both, they are
-                  shown only once.
-                </Text>
-                <View style={styles.noteBox}>
-                  <Text style={styles.noteText}>
-                    Groww requires daily approval — if you can't place trades
-                    tomorrow, visit the API keys page, approve the day's
-                    session, then reconnect here. Access tokens reset at 6 AM
-                    IST daily.
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.step}>
-              <Text style={styles.stepNum}>3</Text>
-              <View style={styles.stepBody}>
-                <Text style={styles.stepTitle}>Whitelist your static IP</Text>
-                <Text style={styles.stepText}>
-                  On the same Trade API page, paste the static IP shown in
-                  the panel above into the "Whitelisted IPs" field and save.
-                  Groww rejects every order from a non-whitelisted IP, so
-                  this step is mandatory.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.step}>
-              <Text style={styles.stepNum}>4</Text>
-              <View style={styles.stepBody}>
-                <Text style={styles.stepTitle}>Paste credentials below</Text>
-                <Text style={styles.stepText}>
-                  Copy the <Text style={styles.bold}>API Key</Text> and{' '}
-                  <Text style={styles.bold}>API Secret</Text> from the "API
-                  key and secret" popup and paste them below.
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.label}>
-              API Key <Text style={styles.required}>*</Text>
-            </Text>
+            <Text style={styles.inputLabel}>TOTP Token (used as API Key) *</Text>
             <TextInput
               value={apiKey}
-              onChangeText={(v) => setApiKey(v.trim())}
-              placeholder="Paste your Groww API Key"
-              placeholderTextColor="#9ca3af"
-              style={styles.input}
+              onChangeText={setApiKey}
+              placeholder="Paste the JWT (eyJraWQi…) from the TOP of Groww's dialog"
+              placeholderTextColor="#999"
               autoCapitalize="none"
               autoCorrect={false}
+              multiline
+              style={[styles.input, styles.monoInput]}
             />
-
-            <Text style={styles.label}>
-              API Secret <Text style={styles.required}>*</Text>
+            <Text style={styles.helperText}>
+              The long JWT-style value labelled "TOTP Token" at the TOP of
+              Groww's "Generate TOTP token" dialog — Groww uses this as
+              the Bearer token. Not the Base32 secret below the QR (that
+              goes in the next field).
             </Text>
+
+            <Text style={styles.inputLabel}>TOTP QR Secret (Base32) *</Text>
             <TextInput
-              value={secretKey}
-              onChangeText={(v) => setSecretKey(v.trim())}
-              placeholder="Paste your Groww API Secret"
-              placeholderTextColor="#9ca3af"
-              style={styles.input}
+              value={totpToken}
+              onChangeText={setTotpToken}
+              placeholder="Paste the ~32-char Base32 secret below the QR (A–Z, 2–7)"
+              placeholderTextColor="#999"
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="off"
+              style={[styles.input, styles.monoInput]}
             />
-            <Text style={styles.hint}>
-              Found in the "API key and secret" popup on the Groww Trade API
-              page, shown only at key creation time.
+            <Text style={styles.helperText}>
+              The ~32-character Base32 secret shown BELOW the QR code on
+              Groww's "Generate TOTP token" dialog. Stored encrypted;
+              never shown back to you. If the secret is ever revoked on
+              Groww, generate a new one and
+              reconnect here.
             </Text>
 
             <TouchableOpacity
-              style={[
-                styles.submitBtn,
-                !egressReady && styles.submitBtnLocked,
-                submitDisabled && styles.submitBtnDisabled,
-              ]}
+              style={[styles.button, submitDisabled && styles.buttonDisabled]}
               onPress={handleSubmit}
               disabled={submitDisabled}>
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.submitText}>Connect Groww</Text>
+                <Text style={styles.buttonText}>Connect Groww</Text>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={onClose}
+              disabled={loading}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </CrossPlatformOverlay>
   );
 };
@@ -293,108 +485,167 @@ const GrowwConnectModal = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  sheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 20,
   },
-  title: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-  closeBtn: { fontSize: 14, color: '#64748b', fontWeight: '600' },
-  scroll: { maxHeight: '100%' },
-  scrollContent: { padding: 20, paddingBottom: 40 },
-  sectionTitle: {
-    fontSize: 15,
+  content: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: screenHeight * 0.9,
+  },
+  scrollContent: {
+    padding: 24,
+  },
+  title: {
+    fontSize: 22,
     fontWeight: '700',
-    color: '#0f172a',
-    marginTop: 12,
-    marginBottom: 12,
+    color: '#000',
+    marginBottom: 10,
+    textAlign: 'center',
   },
-  step: { flexDirection: 'row', marginBottom: 14 },
-  stepNum: {
+  description: {
+    fontSize: 14,
+    color: '#555',
+    marginBottom: 20,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  stepsBlock: {
+    marginBottom: 20,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    marginBottom: 14,
+  },
+  stepBullet: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#d1fae5',
-    color: '#047857',
-    textAlign: 'center',
-    lineHeight: 24,
-    fontWeight: '700',
-    fontSize: 12,
-    marginRight: 10,
-  },
-  stepBody: { flex: 1 },
-  stepTitle: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
-  stepText: {
-    fontSize: 13,
-    color: '#475569',
-    marginTop: 2,
-    lineHeight: 19,
-  },
-  bold: { fontWeight: '700', color: '#0f172a' },
-  linkBtn: {
-    flexDirection: 'row',
+    backgroundColor: '#d1faea',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
-    borderWidth: 1,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 2,
   },
-  linkText: { fontSize: 12, color: '#2563eb', fontWeight: '600' },
-  noteBox: {
-    marginTop: 8,
-    padding: 10,
-    backgroundColor: '#fffbeb',
-    borderColor: '#fde68a',
-    borderWidth: 1,
-    borderRadius: 8,
+  stepNumber: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0a7a5a',
   },
-  noteText: { fontSize: 12, color: '#92400e', lineHeight: 17 },
-  label: {
+  stepBody: {
+    flex: 1,
+  },
+  stepTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#222',
+    marginBottom: 2,
+  },
+  stepBodyText: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+  },
+  boldText: {
+    fontWeight: '700',
+    color: '#333',
+  },
+  monoText: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+    fontSize: 12,
+    color: '#333',
+  },
+  linkText: {
+    fontSize: 13,
+    color: '#1d6be8',
+    textDecorationLine: 'underline',
+    marginTop: 2,
+  },
+  inputLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#0f172a',
-    marginTop: 14,
+    color: '#333',
+    marginTop: 4,
     marginBottom: 6,
   },
-  required: { color: '#ef4444' },
   input: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#dcdcdc',
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
-    color: '#0f172a',
+    color: '#111',
+    marginBottom: 10,
   },
-  hint: { fontSize: 11, color: '#64748b', marginTop: 4 },
-  submitBtn: {
-    marginTop: 24,
-    backgroundColor: '#059669',
+  monoInput: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#777',
+    lineHeight: 16,
+    marginBottom: 16,
+  },
+  button: {
+    backgroundColor: '#00d09c',
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
-  submitBtnLocked: { backgroundColor: '#9ca3af' },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  buttonDisabled: {
+    backgroundColor: '#b7e6d6',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  // Read More / See Less help-panel styles. Mirrors
+  // ZerodhaConnectUI's guideBox + toggleContainer / toggleText /
+  // toggleIconContainer for cross-broker visual parity.
+  guideBox: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginTop: 12,
+    padding: 12,
+    elevation: 2,
+    shadowColor: '#ccc',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(0, 86, 183, 1)',
+    marginRight: 8,
+  },
+  toggleIconContainer: {
+    backgroundColor: '#fff',
+    elevation: 3,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
 });
 
 export default GrowwConnectModal;

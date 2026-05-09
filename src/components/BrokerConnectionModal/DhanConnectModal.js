@@ -11,6 +11,11 @@ import {useTrade} from '../../screens/TradeContext';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import {
+  useSdkBridge,
+  sdkConnectBroker,
+  sdkDualWriteSafely,
+} from '../../sdk/brokerSdkBridge';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
@@ -22,6 +27,7 @@ const DhanConnectModal = ({
 }) => {
   const {configData} = useTrade();
   const showAlert = useModalStore(state => state.showAlert);
+  const sdkBridge = useSdkBridge();
 
   // OAuth mode is primary (matching web). Manual credential form is fallback.
   const [oauthMode, setOauthMode] = useState(true);
@@ -66,11 +72,16 @@ const DhanConnectModal = ({
     if (userEmail) getUserDeatils();
   }, [userEmail]);
 
+  // Prefetched final URL (post-redirects) — lets the WebView skip
+  // ccxt → auth.dhan.co → partner-login.dhan.co hops (~200ms saved).
+  const [prefetchedAuthUrl, setPrefetchedAuthUrl] = useState(null);
+
   useEffect(() => {
     if (isVisible) {
       setShouldRenderContent(true);
       hasProcessedCallback.current = false;
       setOauthMode(true); // Always start in OAuth mode when opening
+      setPrefetchedAuthUrl(null);
     }
   }, [isVisible]);
 
@@ -78,6 +89,42 @@ const DhanConnectModal = ({
 
   // Dhan OAuth start URL — CCXT generates consent + redirects to Dhan's site
   const DHAN_OAUTH_URL = `${server.ccxtServer.baseUrl}dhan/login`;
+
+  // Opt 1: Mint the consentID on the server BEFORE the WebView starts
+  // loading. `fetch({redirect:'follow'})` follows the 302 chain
+  // (ccxt → auth.dhan.co → partner-login.dhan.co) and exposes the
+  // final URL on `resp.url`. We then hand that directly to the
+  // WebView so it skips two redirect hops — the server-side consent
+  // mint has already happened in parallel while the modal mounted.
+  // If prefetch fails for any reason we fall back to the multi-hop
+  // URL (no regression).
+  useEffect(() => {
+    if (!isVisible || prefetchedAuthUrl) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(DHAN_OAUTH_URL, {
+          method: 'GET',
+          redirect: 'follow',
+        });
+        if (cancelled) return;
+        const finalUrl = resp?.url;
+        if (
+          typeof finalUrl === 'string' &&
+          finalUrl.includes('dhan.co') &&
+          finalUrl !== DHAN_OAUTH_URL
+        ) {
+          console.log('[Dhan] prefetched final URL:', finalUrl);
+          setPrefetchedAuthUrl(finalUrl);
+        }
+      } catch (err) {
+        console.warn('[Dhan] consentID prefetch failed:', err?.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isVisible, DHAN_OAUTH_URL, prefetchedAuthUrl]);
 
   // ── OAuth callback handler ────────────────────────────────────────
   // The CCXT /dhan/callback consumes the token and redirects to:
@@ -135,19 +182,29 @@ const DhanConnectModal = ({
   const saveBrokerConnectionWithUid = async (uid, clientId, jwtToken) => {
     setLoading(true);
     try {
+      const dhanBrokerData = {
+        uid,
+        user_broker: 'Dhan',
+        clientCode: clientId,
+        jwtToken,
+      };
       await axios.request({
         method: 'put',
         url: `${server.server.baseUrl}api/user/connect-broker`,
         headers: getHeaders(),
-        data: JSON.stringify({
-          uid,
-          user_broker: 'Dhan',
-          clientCode: clientId,
-          jwtToken,
-        }),
+        data: JSON.stringify(dhanBrokerData),
       });
 
       console.log('[Dhan] Broker connected, updating model portfolio...');
+
+      // SDK pilot dual-write — see brokerSdkBridge.js.
+      if (sdkBridge.enabled && sdkBridge.ready && sdkBridge.client) {
+        sdkDualWriteSafely(
+          sdkConnectBroker(sdkBridge.client, 'Dhan', dhanBrokerData),
+          'Dhan',
+          'connect',
+        );
+      }
 
       // Update model portfolio with new broker (non-critical)
       try {
@@ -162,24 +219,49 @@ const DhanConnectModal = ({
       }
 
       setLoading(false);
-      showAlert(
-        'success',
-        'Connected Successfully',
-        'Your Dhan broker has been connected successfully!',
-      );
-      fetchBrokerStatusModal();
-      eventEmitter.emit('refreshEvent', {source: 'Dhan broker connection'});
       setShowBrokerModal(false);
       onClose();
-      getUserDeatils();
+      // Wrap post-success steps so a downstream throw doesn't bubble to
+      // the outer catch and get rewritten as "Connection Failed". See
+      // KotakModal.js (commit 172767d) and BROKER_CONNECTION.md
+      // § Broker-connect post-success hygiene.
+      try {
+        const result = await fetchBrokerStatusModal();
+        eventEmitter.emit('refreshEvent', {source: 'Dhan broker connection'});
+        if (!result?.migrationWillShow) {
+          showAlert(
+            'success',
+            'Connected Successfully',
+            'Your Dhan broker has been connected successfully!',
+          );
+        }
+        getUserDeatils();
+      } catch (postSuccessErr) {
+        console.warn(
+          '[Dhan] post-success step threw (connection IS saved DB-side):',
+          postSuccessErr?.message || postSuccessErr,
+        );
+      }
     } catch (error) {
       console.error('[Dhan] Connection error:', error);
       setLoading(false);
-      showAlert(
-        'error',
-        'Connection Failed',
-        'Failed to connect Dhan. Please check your credentials and try again.',
-      );
+      const isHttpError = !!error?.response;
+      const rawMessage =
+        error.response?.data?.message ||
+        error.response?.data?.details ||
+        '';
+      let alertTitle = 'Connection Failed';
+      let alertBody;
+      if (isHttpError) {
+        alertBody =
+          rawMessage ||
+          'Failed to connect Dhan. Please check your credentials and try again.';
+      } else {
+        alertTitle = 'Connection Issue';
+        alertBody =
+          'We couldn\'t complete the connection because of a network or app error. Your credentials may already be saved — please refresh to check before retrying.';
+      }
+      showAlert('error', alertTitle, alertBody);
     }
   };
 
@@ -198,7 +280,7 @@ const DhanConnectModal = ({
       <DhanOAuthUI
         isVisible={isVisible}
         onClose={onClose}
-        authUrl={DHAN_OAUTH_URL}
+        authUrl={prefetchedAuthUrl || DHAN_OAUTH_URL}
         handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
         loading={loading}
         onSwitchToManual={() => setOauthMode(false)}

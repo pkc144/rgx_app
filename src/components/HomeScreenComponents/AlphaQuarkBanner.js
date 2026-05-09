@@ -54,7 +54,7 @@ const AlphaQuarkBanner = () => {
                 <Image source={require('../../assets/electric.png')} />
                 {Config?.REACT_APP_WHITE_LABEL_TEXT
                   ? Config?.REACT_APP_WHITE_LABEL_TEXT
-                  : 'EquityPro'}
+                  : configData?.appName || 'AlphaQuark'}
               </Text>
               <Text style={styles.bannerSubtitle}>Your Trading Companion</Text>
             </View>

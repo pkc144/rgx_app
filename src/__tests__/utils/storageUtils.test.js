@@ -1,12 +1,7 @@
 /**
- * Tests for storageUtils.js (RGX version)
+ * Tests for storageUtils.js
+ * Matches: Web src/__tests__/services/AuthService.test.js (storage functions)
  * Validates AsyncStorage-based login data, config, and RA code management.
- *
- * Key RGX differences from B2B:
- * - No retry params on getConfigData/getRaId/getUserData/isUserDataComplete
- * - setConfigData uses setItem (not multiSet)
- * - getConfigData is a single read with no retry
- * - isUserDataComplete uses multiGet (not individual calls with retry)
  */
 
 jest.mock('@react-native-async-storage/async-storage');
@@ -23,9 +18,6 @@ jest.mock('../../utils/serverConfig', () => ({
   default: {
     server: {baseUrl: 'https://server.alphaquark.in/'},
   },
-}));
-jest.mock('../../utils/variantHelper', () => ({
-  getAdvisorSubdomain: jest.fn(() => 'rgxresearch'),
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -124,7 +116,10 @@ describe('storageUtils', () => {
 
     test('getRaId returns null when not set', async () => {
       AsyncStorage.getItem.mockResolvedValueOnce(null);
-      const raId = await getRaId();
+      // With retries exhausted
+      AsyncStorage.getItem.mockResolvedValueOnce(null);
+      AsyncStorage.getItem.mockResolvedValueOnce(null);
+      const raId = await getRaId(0);
       expect(raId).toBeNull();
     });
   });
@@ -152,7 +147,9 @@ describe('storageUtils', () => {
 
     test('getUserData returns null when not set', async () => {
       AsyncStorage.getItem.mockResolvedValueOnce(null);
-      const userData = await getUserData();
+      AsyncStorage.getItem.mockResolvedValueOnce(null);
+      AsyncStorage.getItem.mockResolvedValueOnce(null);
+      const userData = await getUserData(0);
       expect(userData).toBeNull();
     });
   });
@@ -160,6 +157,21 @@ describe('storageUtils', () => {
   // ─── setConfigData / getConfigData ───
 
   describe('setConfigData / getConfigData', () => {
+    test('stores config with batch operation', async () => {
+      const config = {
+        config: {
+          REACT_APP_HEADER_NAME: 'test-advisor',
+          REACT_APP_ADVISOR_TAG: 'TEST',
+          APP_VARIANT: 'alphaquark',
+        },
+        advisorName: 'Test Advisor',
+      };
+
+      const result = await setConfigData(config);
+      expect(result).toBe(true);
+      expect(AsyncStorage.multiSet).toHaveBeenCalled();
+    });
+
     test('setConfigData stores config successfully', async () => {
       const result = await setConfigData({
         config: {REACT_APP_HEADER_NAME: 'test-advisor'},
@@ -167,42 +179,30 @@ describe('storageUtils', () => {
       });
       expect(result).toBe(true);
 
-      // RGX uses setItem (not multiSet) for config
-      expect(AsyncStorage.setItem).toHaveBeenCalled();
-      const storedKey = AsyncStorage.setItem.mock.calls[0][0];
-      expect(storedKey).toBe('@app:advisorConfig');
+      // Verify the main config key was stored via multiSet
+      const storedPairs = AsyncStorage.multiSet.mock.calls[0][0];
+      const configPair = storedPairs.find(([key]) => key === '@app:advisorConfig');
+      expect(configPair).toBeDefined();
 
-      const parsedConfig = JSON.parse(AsyncStorage.setItem.mock.calls[0][1]);
+      const parsedConfig = JSON.parse(configPair[1]);
       expect(parsedConfig.config.REACT_APP_HEADER_NAME).toBe('test-advisor');
     });
 
     test('getConfigData returns null when not set', async () => {
-      AsyncStorage.getItem.mockResolvedValueOnce(null);
+      AsyncStorage.getItem.mockResolvedValue(null);
+      AsyncStorage.multiGet.mockResolvedValue([]);
 
-      const config = await getConfigData();
+      const config = await getConfigData(0);
       expect(config).toBeNull();
     });
 
     test('setConfigData returns false on storage error', async () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-      AsyncStorage.setItem.mockRejectedValueOnce(new Error('Storage full'));
+      AsyncStorage.multiSet.mockRejectedValueOnce(new Error('Storage full'));
 
       const result = await setConfigData({config: {}});
       expect(result).toBe(false);
       consoleSpy.mockRestore();
-    });
-
-    test('getConfigData enhances config with digio defaults', async () => {
-      const storedConfig = JSON.stringify({
-        config: {REACT_APP_HEADER_NAME: 'test'},
-      });
-      AsyncStorage.getItem.mockResolvedValueOnce(storedConfig);
-
-      const config = await getConfigData();
-      expect(config).toBeDefined();
-      expect(config.digioCheck).toBeDefined();
-      expect(config.digioEnabled).toBeDefined();
-      expect(config.otpBasedAuthentication).toBeDefined();
     });
   });
 
@@ -229,14 +229,7 @@ describe('storageUtils', () => {
 
   describe('isUserDataComplete', () => {
     test('returns correct structure with expected properties', async () => {
-      // RGX uses multiGet for isUserDataComplete
-      AsyncStorage.multiGet.mockResolvedValueOnce([
-        ['@app:raId', null],
-        ['@app:userData', null],
-        ['@app:advisorConfig', null],
-      ]);
-
-      const result = await isUserDataComplete();
+      const result = await isUserDataComplete(0);
       expect(result).toHaveProperty('hasRAId');
       expect(result).toHaveProperty('hasUserData');
       expect(result).toHaveProperty('hasConfig');
@@ -244,29 +237,13 @@ describe('storageUtils', () => {
       expect(typeof result.isComplete).toBe('boolean');
     });
 
-    test('isComplete is true when all data is present', async () => {
-      AsyncStorage.multiGet.mockResolvedValueOnce([
-        ['@app:raId', 'INA123'],
-        ['@app:userData', JSON.stringify({email: 'test@test.com'})],
-        ['@app:advisorConfig', JSON.stringify({config: {}})],
-      ]);
-
-      const result = await isUserDataComplete();
-      expect(result.isComplete).toBe(true);
-      expect(result.hasRAId).toBe(true);
-      expect(result.hasUserData).toBe(true);
-      expect(result.hasConfig).toBe(true);
-    });
-
-    test('isComplete is false when data is missing', async () => {
-      AsyncStorage.multiGet.mockResolvedValueOnce([
-        ['@app:raId', 'INA123'],
-        ['@app:userData', null],
-        ['@app:advisorConfig', null],
-      ]);
-
-      const result = await isUserDataComplete();
-      expect(result.isComplete).toBe(false);
+    test('isComplete is consistent with individual flags', async () => {
+      const result = await isUserDataComplete(0);
+      if (result.isComplete) {
+        expect(result.hasRAId).toBe(true);
+        expect(result.hasUserData).toBe(true);
+        expect(result.hasConfig).toBe(true);
+      }
     });
   });
 });

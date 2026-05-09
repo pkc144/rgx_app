@@ -24,10 +24,10 @@ export async function completeOneTimePayment({
 }) {
   const headers = {
     "Content-Type": "application/json",
-    "X-Advisor-Subdomain": process.env.REACT_APP_HEADER_NAME,
+    "X-Advisor-Subdomain": process.envREACT_APP_URL,
     "aq-encrypted-key": encryptApiKey(
-      process.env.REACT_APP_AQ_KEYS,
-      process.env.REACT_APP_AQ_SECRET
+      process.envREACT_APP_AQ_KEYS,
+      process.envREACT_APP_AQ_SECRET
     ),
   };
 
@@ -78,24 +78,6 @@ export async function completeOneTimePayment({
     phoneNumber: mobileNumber,
     panNumber,
     countryCode: countryCode || "+91",
-  });
-
-  await sendNotifications({
-    email: user,
-    phoneNumber: mobileNumber,
-    countryCode: countryCode || "+91",
-    panNumber,
-    planDetails: {
-      isRenewal: false,
-      duration: specificPlan?.duration || "30",
-      name: specificPlan?.name,
-      amount: specificPlan?.amount,
-    },
-    userName: name,
-    advisorName: whiteLabelText,
-    tradingPlatform: "supported-broker",
-    data,
-    telegramId,
   });
 
   await addClientToGroupSubscription({

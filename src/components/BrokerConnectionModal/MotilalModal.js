@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { StyleSheet, Dimensions } from 'react-native';
 import server from '../../utils/serverConfig';
 import CryptoJS from 'react-native-crypto-js';
 import { getAuth } from '@react-native-firebase/auth';
@@ -12,6 +12,11 @@ import { useTrade } from '../../screens/TradeContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import {
+  useSdkBridge,
+  sdkConnectBroker,
+  sdkDualWriteSafely,
+} from '../../sdk/brokerSdkBridge';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06;
@@ -22,9 +27,11 @@ const MotilalModal = ({
   onClose,
   setShowBrokerModal,
   fetchBrokerStatusModal,
+  reauthConfig,
 }) => {
   const { configData } = useTrade();
   const showAlert = useModalStore((state) => state.showAlert);
+  const sdkBridge = useSdkBridge();
   const [apiKey, setApiKey] = useState('');
   const [clientCode, setClientCode] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -88,21 +95,60 @@ const MotilalModal = ({
     return params;
   };
 
+  // Egress-IP gate (see EgressIpCallout). Motilal is IPv4-only — on
+  // web the callout renders an "ipv4_provisioning" hard-block until
+  // the IPv4 pool is ready. Mobile gets the same behaviour via the
+  // shared callout component (no special-case code needed here).
+  const [egressReady, setEgressReady] = useState(false);
+  const [unmetAck, setUnmetAck] = useState(false);
+
+  // Debounce gate for /motilal-oswal/login. Motilal binds the OTP +
+  // Authorization header + page session to a single page-load — back-
+  // to-back logins (e.g. user spam-clicks Connect or hits Restart
+  // immediately after a session-rotated WebView error) leave OTPs
+  // from session N–1 still on screen while the active session has
+  // already rotated to N, surfacing as "Authorization is Invalid In
+  // Header Parameter" or `MO1007 Two Factor Authentication Failed`.
+  // 30s is empirically enough for Motilal's session state to settle.
+  // (Production trigger: 2026-04-25 user fired 4 logins in 4 minutes
+  // and got all three Motilal failure modes in succession — see
+  // BROKER_CONNECTION.md § Motilal session-affinity guard.)
+  const lastConnectAtRef = useRef(0);
+  const _MOTILAL_CONNECT_COOLDOWN_MS = 30 * 1000;
+
   const initiateAuth = () => {
+    if (!egressReady) {
+      setUnmetAck(true);
+      return;
+    }
+    const now = Date.now();
+    const sinceLast = now - lastConnectAtRef.current;
+    if (sinceLast < _MOTILAL_CONNECT_COOLDOWN_MS) {
+      const wait = Math.ceil((_MOTILAL_CONNECT_COOLDOWN_MS - sinceLast) / 1000);
+      showAlert(
+        'warning',
+        'Please wait',
+        `Motilal needs ~${wait}s between login attempts to settle the session. ` +
+          'Tapping Connect again immediately is what causes "Authorization Invalid" ' +
+          'and "Two Factor Authentication Failed" errors.',
+      );
+      return;
+    }
     console.log('[Motilal] Initiating auth:', apiKey, clientCode, userDetails?._id);
     if (!userDetails?._id || !apiKey || !clientCode) {
       showAlert('error', 'Missing Fields', 'Please fill in all required fields.');
       return;
     }
+    lastConnectAtRef.current = now;
     const data = {
       uid: userDetails?._id,
       apiKey: checkValidApiAnSecret(apiKey),
+      user_broker: 'Motilal Oswal',
       clientCode: clientCode,
       redirect_url: `${configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL.replace(
         'https://',
         '',
       )}`,
-      user_broker: 'Motilal Oswal',
     };
     axios
       .put(`${server.server.baseUrl}api/motilal-oswal/update-key`, data, {
@@ -179,6 +225,15 @@ const MotilalModal = ({
         .then(response => {
           console.log('[Motilal] Broker connection saved successfully');
 
+          // SDK pilot dual-write — see brokerSdkBridge.js.
+          if (sdkBridge.enabled && sdkBridge.ready && sdkBridge.client) {
+            sdkDualWriteSafely(
+              sdkConnectBroker(sdkBridge.client, 'Motilal Oswal', brokerData),
+              'Motilal Oswal',
+              'connect',
+            );
+          }
+
           // Update model portfolio (non-critical)
           try {
             axios.request({
@@ -195,15 +250,46 @@ const MotilalModal = ({
             console.warn('[Motilal] Model portfolio update failed (non-critical):', err);
           }
 
-          fetchBrokerStatusModal();
-          eventEmitter.emit('refreshEvent', { source: 'Motilal Oswal broker connection' });
-          showAlert('success', 'Connected Successfully', 'Your Motilal Oswal broker has been connected successfully!');
           onClose();
           setShowBrokerModal(false);
+          // Wrap post-success steps so a downstream throw doesn't bubble
+          // to the outer .catch and get rewritten as "Connection Error".
+          // See KotakModal.js (commit 172767d) and BROKER_CONNECTION.md
+          // § Broker-connect post-success hygiene.
+          (async () => {
+            try {
+              const result = await fetchBrokerStatusModal();
+              eventEmitter.emit('refreshEvent', { source: 'Motilal Oswal broker connection' });
+              if (!result?.migrationWillShow) {
+                showAlert('success', 'Connected Successfully', 'Your Motilal Oswal broker has been connected successfully!');
+              }
+            } catch (postSuccessErr) {
+              console.warn(
+                '[Motilal Oswal] post-success step threw (connection IS saved DB-side):',
+                postSuccessErr?.message || postSuccessErr,
+              );
+            }
+          })();
         })
         .catch(error => {
           console.error('[Motilal] connect-broker error:', error);
-          showAlert('error', 'Connection Error', 'Failed to save Motilal Oswal connection. Please try again.');
+          const isHttpError = !!error?.response;
+          const rawMessage =
+            error.response?.data?.message ||
+            error.response?.data?.details ||
+            '';
+          let alertTitle = 'Connection Error';
+          let alertBody;
+          if (isHttpError) {
+            alertBody =
+              rawMessage ||
+              'Failed to save Motilal Oswal connection. Please try again.';
+          } else {
+            alertTitle = 'Connection Issue';
+            alertBody =
+              'We couldn\'t complete the connection because of a network or app error. Your credentials may already be saved — please refresh to check before retrying.';
+          }
+          showAlert('error', alertTitle, alertBody);
         });
     }
   };
@@ -222,16 +308,43 @@ const MotilalModal = ({
       sheet.current?.present();
     } else {
       sheet.current?.dismiss();
+      reauthHydratedRef.current = false;
     }
   }, [isVisible]);
+
+  // Smart-reauth hydration — see reauthHelpers.handleSmartReauth.
+  const reauthHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!isVisible || !reauthConfig || reauthHydratedRef.current) return;
+    if (!reauthConfig.authUrl || !reauthConfig.apiKey) return;
+    reauthHydratedRef.current = true;
+    setApiKey(reauthConfig.apiKey);
+    if (reauthConfig.clientCode) setClientCode(reauthConfig.clientCode);
+    setAuthUrl(reauthConfig.authUrl);
+    setShowWebView(true);
+  }, [isVisible, reauthConfig]);
 
   const handleWebViewClose = () => {
     setShowWebView(false);
   };
 
+  // Called by MotilalConnectUI's "Restart connection" button when
+  // the WebView errored AFTER Motilal's page had loaded once (i.e.
+  // the session is rotated and reload would compound the problem).
+  // Closes the WebView and wipes the stored authUrl + auth-token
+  // staging state so the next user-initiated Connect goes through
+  // the full /motilal-oswal/login round-trip and gets a fresh URL,
+  // not a stale one. The 30s debounce on `initiateAuth` still
+  // applies — protects against rapid Restart→Connect→Restart loops.
+  const handleRequestRestart = () => {
+    setShowWebView(false);
+    setAuthUrl('');
+    setjwtToken(null);
+    isToastShown.current = false;
+  };
+
   return (
-    <View>
-      <MotilalConnectUI
+    <MotilalConnectUI
         isVisible={isVisible}
         onClose={onClose}
         apiKey={apiKey}
@@ -250,8 +363,15 @@ const MotilalModal = ({
         authUrl={authUrl}
         handleWebViewNavigationStateChange={handleWebViewNavigationStateChange}
         handleWebViewClose={handleWebViewClose}
+        onRequestRestart={handleRequestRestart}
+        egressUserId={userDetails?._id}
+        egressUserEmail={userEmail}
+        egressReady={egressReady}
+        setEgressReady={setEgressReady}
+        unmetAck={unmetAck}
+        setUnmetAck={setUnmetAck}
+        configData={configData}
       />
-    </View>
   );
 };
 

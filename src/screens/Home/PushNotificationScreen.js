@@ -65,7 +65,8 @@ const PushNotificationScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
 
-  const API_BASE_URL = server.server.baseUrl.replace(/\/$/, '');
+  // API Base URL - Update this with your actual API URL
+  const API_BASE_URL = 'http://10.90.60.251:8001'; // Update this
 
   // Format symbol helper function - FIXED
   const formatSymbol = stock => {
@@ -720,7 +721,9 @@ const getUnreadCount = () => {
                               }
 
                               // Safe property access with fallbacks
-                              const action = stock.action || '';
+                              // Backend sends "type" field (e.g., "Buy"/"Sell"), normalize to uppercase
+                              const rawAction = stock.action || stock.type || '';
+                              const action = rawAction.toUpperCase();
                               const orderType = stock.orderType || '';
                               const limitPrice = stock.limitPrice ? Number(stock.limitPrice) : 0;
                               const advisedRangeLower = stock.advisedRangeLower ? String(stock.advisedRangeLower) : '';

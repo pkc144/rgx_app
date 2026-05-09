@@ -218,6 +218,31 @@ const BrokerCredentialScreen = () => {
           return;
         }
 
+        // ── PURE CREDENTIAL: Groww (TOTP-seed) ──
+        // 2026-04-21: routes to /api/groww/update-key with
+        // {apiKey, totp_seed} so the backend stores the seed
+        // AES-256 encrypted and enables one-tap daily refresh via
+        // /api/groww/refresh-token. Without this explicit case the
+        // default branch would POST to /api/user/connect-broker which
+        // trusts an upstream-validated jwtToken — wrong for Groww
+        // since the customer is handing us raw credentials.
+        case 'groww': {
+          await axios.post(
+            `${server.server.baseUrl}api/groww/update-key`,
+            {
+              uid: userId,
+              user_email: userEmail,
+              user_broker: 'Groww',
+              apiKey: encrypt(formValues.apiKey),
+              totp_seed: encrypt(formValues.totp_seed),
+            },
+            { headers: getHeaders(), timeout: 20000 },
+          );
+          await onConnectionSuccess();
+          setSubmitting(false);
+          return;
+        }
+
         // ── PURE CREDENTIAL: Kotak ──
         case 'kotak': {
           await axios.put(
@@ -310,7 +335,7 @@ const BrokerCredentialScreen = () => {
           // Exchange auth code for access token
           const resp = await axios.post(
             `${server.ccxtServer.baseUrl}fyers/gen-access-token`,
-            { clientId: formValues.secretKey, clientSecret: formValues.clientCode, authCode },
+            { user_email: userEmail, clientId: formValues.secretKey, clientSecret: formValues.clientCode, authCode },
             { headers: getHeaders(), timeout: 15000 },
           );
           const token = resp.data?.accessToken || resp.data?.data?.accessToken;

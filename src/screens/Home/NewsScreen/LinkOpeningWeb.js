@@ -42,6 +42,15 @@ const LinkOpeningWeb = ({ setWebview,currentUrl,webViewVisible,symbol }) => {
                               <Loader color={'#000'} width={40} height={40} />
                             </View>
                           )}
+                          onShouldStartLoadWithRequest={request => {
+                            // Allow the original URL and data: URLs (blog HTML content)
+                            if (request.url === currentUrl) return true;
+                            if (request.url.startsWith('data:')) return true;
+                            if (request.url.startsWith(currentUrl + '#') || request.url === 'about:blank') return true;
+                            // Block external navigation — close the webview instead
+                            setWebview(false);
+                            return false;
+                          }}
                           originWhitelist={['*']}
                         />
                    </SafeAreaView>

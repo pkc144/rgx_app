@@ -34,7 +34,6 @@ import {FyersTpinModal} from '../DdpiModal';
 import Config from 'react-native-config';
 import {OtherBrokerModel} from '../DdpiModal';
 import {generateToken} from '../../utils/SecurityTokenManager';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
 const RebalanceAdviceContent = React.memo(
   ({
     type,
@@ -261,14 +260,20 @@ const RebalanceAdviceContent = React.memo(
             execution => execution?.user_email === userEmail,
           ) || [];
 
-        const userExecution =
+        let userExecution =
           userExecutionsFiltered.find(
             ex => broker && ex?.user_broker === broker,
           ) ||
           userExecutionsFiltered.find(
             ex => ex?.user_broker === 'DummyBroker',
-          ) ||
-          (!broker ? userExecutionsFiltered[0] : undefined);
+          );
+        if (!userExecution && userExecutionsFiltered.length > 0) {
+          const anyMatch = userExecutionsFiltered[0];
+          const otherStatus = (anyMatch?.status || '').toLowerCase();
+          userExecution = otherStatus === 'executed'
+            ? {...anyMatch, status: 'toExecute', user_broker: broker}
+            : anyMatch;
+        }
         const matchingFailedTrades = modelPortfolioRepairTrades?.find(
           trade =>
             trade.modelId === latest?.model_Id &&
@@ -314,7 +319,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -350,7 +355,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -386,7 +391,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -417,7 +422,7 @@ const RebalanceAdviceContent = React.memo(
               {
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+                  'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
                   'aq-encrypted-key': generateToken(
                     Config.REACT_APP_AQ_KEYS,
                     Config.REACT_APP_AQ_SECRET,
@@ -450,11 +455,19 @@ const RebalanceAdviceContent = React.memo(
           trade.modelId === latest?.model_Id && trade.failedTrades.length !== 0,
       );
 
-        const userExecution = latest?.subscriberExecutions?.find(
-        (execution) =>
-          execution?.user_email === userEmail &&
-          (!broker || execution?.user_broker === broker),
-      );
+        const _execFiltered = (latest?.subscriberExecutions || []).filter(
+          e => e?.user_email === userEmail,
+        );
+        let userExecution =
+          _execFiltered.find(ex => broker && ex?.user_broker === broker) ||
+          _execFiltered.find(ex => ex?.user_broker === 'DummyBroker');
+        if (!userExecution && _execFiltered.length > 0) {
+          const anyMatch = _execFiltered[0];
+          const otherStatus = (anyMatch?.status || '').toLowerCase();
+          userExecution = otherStatus === 'executed'
+            ? {...anyMatch, status: 'toExecute', user_broker: broker}
+            : anyMatch;
+        }
 
       return (
         <View
@@ -502,15 +515,16 @@ const RebalanceAdviceContent = React.memo(
                   item?.latestRebalance?.subscriberExecutions?.filter(
                     execution => execution?.user_email === userEmail,
                   ) || [];
-                return (
-                  execFiltered.find(
-                    ex => broker && ex?.user_broker === broker,
-                  ) ||
-                  execFiltered.find(
-                    ex => ex?.user_broker === 'DummyBroker',
-                  ) ||
-                  (!broker ? execFiltered[0] : undefined)
-                );
+                let _ue =
+                  execFiltered.find(ex => broker && ex?.user_broker === broker) ||
+                  execFiltered.find(ex => ex?.user_broker === 'DummyBroker');
+                if (!_ue && execFiltered.length > 0) {
+                  const am = execFiltered[0];
+                  _ue = (am?.status || '').toLowerCase() === 'executed'
+                    ? {...am, status: 'toExecute', user_broker: broker}
+                    : am;
+                }
+                return _ue;
               })()}
               brokerStatus={userDetails?.connect_broker_status}
               showstatusModal={showstatusModal}
@@ -615,6 +629,12 @@ const RebalanceAdviceContent = React.memo(
             setOpenSucessModal={setOpenSucessModal}
             orderPlacementResponse={OrderPlacementResponse}
             currentBroker={broker}
+            // 2026-05-07: MP context for the per-row "Mark as Placed"
+            // inline editor on FAILURE rows.
+            userEmail={userEmail}
+            modelId={modelPortfolioModelId}
+            modelName={storeModalName}
+            uniqueId={calculatedPortfolioData?.uniqueId}
           />
         )}
 

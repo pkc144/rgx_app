@@ -1,3 +1,15 @@
+/**
+ * IgnoreTradesScreen — container (Phase G batch 4, 2026-05-02)
+ *
+ * Owns: useTrade, useConfig, useModal, useCart, Firebase getAuth,
+ * useSdkClient, all broker state machines, axios data fetching,
+ * EventEmitter listeners, placeOrder / getAllTrades / getAllFunds,
+ * SDK dual-path wiring (Phase C callsite wiring preserved).
+ *
+ * Renders presentation resolved from `screens.IgnoreTradesScreen`.
+ * StockAdvices is passed as a slot so the presentation stays pure.
+ */
+
 import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
@@ -10,13 +22,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import axios from 'axios';
-import IgnoreStockCard from '../../components/IgnoreStockCard';
+import { useComponent } from '../../design/useDesign';
 import Toast from 'react-native-toast-message';
 import {ChevronLeft} from 'lucide-react-native';
 import CustomToolbar from '../../components/CustomToolbar';
 import MPCard from '../../components/ModelPortfolioComponents/MPCard';
 import {getAuth} from '@react-native-firebase/auth';
 import server from '../../utils/serverConfig';
+import { validateStockExchanges } from '../../utils/brokerPublisher';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import EmptyMP from '../../assets/emptyModelPortfolio.svg';
 import {Alert} from 'react-native';
@@ -32,13 +45,26 @@ import {useCart} from '../../components/CartContext';
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../TradeContext';
+import {useConfig} from '../../context/ConfigContext';
+import { computeTradeVariant } from '../../utils/tradeVariant';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
+import useSdkClient from '../../sdk/useSdkClient';
+
+const isSdkExecuteAdviceEnabled = () => {
+  const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
+  return v === 'true' || v === '1';
+};
+
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375; // Assuming the design is based on a 375px wide screen (iPhone X)
 const responsiveFontSize = fontSize => Math.round(fontSize * scale);
 
 const IgnoreTradesScreen = () => {
   const {configData} = useTrade();
+  // For trade `variant` — see docs/APP_ARCHITECTURE.md § 4.5.2.
+  const { allowAfterHoursOrders } = useConfig() || {};
+  const sdkClient = useSdkClient();
+  const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user && user.email;
@@ -168,7 +194,7 @@ const IgnoreTradesScreen = () => {
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -220,6 +246,7 @@ const IgnoreTradesScreen = () => {
   const isToastShown = useRef(false);
   const [sessionToken, setSessionToken] = useState(null);
   const [upstoxSessionToken, setUpstoxSessionToken] = useState(null);
+  const [IciciSuccessMsg, setIciciSuccessMsg] = useState(false);
   const connectBrokerDbUpadte = () => {
     if (
       sessionToken ||
@@ -259,7 +286,7 @@ const IgnoreTradesScreen = () => {
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -349,7 +376,7 @@ const IgnoreTradesScreen = () => {
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -377,7 +404,7 @@ const IgnoreTradesScreen = () => {
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -404,7 +431,7 @@ const IgnoreTradesScreen = () => {
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -431,7 +458,7 @@ const IgnoreTradesScreen = () => {
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -459,7 +486,7 @@ const IgnoreTradesScreen = () => {
 
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -482,8 +509,10 @@ const IgnoreTradesScreen = () => {
     setLoading(true);
     // Prepare the payload based on broker
     const getOrderPayload = () => {
+      // Trade variant per-trade — see docs/APP_ARCHITECTURE.md § 4.5.2.
+      const variant = computeTradeVariant(allowAfterHoursOrders);
       const basePayload = {
-        trades: stockDetails,
+        trades: stockDetails.map(s => ({ ...s, variant })),
         user_broker: broker, // Add user_broker to identify the broker
         user_email: userEmail,
       };
@@ -546,28 +575,88 @@ const IgnoreTradesScreen = () => {
       }
     };
 
-    const orderConfig = {
-      method: 'post',
-      url: `${server.server.baseUrl}api/process-trades/order-place`, // Single unified endpoint
-
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
-        'aq-encrypted-key': generateToken(
-          Config.REACT_APP_AQ_KEYS,
-          Config.REACT_APP_AQ_SECRET,
-        ),
-      },
-
-      data: JSON.stringify(getOrderPayload()),
+    // Phase A trade-exec alignment (2026-05-01): now POSTs direct to ccxt-india
+    // /orders/process-trade. Falls back to legacy Node on 5xx / network error,
+    // gated by REACT_APP_BESPOKE_DIRECT_CCXT_FALLBACK (default 'true'). Spec:
+    // docs/SDK_TRADE_EXECUTION_MIGRATION.md § Phase A.
+    const directCcxtUrl = `${server.ccxtServer.baseUrl}orders/process-trade`;
+    const legacyNodeUrl = `${server.server.baseUrl}api/process-trades/order-place`;
+    const fallbackEnabled = (Config.REACT_APP_BESPOKE_DIRECT_CCXT_FALLBACK || 'true') === 'true';
+    const placeOrderHeaders = {
+      'Content-Type': 'application/json',
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+      'aq-encrypted-key': generateToken(
+        Config.REACT_APP_AQ_KEYS,
+        Config.REACT_APP_AQ_SECRET,
+      ),
+    };
+    const basePayloadIgn = getOrderPayload();
+    const payloadWithClientIds = {
+      ...basePayloadIgn,
+      trades: (basePayloadIgn.trades || []).map((t) => ({
+        ...t,
+        clientTradeId: t.clientTradeId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      })),
     };
 
-    // Make the API call
-    axios
-      .request(orderConfig)
-      .then(response => {
-        setOrderPlacementResponse(response.data.response);
+    (async () => {
+      try {
+        let response;
+        let placementResults;
 
+        // SDK executeAdvice dual-path (Phase C). When the flag is on and SDK
+        // client is available, route through the SDK orchestrator. Legacy
+        // direct-ccxt path stays below as fallback.
+        if (sdkExecuteAdviceEnabled) {
+          try {
+            const sdkResult = await sdkClient.executeAdvice({
+              kind: 'bespokeSingle',
+              clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              brokerName: broker,
+              trade: payloadWithClientIds.trades[0],
+              adviceId: stockDetails[0]?.adviceId || stockDetails[0]?._id || '',
+            });
+            placementResults = (sdkResult?.rows || []).map(row => ({
+              ...row,
+              orderStatus: row.status,
+              tradingSymbol: row.symbol,
+            }));
+            console.log('[IgnoreTradesScreen] SDK executeAdvice result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+          } catch (sdkErr) {
+            console.error('[IgnoreTradesScreen] SDK executeAdvice failed, falling back to legacy:', sdkErr?.message);
+            placementResults = null;
+          }
+        }
+
+        if (!placementResults) {
+          try {
+            response = await axios.request({
+              method: 'post',
+              url: directCcxtUrl,
+              timeout: 120000,
+              headers: placeOrderHeaders,
+              data: JSON.stringify(payloadWithClientIds),
+            });
+            placementResults = response.data?.results || [];
+          } catch (directErr) {
+            const status = directErr?.response?.status;
+            const isNetworkOr5xx = !status || status >= 500;
+            if (fallbackEnabled && isNetworkOr5xx) {
+              console.warn('[IgnoreTradesScreen.placeOrder] direct-ccxt failed, falling back to legacy Node:', directErr?.message);
+              response = await axios.request({
+                method: 'post',
+                url: legacyNodeUrl,
+                headers: placeOrderHeaders,
+                data: JSON.stringify(payloadWithClientIds),
+              });
+              placementResults = response.data?.response || [];
+            } else {
+              throw directErr;
+            }
+          }
+        }
+
+        setOrderPlacementResponse(placementResults);
         setOpenSucessModal(true);
         setLoading(false);
         setOpenReviewTrade(false);
@@ -576,8 +665,7 @@ const IgnoreTradesScreen = () => {
         getAllTrades();
         updatePortfolioData();
         getCartAllStocks();
-      })
-      .catch(error => {
+      } catch (error) {
         console.error('Error placing order:', error);
         setLoading(false);
         Toast.show({
@@ -600,108 +688,11 @@ const IgnoreTradesScreen = () => {
             fontSize: 16,
           },
         });
-      });
+      }
+    })();
   };
 
   const [ltp, setLtp] = useState([]);
-  // const socketRef = useRef(null);
-  // const subscribedSymbolsRef = useRef(new Set());
-  // const failedSubscriptionsRef = useRef({});
-  // let dataArray = [];
-  // // WebSocket connection for market data
-  // useEffect(() => {
-  //   socketRef.current = io("wss://ccxt.alphaquark-case.com", {
-  //     transports: ["websocket"],
-  //     query: { EIO: "4" },
-  //   });
-
-  //   const handleMarketData = (data) => {
-  //     setLtp((prev) => {
-  //       const index = prev.findIndex(
-  //         (item) => item.tradingSymbol === data.stockSymbol
-  //       );
-
-  //       if (index !== -1) {
-  //         const existingItem = prev[index];
-
-  //         // Update state only if the price has changed
-  //         if (existingItem.lastPrice !== data.last_traded_price) {
-  //           const newLtp = [...prev];
-  //           newLtp[index] = {
-  //             ...existingItem,
-  //             lastPrice: data.last_traded_price,
-  //           };
-  //           return newLtp;
-  //         } else {
-  //           return prev; // No change, return previous state
-  //         }
-  //       } else {
-  //         // Add new stock price if not present in the state
-  //         return [
-  //           ...prev,
-  //           {
-  //             tradingSymbol: data.stockSymbol,
-  //             lastPrice: data.last_traded_price,
-  //           },
-  //         ];
-  //       }
-  //     });
-  //   };
-
-  //   socketRef.current.on("market_data", handleMarketData);
-
-  //   return () => {
-  //     if (socketRef.current) {
-  //       socketRef.current.off("market_data", handleMarketData);
-  //       socketRef.current.disconnect();
-  //     }
-  //   };
-  // }, []);
-
-  // // Subscribe to symbols via API
-  // const getCurrentPrice = useCallback(() => {
-  //   if (!dataArray || dataArray.length === 0) return;
-
-  //   const symbolsToSubscribe = dataArray.filter(
-  //     (trade) =>
-  //       !subscribedSymbolsRef.current.has(trade.symbol) &&
-  //       (!failedSubscriptionsRef.current[trade.symbol] ||
-  //         failedSubscriptionsRef.current[trade.symbol] < 3)
-  //   );
-
-  //   symbolsToSubscribe.forEach((trade) => {
-  //     const data = { symbol: trade.symbol, exchange: trade.exchange };
-
-  //     axios
-  //       .post("https://ccxt.alphaquark-case.com/websocket/subscribe", data)
-  //       .then(() => {
-  //         subscribedSymbolsRef.current.add(trade.symbol);
-  //         delete failedSubscriptionsRef.current[trade.symbol];
-  //       })
-  //       .catch((error) => {
-  //         console.error(`Error subscribing to ${trade.symbol}:`, error);
-  //         failedSubscriptionsRef.current[trade.symbol] =
-  //           (failedSubscriptionsRef.current[trade.symbol] || 0) + 1;
-  //       });
-  //   });
-  // }, [dataArray]);
-
-  // // Fetch current price when dataArray changes
-  // useEffect(() => {
-  //   if (dataArray && dataArray.length > 0) {
-  //     getCurrentPrice();
-  //   }
-  // }, [dataArray, getCurrentPrice]);
-
-  // // Utility to get the last traded price for a symbol
-
-  // const getLTPForSymbol = useCallback(
-  //   (symbol) => {
-  //     const ltpItem = ltp.find((item) => item.tradingSymbol === symbol);
-  //     return ltpItem ? ltpItem.lastPrice : null;
-  //   },
-  //   [ltp]
-  // );
 
   const appURL = 'test';
   // zerodha start
@@ -731,6 +722,21 @@ const IgnoreTradesScreen = () => {
   };
 
   const handlefinal = async () => {
+    // Pre-flight: refuse to send orders with missing exchange. Kite Publisher
+    // silently drops basket items whose symbol/exchange combo it can't resolve.
+    const exchangeCheck = validateStockExchanges(stockDetails);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      console.error('[ZerodhaPublisher] Blocked due to missing exchange:', missingList);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        visibilityTime: 8000,
+      });
+      return;
+    }
+
     try {
       // Store stockDetails in AsyncStorage (similar to localStorage)
       await AsyncStorage.setItem(
@@ -752,7 +758,8 @@ const IgnoreTradesScreen = () => {
         let baseOrder = {
           variety: 'regular',
           tradingsymbol: stock.tradingSymbol,
-          exchange: stock.exchange || 'NSE',
+          // exchange is guaranteed non-empty by validateStockExchanges() above
+          exchange: stock.exchange,
           transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
           order_type: mapKiteOrderType(stock.orderType),
           quantity: parseInt(stock.quantity, 10) || 1,
@@ -781,7 +788,7 @@ const IgnoreTradesScreen = () => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -859,7 +866,7 @@ const IgnoreTradesScreen = () => {
         url: `${server.server.baseUrl}api/zerodha/publisher/record-orders`,
         headers: {
           'Content-Type': 'application/json',
-          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
           'aq-encrypted-key': generateToken(
             Config.REACT_APP_AQ_KEYS,
             Config.REACT_APP_AQ_SECRET,
@@ -905,19 +912,6 @@ const IgnoreTradesScreen = () => {
     }
   }, [zerodhaStatus, zerodhaRequestType, userEmail, jwtToken]);
 
-  // const calculateTotalAmount = () => {
-  //   let totalAmount = 0;
-  //   stockDetails.forEach((ele) => {
-  //     if (ele.transactionType === "BUY") {
-  //       const ltp = getLTPForSymbol(ele.tradingSymbol); // Get LTP for current symbol
-  //       if (ltp !== "-") {
-  //         totalAmount += parseFloat(ltp) * ele.quantity; // Calculate total amount for this trade
-  //       }
-  //     }
-  //   });
-  //   return totalAmount.toFixed(2); // Return total amount formatted to 2 decimal places
-  // };
-
   const [isBrokerConnected, setIsBrokerConnected] = useState(false);
 
   const [brokername, setBrokerName] = useState('');
@@ -944,9 +938,7 @@ const IgnoreTradesScreen = () => {
         setBrokerName(userData.user_broker);
         setcreateDate(userData.created_at);
         setIsBrokerConnected(!!userData?.user_broker);
-        // console.log('corrected');
       } catch (error) {
-        //   console.error('Error fetching broker status:', error.response?.data || error.message);
         setIsBrokerConnected(false); // Handle error by setting default status
       } finally {
         setLoading(false);
@@ -966,7 +958,7 @@ const IgnoreTradesScreen = () => {
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -997,7 +989,7 @@ const IgnoreTradesScreen = () => {
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1028,7 +1020,7 @@ const IgnoreTradesScreen = () => {
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1054,11 +1046,11 @@ const IgnoreTradesScreen = () => {
         });
         let config = {
           method: 'post',
-          url: `${server.ccxtServer.baseUrl}funds`,
+          url: `${server.ccxtServer.baseUrl}angelone/funds`,
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1088,7 +1080,7 @@ const IgnoreTradesScreen = () => {
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1108,9 +1100,9 @@ const IgnoreTradesScreen = () => {
       }
     } else if (broker === 'Kotak') {
       if (jwtToken) {
+        // Kotak NEO UUID flow (2026-04-22) — no consumer secret.
         let data = JSON.stringify({
           consumerKey: checkValidApiAnSecret(apiKey),
-          consumerSecret: checkValidApiAnSecret(secretKey),
           accessToken: jwtToken,
           viewToken: viewToken,
           exchange: 'NSE',
@@ -1125,7 +1117,7 @@ const IgnoreTradesScreen = () => {
 
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -1137,7 +1129,6 @@ const IgnoreTradesScreen = () => {
         axios
           .request(config)
           .then(response => {
-            // console.log("res", response);
             setFunds(response.data.data);
           })
           .catch(error => {
@@ -1153,43 +1144,6 @@ const IgnoreTradesScreen = () => {
   const [selectedLength, setSelectedLength] = useState();
   const [singleStockSelectState, setSingleStockSelectState] = useState(false);
   const [lengthstock, setlengthstock] = useState(1);
-
-  // const getCartAllStocks = () => {
-  //   let config = {
-  //     method: "get",
-  //     url: `${server.server.baseUrl}api/cart/${userEmail}?trade_place_status=recommend`,
-  //   };
-
-  //   axios
-  //     .request(config)
-  //     .then((response) => {
-  //       const transformedStockDetails = response?.data?.map((stock) => ({
-  //         user_email: stock.user_email,
-  //         trade_given_by: stock.trade_given_by,
-  //         tradingSymbol: stock.Symbol,
-  //         transactionType: stock.Type,
-  //         exchange: stock.Exchange,
-  //         segment: stock.Segment,
-  //         productType: stock.ProductType,
-  //         orderType: stock.OrderType,
-  //         price: stock.Price,
-  //         quantity: stock.Quantity,
-  //         priority: stock.Priority,
-  //         tradeId: stock.tradeId,
-  //         user_broker: broker, // Assuming you want to set this from the existing context
-  //       }));
-
-  //       setStockDetails(transformedStockDetails);
-  //       setSelectedLength(transformedStockDetails.length);
-  //       setCartCount(transformedStockDetails.length);
-  //     })
-  //     .catch((error) => {
-  //       console.log("errpr",error);
-  //     });
-  // };
-  // useEffect(() => {
-  //   getCartAllStocks();
-  // }, [setCartCount]);
 
   const handleQuantityInputChange = (symbol, value, tradeId) => {
     if (!value || value === '') {
@@ -1236,7 +1190,7 @@ const IgnoreTradesScreen = () => {
       );
 
       if (!isSelected) {
-        const ltp = 0; //getLTPForSymbol(stock.Symbol);
+        const ltp = 0;
         const advisedRangeLower = stock.Advised_Range_Lower;
         const advisedRangeHigher = stock.Advised_Range_Higher;
 
@@ -1286,7 +1240,7 @@ const IgnoreTradesScreen = () => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -1315,7 +1269,7 @@ const IgnoreTradesScreen = () => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -1366,41 +1320,36 @@ const IgnoreTradesScreen = () => {
     Toast.show({
       type: type,
       text2: message2 + ' ' + message1,
-      //position:'bottom',
-      position: 'bottom', // Duration the toast is visible
+      position: 'bottom',
       text1Style: {
         color: 'black',
         fontSize: 11,
         fontWeight: 0,
-        fontFamily: 'Poppins-Medium', // Customize your font
+        fontFamily: 'Poppins-Medium',
       },
       text2Style: {
         color: 'black',
         fontSize: 12,
-        fontFamily: 'Poppins-Regular', // Customize your font
+        fontFamily: 'Poppins-Regular',
       },
     });
   };
 
   const IsMarketHours = () => {
-    // Get the current time in IST and format it
     const currentTimeIST = moment()
       .utcOffset('+05:30')
       .format('DD-MM-YYYY HH:mm:ss');
 
-    // Define the cutoff time of 3:15 PM in IST and format it
     const endTimeIST = moment()
       .utcOffset('+05:30')
       .set({hour: 15, minute: 30, second: 0, millisecond: 0})
       .format('DD-MM-YYYY HH:mm:ss');
 
-    // Define the cutoff time of 3:15 PM in IST and format it
     const startTimeIST = moment()
       .utcOffset('+05:30')
       .set({hour: 9, minute: 15, second: 0, millisecond: 0})
       .format('DD-MM-YYYY HH:mm:ss');
 
-    // Compare current time with the cutoff time
     if (
       moment(currentTimeIST, 'DD-MM-YYYY HH:mm:ss').isAfter(
         moment(startTimeIST, 'DD-MM-YYYY HH:mm:ss'),
@@ -1430,11 +1379,8 @@ const IgnoreTradesScreen = () => {
   useEffect(() => {
     const openExpireModelListener = ({isOpen}) => {
       handleexpire();
-      // Update the state to open the modal
     };
-    // Listen to the 'openExpireModel' event
     eventEmitter.on('openExpireModel', openExpireModelListener);
-    // Cleanup the listener when the component unmounts
     return () => {
       eventEmitter.off('openExpireModel', openExpireModelListener);
     };
@@ -1462,10 +1408,8 @@ const IgnoreTradesScreen = () => {
 
   // Trades---
   const handleTrade = () => {
-    // console.log('HIIiiiiiiiiiiiiii',broker);
-
     if (broker === 'Zerodha') {
-      setOpenZerodhaModel(true); // Open the Zerodha modal only when broker is Zerodha and trade button is pressed
+      setOpenZerodhaModel(true);
     } else {
       if (brokerStatus === null) {
         setBrokerModel(true);
@@ -1499,7 +1443,7 @@ const IgnoreTradesScreen = () => {
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1530,7 +1474,7 @@ const IgnoreTradesScreen = () => {
           quantity: trade.Quantity,
           priority: trade.Priority || 1,
           tradeId: trade._id,
-          user_broker: broker, // Assuming broker is defined in the parent scope
+          user_broker: broker,
         }));
 
         // Set state for ignored trades and stock details
@@ -1569,7 +1513,7 @@ const IgnoreTradesScreen = () => {
 
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -1622,41 +1566,26 @@ const IgnoreTradesScreen = () => {
     getAllTrades();
   }, []);
 
-  return (
-    <View style={{backgroundColor: '#F9F9F9', flex: 1}}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignContent: 'center',
-          alignItems: 'center',
-          padding: 20,
-          backgroundColor: 'white',
-          borderBottomWidth: 0.5,
-          borderBottomColor: '#DEECE9',
-        }}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <ChevronLeft
-            style={{
-              marginRight: 10,
-              alignContent: 'center',
-              alignItems: 'center',
-              alignSelf: 'center',
-              marginTop: 3,
-            }}
-            size={20}
-            color={'black'}
-          />
-        </TouchableOpacity>
+  // ---------- presentation delegation ----------
+  const IgnoreTradesPresentation = useComponent('screens.IgnoreTradesScreen');
 
-        <Text
-          style={{fontFamily: 'Satoshi-Bold', fontSize: 20, color: 'black'}}>
-          Ignored Trades
-        </Text>
-      </View>
-      <StockAdvices userEmail={userEmail} type={'Ignore'} />
-    </View>
-  );
+  const viewModel = {
+    userEmail,
+    type: 'Ignore',
+    headerTitle: 'Ignored Trades',
+  };
+
+  const actions = {
+    onGoBack: () => navigation.goBack(),
+  };
+
+  const slots = {
+    StockAdvicesSlot: <StockAdvices userEmail={userEmail} type={'Ignore'} />,
+  };
+
+  return <IgnoreTradesPresentation viewModel={viewModel} actions={actions} slots={slots} />;
 };
+
 const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Poppins-SemiBold',

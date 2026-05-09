@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
+import LinkifiedUrl from './LinkifiedUrl';
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const DhanHelpContent = ({expanded, onExpandChange }) => {
@@ -12,7 +13,7 @@ const DhanHelpContent = ({expanded, onExpandChange }) => {
 
   return (
     <View>
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 0 }}>
+    <View style={styles.container}>
       <View style={styles.videoBox}>
         <YoutubePlayer
           height={screenHeight * 0.24}
@@ -27,7 +28,7 @@ const DhanHelpContent = ({expanded, onExpandChange }) => {
                           style={styles.instruction}
                         >
                           1. Go to{" "}
-                          <Text onPress={() => Linking.openURL('http://login.dhan.co')}  style={styles.link}>http://login.dhan.co</Text>{' '}
+                          <LinkifiedUrl url="https://login.dhan.co" />{' '}
                         </Text>
                         <Text style={styles.instruction}>
                           2. Click on your profile picture and choose "My Profile on Dhan". Under the Profile details, you'll find the "Client ID".
@@ -51,7 +52,7 @@ const DhanHelpContent = ({expanded, onExpandChange }) => {
         </>
       )}
    
-    </ScrollView>
+    </View>
   
     </View>
 

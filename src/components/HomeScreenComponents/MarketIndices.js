@@ -7,32 +7,35 @@ import server from "../../utils/serverConfig";
 import Config from "react-native-config";
 import { generateToken } from "../../utils/SecurityTokenManager";
 
-// Indices configuration with correct symbols and exchanges
-// NOTE: Primary symbols MUST match what the WebSocket actually sends
+// Indices configuration with correct symbols and exchanges.
+//
+// 2026-05-07: removed finNifty — AngelOne WebSocket token 26037 does
+// not deliver live ticks reliably; key ltp:NSE:FINNIFTY never
+// populates in Redis. Confirmed by pubsub monitoring: 0 FINNIFTY
+// messages in 80+ samples while NIFTY/BANKNIFTY/SENSEX all stream.
+//
+// alternativeSymbols for sensex are all uppercase — the server
+// normalizes symbols to uppercase before emitting ltp_update, so
+// mixed-case aliases like "Sensex" would cause the Set gate to drop
+// valid ticks. Fallbacks kept for resilience but must stay uppercase.
 const indicesConfig = {
   nifty50: {
     symbol: "NIFTY",
     exchange: "NSE",
     displayName: "Nifty 50",
-    alternativeSymbols: ["NIFTY 50", "Nifty 50", "NIFTY_50"],
+    alternativeSymbols: [],
   },
   sensex: {
     symbol: "SENSEX",
     exchange: "BSE",
     displayName: "Sensex",
-    alternativeSymbols: ["Sensex", "BSE SENSEX", "SENSEX 30"],
+    alternativeSymbols: ["BSE SENSEX", "SENSEX 30"],
   },
   bankNifty: {
     symbol: "BANKNIFTY",
     exchange: "NSE",
     displayName: "BankNifty",
-    alternativeSymbols: ["NIFTY BANK", "NIFTYBANK", "Nifty Bank", "BANK NIFTY"],
-  },
-  finNifty: {
-    symbol: "NIFTY FIN SERVICE",
-    exchange: "NSE",
-    displayName: "FinNifty",
-    alternativeSymbols: ["FINNIFTY", "NIFTY FINANCIAL SERVICES", "Nifty Fin Service", "NIFTY_FIN_SERVICE"],
+    alternativeSymbols: [],
   },
 };
 
@@ -161,11 +164,18 @@ const MarketIndices = () => {
             activeSymbolRef.current[key] = sym;
             hasReceivedRef.current[key] = false;
 
-            // Track all subscribed symbols for this key
-            if (!subscribedSymbolsRef.current[key]) {
-              subscribedSymbolsRef.current[key] = new Set();
-            }
-            subscribedSymbolsRef.current[key].add(sym);
+            // 2026-05-07: REPLACE the Set, don't accumulate.
+            // Previously this used `.add(sym)` which kept the
+            // prior fallback symbol active alongside the new one.
+            // When the alias and canonical Redis keys both held
+            // data (which they do: AngelOne auto-resolve populates
+            // both `ltp:NSE:NIFTY` and `ltp:NSE:NIFTY 50`), the
+            // gate at line 172 accepted ticks from either → stale
+            // and fresh prices alternated ~3-5x/sec on the home
+            // header. Replacing the Set ensures only the currently
+            // active sym passes the gate; previous-attempt ticks
+            // from the wsManager are silently dropped at line 172.
+            subscribedSymbolsRef.current[key] = new Set([sym]);
 
             const callback = ({ symbol, ltp }) => {
               // Accept data from ANY symbol we've subscribed to for this key

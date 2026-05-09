@@ -15,6 +15,11 @@ import { useConfig } from '../../context/ConfigContext';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import {
+  useSdkBridge,
+  sdkConnectBroker,
+  sdkDualWriteSafely,
+} from '../../sdk/brokerSdkBridge';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -24,10 +29,12 @@ const UpstoxModal = ({
   onClose,
   setShowBrokerModal,
   fetchBrokerStatusModal,
+  reauthConfig,
 }) => {
   const { configData } = useTrade();
   const freshConfig = useConfig();
   const showAlert = useModalStore((state) => state.showAlert);
+  const sdkBridge = useSdkBridge();
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -40,12 +47,21 @@ const UpstoxModal = ({
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);
 
-  // Prefer fresh config from ConfigContext (fetches from API on app start),
-  // fallback to TradeContext (cached in AsyncStorage from login), then .env
+  // Must be the per-advisor web URL registered in Upstox's developer
+  // portal (e.g. `https://prod.alphaquark.in/stock-recommendation`).
+  // Upstox rejects with "Invalid redirect_uri" if it doesn't match.
+  // Prefer fresh config from ConfigContext (fetches from API on app
+  // start), fall back to TradeContext (cached in AsyncStorage from
+  // login). No `.env` fallback — the bundled
+  // `app-links.alphaquark.in/broker-callback` default does NOT match
+  // the per-advisor URIs registered in each Upstox dev app, so falling
+  // back to it silently breaks the connect. Empty → `updateSecretKey`
+  // raises a "Broker redirect URL is not configured" alert instead of
+  // sending a known-bad URL to Upstox.
   const brokerConnectRedirectURL =
     freshConfig?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
     configData?.config?.REACT_APP_BROKER_CONNECT_REDIRECT_URL ||
-    Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+    '';
 
   const [loading, setLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -155,22 +171,42 @@ const UpstoxModal = ({
           // Check if Upstox returned an error in the redirect URL
           if (authUrlResponse.includes('error_code') || authUrlResponse.includes('error_message')) {
             setIsLoading(false);
-            try {
-              const urlObj = new URL(authUrlResponse);
-              const errorMsg = decodeURIComponent(urlObj.searchParams.get('error_message') || '');
-              console.log('[Upstox] OAuth error:', errorMsg);
-              showAlert(
-                'error',
-                'Upstox Connection Failed',
-                errorMsg || 'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings and try again.',
-              );
-            } catch (e) {
-              showAlert(
-                'error',
-                'Upstox Connection Failed',
-                'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings and try again.',
-              );
+            // Defensive string-parse instead of `new URL()` +
+            // `searchParams.get()`. React Native has no
+            // react-native-url-polyfill installed and its built-in URL
+            // is partial — `searchParams` can misbehave, which used to
+            // silently fall into the catch and hide Upstox's real error
+            // message (e.g. "IP not whitelisted", "Invalid redirect
+            // uri", "Invalid client_id") behind the generic fallback.
+            const qIdx = authUrlResponse.indexOf('?');
+            const params = {};
+            // Upstox form-encodes spaces as `+` (not `%20`), so replace
+            // `+` with space BEFORE decodeURIComponent — otherwise the
+            // error text shows up as "Check+your+'client_id'..." in
+            // the alert (decodeURIComponent only handles `%XX`).
+            const decode = s => {
+              try { return decodeURIComponent(s.replace(/\+/g, ' ')); }
+              catch { return s; }
+            };
+            if (qIdx >= 0) {
+              authUrlResponse.slice(qIdx + 1).split('&').forEach(pair => {
+                const eq = pair.indexOf('=');
+                if (eq < 0) return;
+                params[decode(pair.slice(0, eq))] = decode(pair.slice(eq + 1));
+              });
             }
+            const errorMsg = params.error_message || '';
+            const errorCode = params.error_code || '';
+            console.log('[Upstox] OAuth error:', {errorCode, errorMsg, raw: authUrlResponse});
+            const detail = [errorMsg, errorCode && `(${errorCode})`]
+              .filter(Boolean)
+              .join(' ');
+            showAlert(
+              'error',
+              'Upstox Connection Failed',
+              detail ||
+                'Please check your API Key, Secret Key and Redirect URI in your Upstox app settings and try again.',
+            );
             return;
           }
 
@@ -205,7 +241,8 @@ const UpstoxModal = ({
 
   // Step 2: Exchange authorization code for access token
   const connectUpstox = () => {
-    if (upstoxCode !== null && apiKey && secretKey) {
+    if (upstoxCode !== null && apiKey && secretKey && !hasConnectedUpstox.current) {
+      hasConnectedUpstox.current = true;
       let data = JSON.stringify({
         user_email: userEmail,
         apiKey: apiKey,
@@ -230,18 +267,21 @@ const UpstoxModal = ({
       axios
         .request(config)
         .then(response => {
-          if (response.data) {
-            console.log('[Upstox] Access token received');
-            const session_token = response.data.access_token;
-            setUpstoxSessionToken(session_token);
+          const session_token = response.data?.access_token;
+          if (!session_token) {
+            console.error('[Upstox] gen-access-token returned no access_token:', response.data);
+            setIsLoading(false);
+            showAlert('error', 'Connection Error', 'Upstox token exchange failed. Check your API key, secret, and redirect URI in the Upstox developer portal.');
+            return;
           }
+          console.log('[Upstox] Access token received');
+          setUpstoxSessionToken(session_token);
         })
         .catch(error => {
           console.error('[Upstox] Token exchange error:', error);
           setIsLoading(false);
           showAlert('error', 'Connection Error', 'Failed to connect to Upstox. Please try again.');
         });
-      hasConnectedUpstox.current = true;
     }
   };
 
@@ -282,6 +322,15 @@ const UpstoxModal = ({
           console.log('[Upstox] Broker connection saved successfully');
           setIsLoading(false);
 
+          // SDK pilot dual-write — see brokerSdkBridge.js.
+          if (sdkBridge.enabled && sdkBridge.ready && sdkBridge.client) {
+            sdkDualWriteSafely(
+              sdkConnectBroker(sdkBridge.client, 'Upstox', brokerData),
+              'Upstox',
+              'connect',
+            );
+          }
+
           // Update model portfolio with broker information
           try {
             axios.request({
@@ -304,16 +353,46 @@ const UpstoxModal = ({
             console.warn('[Upstox] Model portfolio update failed (non-critical):', modelPortfolioError);
           }
 
-          fetchBrokerStatusModal();
-          eventEmitter.emit('refreshEvent', { source: 'Upstox broker connection' });
-          showAlert('success', 'Connected Successfully', 'Your Upstox broker has been connected successfully!');
           onClose();
           setShowBrokerModal(false);
+          // Wrap post-success steps so a downstream throw doesn't bubble
+          // to the outer .catch and get rewritten as "Connection Error".
+          // See KotakModal.js (commit 172767d) and BROKER_CONNECTION.md
+          // § Broker-connect post-success hygiene.
+          (async () => {
+            try {
+              const result = await fetchBrokerStatusModal();
+              eventEmitter.emit('refreshEvent', { source: 'Upstox broker connection' });
+              if (!result?.migrationWillShow) {
+                showAlert('success', 'Connected Successfully', 'Your Upstox broker has been connected successfully!');
+              }
+            } catch (postSuccessErr) {
+              console.warn(
+                '[Upstox] post-success step threw (connection IS saved DB-side):',
+                postSuccessErr?.message || postSuccessErr,
+              );
+            }
+          })();
         })
         .catch(error => {
           console.error('[Upstox] connect-broker error:', error);
           setIsLoading(false);
-          showAlert('error', 'Connection Error', 'Failed to save Upstox connection. Please try again.');
+          const isHttpError = !!error?.response;
+          const rawMessage =
+            error.response?.data?.message ||
+            error.response?.data?.details ||
+            '';
+          let alertTitle = 'Connection Error';
+          let alertBody;
+          if (isHttpError) {
+            alertBody =
+              rawMessage || 'Failed to save Upstox connection. Please try again.';
+          } else {
+            alertTitle = 'Connection Issue';
+            alertBody =
+              'We couldn\'t complete the connection because of a network or app error. Your credentials may already be saved — please refresh to check before retrying.';
+          }
+          showAlert('error', alertTitle, alertBody);
         });
     }
   };
@@ -334,6 +413,23 @@ const UpstoxModal = ({
       sheet.current?.dismiss();
     }
   }, [isVisible]);
+
+  // Smart-reauth hydration: when reauthConfig is supplied by the caller
+  // (ManageConnectionsModal → reauthHelpers.handleSmartReauth), skip the
+  // credential form and jump straight to the WebView step using the
+  // pre-signed authUrl + stored apiKey/secretKey.
+  const reauthHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!isVisible || !reauthConfig || reauthHydratedRef.current) return;
+    if (!reauthConfig.authUrl || !reauthConfig.apiKey || !reauthConfig.secretKey) {
+      return;
+    }
+    reauthHydratedRef.current = true;
+    setApiKey(reauthConfig.apiKey);
+    setSecretKey(reauthConfig.secretKey);
+    setAuthUrl(reauthConfig.authUrl);
+    setShowWebView(true);
+  }, [isVisible, reauthConfig]);
 
   const handleWebViewClose = () => {
     setShowWebView(false);
@@ -370,6 +466,7 @@ const UpstoxModal = ({
       unmetAck={unmetAck}
       setUnmetAck={setUnmetAck}
       configData={configData}
+      brokerConnectRedirectURL={brokerConnectRedirectURL}
     />
   );
 };

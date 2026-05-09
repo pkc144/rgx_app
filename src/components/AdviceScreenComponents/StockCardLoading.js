@@ -179,7 +179,7 @@ const StockCardLoading = ({
     ) : (
       <>
  
-        <Text style={styles.ltp}>₹{getLTPForSymbol(symbol)}</Text>
+        <Text style={styles.ltp}>{getLTPForSymbol(symbol) ? `₹${getLTPForSymbol(symbol)}` : '₹--'}</Text>
       </>
     )}
   </>

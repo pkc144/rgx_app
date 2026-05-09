@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
+import LinkifiedUrl from './LinkifiedUrl';
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const KotakHelpContent = ({ expanded, onExpandChange }) => {
@@ -12,7 +13,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
 
   return (
     <View>
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 20 }}>
+      <View style={[styles.container, { paddingBottom: 20 }]}>
         <View style={styles.videoBox}>
           <YoutubePlayer
             height={screenHeight * 0.24}
@@ -37,12 +38,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
           </Text>
 
           <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://www.kotaksecurities.com/platform/kotak-neo-trade-api/")}>
-              <Text style={styles.link}>
-                https://www.kotaksecurities.com/platform/kotak-neo-trade-api/
-              </Text>
-            </TouchableOpacity>
-
+            <LinkifiedUrl url="https://www.kotaksecurities.com/platform/kotak-neo-trade-api/" />
           </View>
 
 
@@ -60,12 +56,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
           </Text>
 
           <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://www.kotaksecurities.com/switch-to-neo/")}>
-              <Text style={styles.link}>
-                https://www.kotaksecurities.com/switch-to-neo/
-              </Text>
-            </TouchableOpacity>
-
+            <LinkifiedUrl url="https://www.kotaksecurities.com/switch-to-neo/" />
           </View>
 
           {/* STEP 2 */}
@@ -76,12 +67,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
           </Text>
 
           <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://napi.kotaksecurities.com/devportal/apis")}>
-              <Text style={styles.link}>
-                https://napi.kotaksecurities.com/devportal/apis
-              </Text>
-            </TouchableOpacity>
-
+            <LinkifiedUrl url="https://napi.kotaksecurities.com/devportal/apis" />
           </View>
 
           <Text style={styles.instruction1}>
@@ -108,11 +94,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
           </Text>
 
           <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://www.kotaksecurities.com/platform/kotak-neo-trade-api/totp-registration/")}>
-              <Text style={styles.link}>
-                https://www.kotaksecurities.com/platform/kotak-neo-trade-api/totp-registration/
-              </Text>
-            </TouchableOpacity>
+            <LinkifiedUrl url="https://www.kotaksecurities.com/platform/kotak-neo-trade-api/totp-registration/" />
           </View>
 
           <Text style={styles.instruction1}>
@@ -132,7 +114,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
           </>
         )}
 
-      </ScrollView>
+      </View>
 
     </View>
 

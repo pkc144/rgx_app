@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
+import LinkifiedUrl from './LinkifiedUrl';
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const MotilalHelpContent = ({expanded, onExpandChange }) => {
@@ -12,7 +13,7 @@ const MotilalHelpContent = ({expanded, onExpandChange }) => {
 
   return (
     <View>
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 0 }}>
+    <View style={styles.container}>
       <View style={styles.videoBox}>
         <YoutubePlayer
           height={screenHeight * 0.24}
@@ -25,9 +26,7 @@ const MotilalHelpContent = ({expanded, onExpandChange }) => {
 <View style={styles.content}>
                  <Text style={styles.instruction}>
                            1. Visit{' '}
-                           <Text onPress={() => Linking.openURL('https://www.motilaloswal.com')} style={styles.link}>
-                             https://www.motilaloswal.com
-                           </Text>{' '}
+                           <LinkifiedUrl url="https://www.motilaloswal.com" />{' '}
                            in your browser.
                          </Text>
                
@@ -63,11 +62,7 @@ const MotilalHelpContent = ({expanded, onExpandChange }) => {
                          </Text>
                
                          <View style={styles.linkContainer}>
-                           <TouchableOpacity onPress={() => Linking.openURL("https://ccxt.alphaquark.in/motilal-oswal/callback")}>
-                             <Text style={styles.link}>
-                               https://ccxt.alphaquark.in/motilal-oswal/callback
-                             </Text>
-                           </TouchableOpacity>
+                           <LinkifiedUrl url="https://ccxtprod.alphaquark.in/motilal-oswal/callback" />
                          </View>
                
                          <Text style={styles.instruction}>
@@ -86,7 +81,7 @@ const MotilalHelpContent = ({expanded, onExpandChange }) => {
         </>
       )}
    
-    </ScrollView>
+    </View>
   
     </View>
 

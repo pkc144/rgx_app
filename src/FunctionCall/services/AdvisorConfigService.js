@@ -215,7 +215,6 @@ import axios from 'axios';
 import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 // Default config structure for new advisors
 // This schema should match the backend database model
@@ -361,7 +360,7 @@ const DEFAULT_ADVISOR_CONFIG = {
  * @param {string} subdomain - The advisor subdomain
  * @returns {Object} Headers object
  */
-const getHeaders = (subdomain = getAdvisorSubdomain()) => ({
+const getHeaders = (subdomain = 'common') => ({
   'Content-Type': 'application/json',
   'X-Advisor-Subdomain': subdomain,
   'aq-encrypted-key': generateToken(
@@ -437,7 +436,7 @@ export const getAdvisorConfigByRaCode = async raCode => {
     const response = await axios.get(
       `${server.server.baseUrl}api/advisor-config-env/getConfig/${normalizedRaCode}`,
       {
-        headers: getHeaders(getAdvisorSubdomain()),
+        headers: getHeaders('common'),
         timeout: 15000,
       },
     );
@@ -512,7 +511,7 @@ export const createAdvisorConfig = async configData => {
       `${server.server.baseUrl}api/app-advisor/create`,
       newConfig,
       {
-        headers: getHeaders(getAdvisorSubdomain()),
+        headers: getHeaders('common'),
         timeout: 15000,
       },
     );
@@ -844,7 +843,7 @@ export const getAllAdvisorConfigs = async () => {
     const response = await axios.get(
       `${server.server.baseUrl}api/app-advisor/list`,
       {
-        headers: getHeaders(getAdvisorSubdomain()),
+        headers: getHeaders('common'),
         timeout: 30000,
       },
     );
@@ -878,7 +877,7 @@ export const deleteAdvisorConfig = async subdomain => {
     const response = await axios.delete(
       `${server.server.baseUrl}api/app-advisor/delete?subdomain=${subdomain}`,
       {
-        headers: getHeaders(getAdvisorSubdomain()),
+        headers: getHeaders('common'),
         timeout: 15000,
       },
     );

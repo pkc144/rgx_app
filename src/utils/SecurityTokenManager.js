@@ -13,14 +13,14 @@ let instance = null;
 class SecurityTokenManager {
   constructor() {
     if (!AQ_KEY) {
-      throw new Error("AQ_API_KEY environment variable is not set");
+      console.warn("AQ_API_KEY environment variable is not set — API auth will fail");
     }
     if (!AQ_SECRET) {
-      throw new Error("AQ_API_SECRET environment variable is not set");
+      console.warn("AQ_API_SECRET environment variable is not set — API auth will fail");
     }
-    
-    this.apiKey = AQ_KEY;
-    this.secretKey = AQ_SECRET;
+
+    this.apiKey = AQ_KEY || '';
+    this.secretKey = AQ_SECRET || '';
     this.tokenExpirySeconds = 60;  // default value
 
   }
@@ -54,14 +54,16 @@ class SecurityTokenManager {
             throw new Error("API Key and Secret Key are required");
         }
         // Create the payload
+        // 300 sec expiry tolerates typical device clock drift (emulators, phones with
+        // stale time) — 15 sec was too tight and caused 401 "Token has expired" on
+        // any device with >15 sec skew against server time.
         const payload = {
           apiKey: apiKey,
           exp: Math.floor(
-            (nowTimeIST().getTime() + 1000 * 15) / 1000  // 15 seconds expiry
+            (nowTimeIST().getTime() + 1000 * 300) / 1000
           ),
           iat: Math.floor(nowTimeIST().getTime() / 1000),
         };
-       //console.log('toke i na aaa:',sign(payload,secretKey));
         return sign(payload, secretKey);
     } catch (error) {
         console.error("Error generating token:", error.message);
@@ -124,5 +126,5 @@ export const getISTTime = () => {
   return manager.nowTimeIST();
 };
 
-// Export the singleton instance if needed
-export const tokenManager = SecurityTokenManager.getInstance();
+// Export lazy getter — avoids crash at module load time when env vars are missing
+export const getTokenManager = () => SecurityTokenManager.getInstance();

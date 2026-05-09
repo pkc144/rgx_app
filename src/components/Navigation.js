@@ -13,6 +13,11 @@ import {
   Platform,
 } from 'react-native';
 import {NavigationContainer, useNavigation, useNavigationState, useRoute} from '@react-navigation/native';
+import SdkSelfTestScreen from '../sdk/SdkSelfTestScreen';
+import SdkBrokerTestScreen from '../sdk/SdkBrokerTestScreen';
+import {isSdkIntegrationEnabled} from '../sdk/SdkProviderRoot';
+// `Config` is imported below from '../utils/safeConfig' for the rest
+// of this file — re-use that one for SDK env vars.
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
@@ -28,14 +33,12 @@ import {
 } from '@react-navigation/drawer'; // Import Drawer Navigator
 import {
   FolderClock,
-  BookmarkPlus,
   LogOut,
   Shield,
   FileText,
   DollarSign,
   Activity,
   History,
-  Notebook,
   Newspaper,
   Briefcase,
   XIcon,
@@ -46,6 +49,8 @@ import {
   Home,
   ChevronRight,
   AlignEndHorizontal,
+  Clipboard,
+  User,
 } from 'lucide-react-native';
 import HomeScreen from '../screens/Home/HomeScreen';
 import PhoneNumberScreen from '../screens/Authentication/PhoneNumberScreen';
@@ -92,8 +97,10 @@ import ModelPortfolioScreen from '../screens/Drawer/ModelPortfolioScreen';
 import MPPerformanceScreen from '../screens/Drawer/MPPerformanceScreen';
 import ResearchReportScreen from '../screens/Home/ResearchReportScreen';
 import PushNotificationScreen from '../screens/Home/PushNotificationScreen';
+import TradePnLScreen from '../screens/Home/TradePnLScreen';
 
 import ProfileModal from './ProfileModal';
+import HoldingsMigrationModal from './HoldingsMigrationModal';
 
 import ReviewScreen from '../screens/Drawer/ReviewScreen';
 import AfterSubscriptionScreen from '../screens/Home/AfterSubscriptionScreen';
@@ -115,7 +122,13 @@ import AccountSettingsScreen from '../screens/Home/AccountSettingsScreen';
 import KnowledgeHub from './HomeScreenComponents/KnowledgeHub';
 import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen';
 import ChangeAdvisor from '../screens/AccountSettingScreen/ChangeAdvisor';
-import PlaceOrdersScreen from '../screens/OrderManagement/PlaceOrdersScreen';
+import BrokerSelectionScreen from '../screens/Broker/BrokerSelectionScreen';
+import BrokerAuthScreen from '../screens/Broker/BrokerAuthScreen';
+import BrokerCredentialScreen from '../screens/Broker/BrokerCredentialScreen';
+import InvestFlowScreen from '../screens/Invest/InvestFlowScreen';
+import CurrentHoldingsScreen from '../screens/Rebalance/CurrentHoldingsScreen';
+import RebalanceReviewScreen from '../screens/Rebalance/RebalanceReviewScreen';
+import ExecutionStatusScreen from '../screens/Rebalance/ExecutionStatusScreen';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import { useWebSocketInitializer } from '../utils/websocketInitializer';
 
@@ -127,13 +140,23 @@ const Tab = createBottomTabNavigator();
 const Drawer = createDrawerNavigator();
 const {height: screenHeight} = Dimensions.get('window');
 
-// Bottom sheet positioning - accounts for tab bar (~60px) + some padding
+// Cart bottom-sheet geometry — place the sheet FULLY above the tab bar so
+// its entire 100px height is visible. Earlier math only subtracted the tab
+// bar height (60 + safe-area), leaving ~70px of the 100px sheet tucked
+// behind the tab bar's zIndex:99 — the sheet was "opening" but almost
+// entirely obscured, which read as "cart not opening" to the user.
 const TAB_BAR_HEIGHT = 60;
+const CART_SHEET_HEIGHT = 100;
 const BOTTOM_SHEET_PADDING = 10;
 const getBottomSheetPosition = (insets) => {
-  // Position sheet to show above tab bar with safe area consideration
   const safeBottom = insets?.bottom || 0;
-  return screenHeight - TAB_BAR_HEIGHT - safeBottom - BOTTOM_SHEET_PADDING;
+  return (
+    screenHeight -
+    TAB_BAR_HEIGHT -
+    safeBottom -
+    CART_SHEET_HEIGHT -
+    BOTTOM_SHEET_PADDING
+  );
 };
 
 const selectedVariant = Config?.APP_VARIANT || 'rgxresearch'; // Default to "rgxresearch" if not set
@@ -155,19 +178,22 @@ const {
   tabIconColor,
 } = APP_VARIANTS[validVariant];
 const CustomTabBarIcon = ({name, focused}) => {
+  // Bottom-nav icons mirror the alphanomy-improved.html mockup's app
+  // chrome: house / file / briefcase / clipboard / user. The legacy
+  // mapping (Notebook / BookmarkPlus / Newspaper) predates the rebrand.
   let IconComponent;
   if (name === 'Home') {
     IconComponent = Home;
   } else if (name === 'More') {
-    IconComponent = BookmarkPlus;
+    IconComponent = User;
   } else if (name === 'Orders') {
-    IconComponent = Notebook;
+    IconComponent = FileText;
   } else if (name === 'Portfolio') {
     IconComponent = Briefcase;
   } else if (name === 'News') {
     IconComponent = Newspaper;
   } else if (name === 'Plans') {
-    IconComponent = Newspaper;
+    IconComponent = Clipboard;
   }
   return (
     <View
@@ -207,6 +233,8 @@ const CustomTabBarIcon = ({name, focused}) => {
   );
 };
 
+const PlansTabWrapper = () => <ModelPortfolioScreen type="tab" />;
+
 const MainTabNavigator = () => {
   const {
     isModalVisible,
@@ -214,6 +242,14 @@ const MainTabNavigator = () => {
     setsuccessclosemodel,
     successclosemodel,
   } = useModal();
+  const {
+    showMigrationModal,
+    setShowMigrationModal,
+    migrationBroker,
+    configData,
+    userDetails,
+  } = useTrade();
+  const migrationUserEmail = userDetails?.email;
   const insets = useSafeAreaInsets();
   const bottomSheetPosition = getBottomSheetPosition(insets);
   const translateY = useRef(new Animated.Value(screenHeight)).current;
@@ -321,9 +357,18 @@ if (state.routes[state.index]?.state) {
 
 const currentKey = currentTabRoute?.key || "";
 const currentName = currentTabRoute?.name || "";
+  // Variant-gated chrome: the legacy CustomToolbar (greeting + cart + bell +
+  // avatar + ticker strip) wraps every tab screen in the default variant.
+  // Variants that ship their own in-screen header (e.g. alphanomy's _AppHeader
+  // helper used by HomeScreen / OrderScreen / ModelPortfolioScreen) suppress
+  // it to avoid the duplicate-header look. Tenants who want the legacy
+  // chrome simply leave DESIGN_VARIANT unset (or set it to "default").
+  const showLegacyToolbar =
+    !Config?.DESIGN_VARIANT || Config.DESIGN_VARIANT === 'default';
+
   return (
     <SafeAreaView style={{flex: 1}}>
-      <CustomToolbar currentRoute={currentName} />
+      {showLegacyToolbar && <CustomToolbar currentRoute={currentName} />}
       <Tab.Navigator
         initialRouteName="Home"
         screenOptions={({route}) => ({
@@ -377,9 +422,9 @@ const currentName = currentTabRoute?.name || "";
           <Tab.Screen
             key="plans-screen"
             name="Plans"
-            options={{headerShown: false}}>
-            {() => <ModelPortfolioScreen type="tab" />}
-          </Tab.Screen>
+            options={{headerShown: false}}
+            component={PlansTabWrapper}
+          />
         )}
         <Tab.Screen
           name="More"
@@ -421,6 +466,14 @@ const currentName = currentTabRoute?.name || "";
           />
         </Animated.View>
       )}
+      <HoldingsMigrationModal
+        isOpen={showMigrationModal}
+        onClose={() => setShowMigrationModal(false)}
+        userEmail={migrationUserEmail}
+        newBroker={migrationBroker}
+        onMigrationComplete={() => setShowMigrationModal(false)}
+        configHeaderName={configData?.config?.REACT_APP_HEADER_NAME}
+      />
     </SafeAreaView>
   );
 };
@@ -1011,16 +1064,37 @@ const Navigation = ({userEmail, isAuthenticated}) => {
   const [initialRoute, setInitialRoute] = useState('Login');
   useWebSocketInitializer();
 
+  // SDK integration test flag — when true, the app boots straight into
+  // SdkBrokerTest so QA can hit each pilot broker without traversing
+  // login + drawer. Off by default (Splash → Login → Home).
+  const sdkBrokerTestFirst =
+    isSdkIntegrationEnabled() &&
+    String(Config?.REACT_APP_SDK_BROKER_TEST_FIRST || '').toLowerCase() === 'true';
+
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName="Splash"
+        initialRouteName={sdkBrokerTestFirst ? 'SdkBrokerTest' : 'Splash'}
         screenOptions={{headerShown: false, animation: 'none'}}>
         <Stack.Screen
           name="Splash"
           component={SplashScreen}
           options={{headerShown: false}}
         />
+        {isSdkIntegrationEnabled() ? (
+          <>
+            <Stack.Screen
+              name="SdkSelfTest"
+              component={SdkSelfTestScreen}
+              options={{headerShown: true, title: 'SDK self-test'}}
+            />
+            <Stack.Screen
+              name="SdkBrokerTest"
+              component={SdkBrokerTestScreen}
+              options={{headerShown: true, title: 'SDK Broker test'}}
+            />
+          </>
+        ) : null}
         <Stack.Screen
           name="Login"
           component={LoginScreen}
@@ -1104,6 +1178,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="PushNotificationScreen"
           component={PushNotificationScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="TradePnLScreen"
+          component={TradePnLScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen
@@ -1217,8 +1296,38 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           options={{headerShown: false}}
         />
         <Stack.Screen
-          name="PlaceOrdersScreen"
-          component={PlaceOrdersScreen}
+          name="BrokerSelection"
+          component={BrokerSelectionScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="BrokerAuth"
+          component={BrokerAuthScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="BrokerCredential"
+          component={BrokerCredentialScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="InvestFlow"
+          component={InvestFlowScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="CurrentHoldings"
+          component={CurrentHoldingsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="RebalanceReview"
+          component={RebalanceReviewScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="ExecutionStatus"
+          component={ExecutionStatusScreen}
           options={{headerShown: false}}
         />
       </Stack.Navigator>

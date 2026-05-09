@@ -1,129 +1,165 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
-import Config from 'react-native-config';
-import YoutubePlayer from "react-native-youtube-iframe";
-const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+/**
+ * GrowwHelpContent — Zerodha-style help/notes panel for the Groww
+ * connect modal. Renders a brief overview (collapsed) and adds
+ * Important Notes + Need Help sections (expanded only).
+ *
+ * Why a separate file (and not inline in the modal): the modal already
+ * has a detailed 4-step inline setup guide (the precise click path on
+ * Groww's Trade API page — keep as-is, it's load-bearing). This help
+ * component supplements that with the *cross-broker* concerns Zerodha
+ * already shows — what each value does, daily refresh behaviour, how
+ * to recover if Groww revokes the secret, and a Need Help section.
+ * Visual style (yellow note callout, gray support box) matches
+ * ZerodhaHelpContent for cross-broker UX consistency.
+ *
+ * Mirrors ZerodhaHelpContent's contract so GrowwConnectModal can use
+ * the same `expanded` / `onExpandChange` driving pattern + the
+ * "Read More / See Less" toggle outside the component.
+ */
+import React, {useEffect} from 'react';
+import {View, Text, StyleSheet} from 'react-native';
 
-const GrowwHelpContent = ({expanded, onExpandChange }) => {
-  const brokerConnectRedirectURL=Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+const GrowwHelpContent = ({expanded, onExpandChange}) => {
   useEffect(() => {
     onExpandChange?.(expanded);
   }, [expanded]);
 
   return (
     <View>
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 0 }}>
-      <View style={styles.videoPlaceholder}>
-        <Text style={styles.videoPlaceholderText}>Video tutorial coming soon</Text>
-      </View>
-      <Text style={styles.title}>Steps to Obtain Client ID and Access Token for Groww:</Text>
-<View style={styles.content}>
-               <Text style={styles.instruction}>
-                    1. Go to{' '}
-                    <Text
-                      onPress={() => Linking.openURL('https://groww.in/login')}
-                      style={styles.link}>
-                      https://groww.in/login
-                    </Text>{' '}
-                  </Text>
-                  <Text style={styles.instruction}>
-                    2. Go to Settings - Settings are present in your profile
-                    section with your email icon. Click on that and you will see
-                    the settings icon.
-                    <Text
-                      onPress={() =>
-                        Linking.openURL(
-                          'https://groww.in/user/profile/basic-details',
-                        )
-                      }
-                      style={styles.link}>
-                      https://groww.in/user/profile/basic-details
-                    </Text>{' '}
-                  </Text>
-                   <Text style={styles.instruction}>
-                    3. Click on the settings icon. You will see "Unique Client
-                    Code" - copy that unique client code and add it in place of
-                    the unique client code field.
-                  </Text>
-                  <Text style={styles.instruction}>
-                    4. You will see left-hand side tabs in settings. There is an
-                    option "Trading API" - click on that.
-                  </Text>
-                  <Text style={styles.instruction}>
-                    5. Now click on "Generate API Key". You will see a modal
-                    with two items: API Secret and Secret Key. Please ignore the
-                    API Key and Secret Key.
-                  </Text>
-            </View>
-      {expanded && (
-        <>
-          
-                  <Text style={styles.instruction}>
-                    6. Type a token name and check if "Access Token" is enabled
-                    or not, then click on "Generate API Key".
-                  </Text>
-                  <Text style={styles.instruction}>
-                    7. After that, you will get an Access Token. Copy that
-                    access token and paste it in our portal.
-                  </Text>
-        </>
-      )}
-   
-    </ScrollView>
-  
-    </View>
+      <View style={[styles.container, {paddingBottom: 20}]}>
+        <Text style={styles.title}>About this connection</Text>
+        <Text style={styles.intro}>
+          Groww uses an API Key + TOTP Secret pair (Bearer token + seed
+          for daily 6-digit codes) instead of OAuth. Tap{' '}
+          <Text style={{fontWeight: '700'}}>Read More</Text> below for
+          notes on which value goes where, daily refresh behaviour,
+          and what to do if you hit a "rejected credentials" error.
+        </Text>
 
+        {expanded && (
+          <>
+            <View style={styles.noteContainer}>
+              <Text style={styles.noteTitle}>Which value goes where?</Text>
+              <Text style={styles.noteText}>
+                • The <Text style={{fontWeight: '700'}}>JWT</Text> (starts
+                with <Text style={styles.mono}>eyJraWQi…</Text>) → paste
+                into the "TOTP Token (used as API Key)" field. Groww
+                uses this as the Bearer token.
+              </Text>
+              <Text style={styles.noteText}>
+                • The <Text style={{fontWeight: '700'}}>Base32 secret</Text>{' '}
+                (~32 chars, A–Z and 2–7) shown below the QR → paste into
+                the "TOTP QR Secret (Base32)" field. Our backend uses
+                it to mint a fresh 6-digit TOTP every daily refresh.
+              </Text>
+              <Text style={styles.noteText}>
+                Both values are shown only once on Groww's side — copy
+                them carefully before closing the dialog.
+              </Text>
+            </View>
+
+            <View style={styles.noteContainer}>
+              <Text style={styles.noteTitle}>Important Notes:</Text>
+              <Text style={styles.noteText}>
+                • Groww rejects access-token requests and orders from
+                non-whitelisted IPs. Whitelist the dedicated IP we issue
+                or you'll see a "Groww rejected the credentials" error.
+              </Text>
+              <Text style={styles.noteText}>
+                • The Base32 secret is stored encrypted on our side and
+                never shown back to you. Daily refresh is automatic —
+                you don't have to re-paste credentials each day.
+              </Text>
+              <Text style={styles.noteText}>
+                • If Groww revokes the secret on their dashboard,
+                generate a new one and reconnect here — re-pasting both
+                values from the new "Generate TOTP token" dialog.
+              </Text>
+              <Text style={styles.noteText}>
+                • Make sure you have an active Groww trading account
+                with the segments you trade (equity / F&amp;O) enabled
+                before connecting.
+              </Text>
+            </View>
+
+            <View style={styles.supportContainer}>
+              <Text style={styles.supportTitle}>Need Help?</Text>
+              <Text style={styles.supportText}>
+                If you encounter "Groww rejected the credentials" or any
+                other error, double-check the dedicated IP whitelist on
+                Groww's side first, then contact our support team with
+                the error code shown.
+              </Text>
+            </View>
+          </>
+        )}
+      </View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 12,
-  },
-  videoBox: {
-    alignItems: 'center',
-    marginVertical: 12,
-  },
-  videoPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 12,
-    padding: 20,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderStyle: 'dashed',
-  },
-  videoPlaceholderText: {
-    fontSize: 14,
-    color: '#888',
-    fontFamily: 'Poppins-Medium',
+    flex: 1,
   },
   title: {
-    fontSize: 13,
-    fontFamily:'Poppins-Medium',
-    color: "#222",
-    marginBottom: 9,
-  },
-  instruction: {
-    fontSize: 14,
-    color: "#222",
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
     marginBottom: 8,
+    fontFamily: 'Poppins-SemiBold',
   },
-  link: {
-    color: "#1890FF",
-    textDecorationLine: 'underline',
-  },
-  toggleContainer: {
-    marginTop: 6,
-    marginBottom: 10,
-  },
-  toggleText: {
+  intro: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#1890FF',
+    color: '#374151',
+    marginBottom: 12,
+    lineHeight: 20,
+    fontFamily: 'Poppins-Regular',
+  },
+  mono: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+  },
+  noteContainer: {
+    backgroundColor: '#FEF3C7',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  noteTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 8,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  noteText: {
+    fontSize: 13,
+    color: '#78350F',
+    marginBottom: 6,
+    lineHeight: 18,
+    fontFamily: 'Poppins-Regular',
+  },
+  supportContainer: {
+    backgroundColor: '#F3F4F6',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  supportTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 6,
+    fontFamily: 'Poppins-SemiBold',
+  },
+  supportText: {
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 18,
+    fontFamily: 'Poppins-Regular',
   },
 });
 

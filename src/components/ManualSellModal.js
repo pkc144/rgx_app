@@ -2,6 +2,11 @@
  * ManualSellModal.js
  * For brokers (ICICI) that require manual stock authorization before selling.
  * Ported from prod-alphaquark-github for feature parity.
+ *
+ * The DDPI activation nudge inside this modal opens the shared
+ * `BrokerDdpiHelpModal` via the global modal store — see
+ * `src/components/BrokerDdpiHelpModal.js` and
+ * `src/config/brokerDdpiHelp.js`. Do not duplicate DDPI step text here.
  */
 import React, {useState} from 'react';
 import {
@@ -16,10 +21,12 @@ import {
 } from 'react-native';
 import {X, AlertTriangle, ChevronLeft, ExternalLink} from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
+import useModalStore from '../GlobalUIModals/modalStore';
 
-const ManualSellModal = ({isOpen, onClose, onRetry}) => {
+const ManualSellModal = ({isOpen, onClose, onRetry, broker = 'ICICI Direct'}) => {
   const [isSellAllowed, setIsSellAllowed] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
+  const openModal = useModalStore(state => state.openModal);
 
   const handleRetry = () => {
     if (isSellAllowed && onRetry) {
@@ -115,13 +122,23 @@ const ManualSellModal = ({isOpen, onClose, onRetry}) => {
                   Action Required: Stock Authorization to Sell
                 </Text>
                 <Text style={styles.alertText}>
-                  {'\u2022'} Your ICICI broker doesn't have EDIS flow
+                  {'\u2022'} Your broker does not allow selling authorization from the app.
                 </Text>
                 <Text style={styles.alertText}>
-                  {'\u2022'} Please authorize your stocks manually on your ICICI broker before trying to sell orders from here again.
+                  {'\u2022'} Please authorize your stocks manually on your {broker} portal before retrying sell orders. The best fix is to <Text style={styles.inlineLink} onPress={() => openModal('DdpiHelp', {broker})}>activate DDPI</Text> — one-time setup, no more per-sell authorization.
                 </Text>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={styles.ddpiNudgeRow}
+              onPress={() => openModal('DdpiHelp', {broker})}
+              activeOpacity={0.7}>
+              <ExternalLink size={16} color="#0a7a5a" />
+              <Text style={styles.ddpiNudgeText}>
+                Show me how to activate DDPI on {broker}
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.checkboxRow}
@@ -181,6 +198,21 @@ const styles = StyleSheet.create({
   stepBold: {fontWeight: '600'},
   linkRow: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6},
   linkText: {fontSize: 13, color: '#2563EB', textDecorationLine: 'underline'},
+  // DDPI nudge (opens BrokerDdpiHelpModal via global store).
+  inlineLink: {color: '#0a7a5a', fontWeight: '600', textDecorationLine: 'underline'},
+  ddpiNudgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#e5f7f0',
+    borderColor: '#b9e4d2',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+  },
+  ddpiNudgeText: {fontSize: 13, color: '#0a7a5a', fontWeight: '600', flexShrink: 1},
 });
 
 export default ManualSellModal;

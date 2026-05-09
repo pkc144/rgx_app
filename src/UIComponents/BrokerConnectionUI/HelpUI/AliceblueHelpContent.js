@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
+import LinkifiedUrl from './LinkifiedUrl';
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const AliceblueHelpContent = ({expanded, onExpandChange }) => {
@@ -12,7 +13,7 @@ const AliceblueHelpContent = ({expanded, onExpandChange }) => {
 
   return (
     <View>
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 0 }}>
+    <View style={styles.container}>
       {/* TODO: Replace with public AliceBlue tutorial video - current video is private */}
       {/* <View style={styles.videoBox}>
         <YoutubePlayer
@@ -28,7 +29,7 @@ const AliceblueHelpContent = ({expanded, onExpandChange }) => {
                           style={styles.instruction}
                         >
                           1. Login to{" "}
-                          <Text onPress={() => Linking.openURL('https://ant.aliceblueonline.com/apps')}  style={styles.link}>ant.aliceblueonline.com/apps</Text>{' '}
+                          <LinkifiedUrl url="https://ant.aliceblueonline.com/apps" />{' '}
                           using your phone number, password, and TOTP or mobile OTP.
                         </Text>
 
@@ -56,7 +57,7 @@ const AliceblueHelpContent = ({expanded, onExpandChange }) => {
         </>
       )}
    
-    </ScrollView>
+    </View>
   
     </View>
 

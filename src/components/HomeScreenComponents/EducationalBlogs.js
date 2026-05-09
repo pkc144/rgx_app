@@ -121,6 +121,13 @@ const EducationalBlogs = ({ type, visible, setOpenBlogs }) => {
       padding-bottom: 16px;
       border-bottom: 1px solid #eaeaea;
     }
+    .blog-description {
+      color: #555;
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+      font-style: italic;
+    }
     .blog-meta {
       color: #666;
       font-size: 14px;
@@ -138,7 +145,7 @@ const EducationalBlogs = ({ type, visible, setOpenBlogs }) => {
 </head>
 <body>
   <div class="blog-header">
-    <h1>${item.title}</h1>
+    ${item.description ? `<p class="blog-description">${item.description}</p>` : ''}
     <div class="blog-meta">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10"></circle>

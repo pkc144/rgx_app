@@ -11,7 +11,6 @@ import { getAuth } from '@react-native-firebase/auth';
 import LinearGradient from 'react-native-linear-gradient';
 import { useTrade } from '../TradeContext';
 import { useConfig } from '../../context/ConfigContext';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 const ResearchReportScreen = () => {
   const {configData}=useTrade();
@@ -113,7 +112,7 @@ const ResearchReportScreen = () => {
     try {
       const headers = {
         "Content-Type": "application/json",
-        "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+        "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
         "aq-encrypted-key": generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET
@@ -231,7 +230,7 @@ const ResearchReportScreen = () => {
     const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
     const headers = {
       'Content-Type': 'application/json',
-      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
       'aq-encrypted-key': generateToken(
         Config.REACT_APP_AQ_KEYS,
         Config.REACT_APP_AQ_SECRET,

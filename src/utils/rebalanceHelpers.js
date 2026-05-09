@@ -22,6 +22,15 @@ const TRANSIENT_NON_AUTH_BROKER_ERROR_CODES = {
   // nightly maintenance window. Any /order endpoint call during
   // this window returns UDAPI100074 regardless of auth state.
   'udapi100074': 'Upstox place-order API outside its daily window (00:00–05:30 IST)',
+  // AliceBlue maintenance window — emitted by ccxt-india
+  // `aliceblue.py:_parse_funds_response` when AliceBlue returns
+  // `{status:'Info', message:'…temporarily unavailable…'}` (typically
+  // overnight / pre-market 09:00 IST onwards). JWT still valid; just
+  // the funds/holdings/positions endpoints reject. Production
+  // 2026-04-26: post-connect funds-fetch returned this and the
+  // app re-popped "Authentication Required → Login to AliceBlue"
+  // even though the user had successfully reconnected seconds before.
+  'maintenance': 'AliceBlue is undergoing scheduled maintenance. Try again in a few minutes.',
 };
 
 /**
@@ -30,9 +39,13 @@ const TRANSIENT_NON_AUTH_BROKER_ERROR_CODES = {
  * and trade-placement result rows — both shapes carry
  * ``error_code`` / ``errorCode`` and ``message``.
  */
-export function isTransientFundsError(resp) {
+export function isTransientFundsError(resp, broker) {
   if (!resp) return false;
-  const code = (resp.error_code || resp.errorCode || '').toString().toLowerCase();
+  // ccxt emits `errorcode` (lowercase, no separator) on AliceBlue
+  // funds responses (production 2026-04-26: `MAINTENANCE` / `NO_DATA`
+  // tagging); other broker / endpoint paths historically use
+  // `error_code` (snake) or `errorCode` (camel). Cover all three.
+  const code = (resp.errorcode || resp.error_code || resp.errorCode || '').toString().toLowerCase();
   if (code && Object.prototype.hasOwnProperty.call(TRANSIENT_NON_AUTH_BROKER_ERROR_CODES, code)) {
     return true;
   }
@@ -46,7 +59,39 @@ export function isTransientFundsError(resp) {
   ) {
     return true;
   }
+  // Upstox /funds is offline 00:00–05:30 IST daily. ccxt's response shape is
+  // inconsistent during that window — sometimes `{status: 1, message:
+  // "Service is accessible..."}` (caught by keyword above), sometimes
+  // `{status: 2, message: undefined}` with nothing to match on. Scope this
+  // IST-clock guard to Upstox only — applying it to all brokers would mask
+  // a genuinely expired token for e.g. Zerodha at 3 AM. Broker can be
+  // passed explicitly; if omitted, the guard is skipped (safe default).
+  if (
+    (broker === 'Upstox' || broker === 'upstox') &&
+    (resp.status === 1 || resp.status === 2) &&
+    isInUpstoxMaintenanceWindow()
+  ) {
+    return true;
+  }
   return false;
+}
+
+/**
+ * True if current IST clock is inside Upstox's 12:00 AM – 5:30 AM daily
+ * maintenance window. Computed from the user's local offset shifted to
+ * Asia/Kolkata (+05:30) so it works regardless of device timezone.
+ */
+function isInUpstoxMaintenanceWindow() {
+  const nowUtcMs = Date.now();
+  const istMs = nowUtcMs + 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(istMs);
+  // Use UTC getters on the shifted epoch — treating the shifted Date as
+  // if it were UTC gives us the IST wall clock.
+  const h = istDate.getUTCHours();
+  const m = istDate.getUTCMinutes();
+  const minutesFromMidnight = h * 60 + m;
+  // 00:00 (incl.) → 05:30 (excl.)
+  return minutesFromMidnight >= 0 && minutesFromMidnight < 330;
 }
 
 // Preferred alias for call sites handling trade results rather than funds.
@@ -93,9 +138,9 @@ export function detectTransientOrderWindowError(responseData) {
  * @param {string} brokerStatus - Broker connection status
  * @returns {boolean} True if funds are in an error state while broker is connected
  */
-export function isFundsErrorOrMissing(currentFunds, brokerStatus) {
+export function isFundsErrorOrMissing(currentFunds, brokerStatus, broker) {
   if (brokerStatus !== 'connected') return false;
-  if (isTransientFundsError(currentFunds)) return false;
+  if (isTransientFundsError(currentFunds, broker)) return false;
   return currentFunds?.status === 1 || currentFunds?.status === 2 || !currentFunds;
 }
 
@@ -109,6 +154,9 @@ export function isRebalanceErrorResponse(responseData) {
 
 /**
  * Check if an error message relates to a missing subscription amount.
+ *
+ * @param {string|null|undefined} message - Error message string
+ * @returns {boolean} True if the message indicates a subscription amount issue
  */
 export function isSubscriptionAmountError(message) {
   if (!message) return false;
@@ -121,6 +169,9 @@ export function isSubscriptionAmountError(message) {
 
 /**
  * Check if an error message indicates low allowed balance.
+ *
+ * @param {string|null|undefined} message - Error message string
+ * @returns {boolean} True if the message indicates balance is too low
  */
 export function isLowAllowedBalanceError(message) {
   if (!message) return false;
@@ -131,6 +182,9 @@ export function isLowAllowedBalanceError(message) {
  * Check if an error message indicates portfolio value is below subscription
  * amount ("less than required minimum"). This is a WARNING, not a blocker —
  * the backend may still return buy/sell trades with the available amount.
+ *
+ * @param {Object} responseData - The response.data from rebalance/calculate
+ * @returns {{ isShortfall: boolean, hasTrades: boolean, currentValue: number|null, requiredAmount: number|null }}
  */
 export function checkPortfolioShortfall(responseData) {
   if (!responseData?.message) {
@@ -154,6 +208,9 @@ export function checkPortfolioShortfall(responseData) {
 
 /**
  * Check if an error message indicates broker authentication failure.
+ *
+ * @param {string|null|undefined} message - Error message string
+ * @returns {boolean} True if the message indicates a broker auth issue
  */
 export function isBrokerAuthError(message) {
   if (!message) return false;
@@ -166,6 +223,9 @@ export function isBrokerAuthError(message) {
     msg.includes('authentication') ||
     // Broker-forwarded 401 patterns. Groww (and some other broker
     // upstreams) surface 401s as e.g. "Please Login and Try Again (Error: 401)".
+    // The older keyword set missed all of those, so the rebalance flow
+    // rendered a dead-end "Unable to Rebalance" instead of opening the
+    // TokenExpire reconnect modal.
     msg.includes('please login') ||
     msg.includes('please re-login') ||
     msg.includes('login required') ||
@@ -235,9 +295,10 @@ export function buildBrokerPayloadFields(
       };
 
     case 'Kotak':
+      // Kotak NEO UUID flow (2026-04-22): consumerKey is the UUID access
+      // token; no consumer secret exists on the new developer portal.
       return {
         consumerKey: decrypt(credentials.apiKey),
-        consumerSecret: decrypt(credentials.secretKey),
         accessToken: credentials.jwtToken,
         sid: credentials.sid,
         serverId: credentials.serverId,
@@ -274,9 +335,6 @@ export function buildBrokerPayloadFields(
       return {
         accessToken: credentials.jwtToken,
       };
-
-    case 'DummyBroker':
-      return {};
 
     default:
       return {};

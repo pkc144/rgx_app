@@ -23,6 +23,7 @@ import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 
 const {width: screenWidth} = Dimensions.get('window');
 const Alpha100 = require('../../assets/alpha-100.png');
@@ -44,8 +45,12 @@ const normalizeGroupName = name => {
 const getSubscriptionStatus = (planName, subscriptions) => {
   if (!subscriptions || subscriptions.length === 0) return {status: 'none'};
 
+  const normalizedPlan = normalizeGroupName(planName);
   const matchingPlanSubs = subscriptions.filter(
-    sub => normalizeGroupName(sub?.plan) === normalizeGroupName(planName),
+    sub => {
+      const nSub = normalizeGroupName(sub?.plan);
+      return nSub === normalizedPlan || nSub.includes(normalizedPlan) || normalizedPlan.includes(nSub);
+    },
   );
   if (matchingPlanSubs.length === 0) return {status: 'none'};
 
@@ -109,20 +114,29 @@ const MySubscriptionsScreen = () => {
 
   const fetchAllPlans = async () => {
     try {
-      const response = await axios.get(
-        `${server.server.baseUrl}api/admin/plan/${configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG}/model portfolio/${userEmail}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        },
-      );
-      setAllPlans(response.data.data || []);
+      const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || getAdvisorSubdomain();
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'aq-encrypted-key': generateToken(
+          Config.REACT_APP_AQ_KEYS,
+          Config.REACT_APP_AQ_SECRET,
+        ),
+      };
+      // Fetch both MP and Bespoke plans in parallel (matching web app)
+      const [mpResponse, bespokeResponse] = await Promise.allSettled([
+        axios.get(
+          `${server.server.baseUrl}api/admin/plan/${advisorTag}/model portfolio/${userEmail}`,
+          {headers},
+        ),
+        axios.get(
+          `${server.server.baseUrl}api/admin/plan/${advisorTag}/bespoke/${userEmail}`,
+          {headers},
+        ),
+      ]);
+      const mpPlans = mpResponse.status === 'fulfilled' ? (mpResponse.value.data.data || []) : [];
+      const bespokePlans = bespokeResponse.status === 'fulfilled' ? (bespokeResponse.value.data.data || []) : [];
+      setAllPlans([...mpPlans, ...bespokePlans]);
     } catch (error) {
       console.log('Error fetching plans:', error);
     }
@@ -168,13 +182,35 @@ const MySubscriptionsScreen = () => {
   }, [userEmail]);
 
   // Filter plans with active subscriptions
+  // Primary: use the subscription field the backend attaches per-plan
+  // Fallback: match against subscriptionData from user profile
   const subscribedPlans = allPlans.filter(plan => {
+    // Check backend-attached subscription first
+    if (plan?.subscription) {
+      const sub = plan.subscription;
+      if (sub.status === 'deleted') return false;
+      if (sub.expiry === null) return true;
+      if (sub.expiry) {
+        const expiryDate = moment(sub.expiry, ACCEPTABLE_DATE_FORMATS);
+        if (expiryDate.isValid()) {
+          const daysLeft = expiryDate.diff(moment(), 'days');
+          return daysLeft >= 0; // active or renew
+        }
+      }
+    }
+    // Fallback to name matching
     const subStatus = getSubscriptionStatus(
       plan?.name,
       subscriptionData?.subscriptions,
     );
     return subStatus.status === 'active' || subStatus.status === 'renew';
   });
+
+  // Bifurcate subscriptions by type
+  const [activeSubTab, setActiveSubTab] = useState('mp');
+  const mpSubscribed = subscribedPlans.filter(p => p.type !== 'bespoke');
+  const bespokeSubscribed = subscribedPlans.filter(p => p.type === 'bespoke');
+  const displayedPlans = activeSubTab === 'mp' ? mpSubscribed : bespokeSubscribed;
 
   const handlePlanPress = plan => {
     navigation.navigate('AfterSubscriptionScreen', {
@@ -278,16 +314,44 @@ const MySubscriptionsScreen = () => {
         <Text style={styles.headerTitle}>My Subscriptions</Text>
       </LinearGradient>
 
+      {/* Subscription Type Tabs */}
+      {!loading && (
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            style={[styles.subTab, activeSubTab === 'mp' && [styles.subTabActive, {backgroundColor: mainColor}]]}
+            onPress={() => setActiveSubTab('mp')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.subTabText, activeSubTab === 'mp' && styles.subTabTextActive]}>
+              Model Portfolios ({mpSubscribed.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.subTab, activeSubTab === 'bespoke' && [styles.subTabActive, {backgroundColor: mainColor}]]}
+            onPress={() => setActiveSubTab('bespoke')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.subTabText, activeSubTab === 'bespoke' && styles.subTabTextActive]}>
+              Bespoke Plans ({bespokeSubscribed.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={mainColor} />
         </View>
-      ) : subscribedPlans.length === 0 ? (
+      ) : displayedPlans.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Crown size={48} color={mainColor} />
-          <Text style={styles.emptyTitle}>No Active Subscriptions</Text>
+          <Text style={styles.emptyTitle}>
+            {activeSubTab === 'mp' ? 'No Model Portfolio Subscriptions' : 'No Bespoke Subscriptions'}
+          </Text>
           <Text style={styles.emptySubtitle}>
-            You haven't subscribed to any plans yet.
+            {activeSubTab === 'mp'
+              ? "You haven't subscribed to any model portfolios yet."
+              : "You haven't subscribed to any bespoke plans yet."}
           </Text>
           <TouchableOpacity
             style={[styles.browsePlansButton, {backgroundColor: mainColor}]}
@@ -297,7 +361,7 @@ const MySubscriptionsScreen = () => {
         </View>
       ) : (
         <FlatList
-          data={subscribedPlans}
+          data={displayedPlans}
           keyExtractor={(item, index) => item?._id || index.toString()}
           renderItem={renderSubscriptionCard}
           contentContainerStyle={styles.listContent}
@@ -429,6 +493,32 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 10,
     fontFamily: 'Poppins-Medium',
+  },
+  tabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+    gap: 10,
+  },
+  subTab: {
+    flex: 1,
+    height: 36,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8E8E8',
+  },
+  subTabActive: {
+    backgroundColor: '#0056B7',
+  },
+  subTabText: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Medium',
+    color: '#555',
+  },
+  subTabTextActive: {
+    color: '#fff',
   },
 });
 

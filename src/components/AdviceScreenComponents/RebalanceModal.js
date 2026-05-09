@@ -15,6 +15,8 @@ import { useWindowDimensions } from 'react-native';
 import { XIcon, CandlestickChartIcon, AlertOctagon, CheckIcon } from 'lucide-react-native';
 import server from '../../utils/serverConfig';
 import IsMarketHours from '../../utils/isMarketHours';
+import { computeTradeVariant } from '../../utils/tradeVariant';
+import { useConfig } from '../../context/ConfigContext';
 import axios from 'axios';
 import DummyBrokerHoldingConfirmation from './DummyBrokerHoldingConfirmation';
 import Config from 'react-native-config';
@@ -39,9 +41,17 @@ import Toast from 'react-native-toast-message';
 import debounce from 'lodash.debounce';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import { validateStockExchanges, applyKiteMarketProtection, getPublisherWebViewBaseUrl, resolveZerodhaSymbol } from '../../utils/brokerPublisher';
+import useZerodhaSymbolMap from '../../hooks/useZerodhaSymbolMap';
 import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import { convertResponse } from '../../utils/tradeUtils';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
+import useSdkClient from '../../sdk/useSdkClient';
+
+const isSdkExecuteAdviceEnabled = () => {
+  const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
+  return v === 'true' || v === '1';
+};
 
 const RebalanceModal = ({
   userEmail,
@@ -60,6 +70,11 @@ const RebalanceModal = ({
   viewToken,
   setOpenSucessModal,
   setOrderPlacementResponse,
+  // Optional — sibling setter for the outgoing trade list at submit
+  // time. Lets RecommendationSuccessModal recover `variant` per row when
+  // ccxt-india doesn't echo it (rebalance/MP lane). See
+  // utils/tradeVariant.js § resolveResultVariant.
+  setLastSubmittedTrades,
   modelPortfolioModelId,
   modelPortfolioRepairTrades,
   getRebalanceRepair,
@@ -78,6 +93,15 @@ const RebalanceModal = ({
 }) => {
   const { brokerStatus, configData } = useTrade();
   const openBrokerModal = useModalStore(state => state.openModal);
+  // Hoist `allowAfterHoursOrders` to the top of the component body so it's
+  // in scope for the trade `variant` computations in the submit handlers
+  // below. There used to be a second `useConfig()` destructure further down
+  // (used by the `marketGateOpen` review-trade gate) — that's been removed
+  // since both refer to the same value. See docs/APP_ARCHITECTURE.md
+  // § 4.5.2 Trade variant field.
+  const { allowAfterHoursOrders } = useConfig() || {};
+  const sdkClient = useSdkClient();
+  const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
   // Add fallback for API key
   let zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY || Config?.REACT_APP_ZERODHA_API_KEY;
@@ -300,11 +324,38 @@ const RebalanceModal = ({
         : [];
   }
 
-  // Real-time prices via WebSocket (matching web app pattern)
-  const wsSymbols = visible ? dataArray : [];
+  // Scripmaster-corrected symbol/exchange map from ccxt-india. Used to
+  // (a) subscribe the LTP websocket on the *corrected* exchange for
+  // BE-series / BSE-primary stocks (e.g. VIKASECO-EQ → VIKASECO on BSE),
+  // and (b) rewrite `tradingsymbol`/`exchange` in the Kite publisher basket
+  // so Kite doesn't silently drop the item. See brokerPublisher.js
+  // `resolveZerodhaSymbol()` for the fallthrough rules.
+  const symbolMap = useZerodhaSymbolMap(dataArray, visible);
+
+  // Real-time prices via WebSocket (matching web app pattern). Symbols are
+  // mapped through `resolveZerodhaSymbol` so the hook subscribes with the
+  // corrected exchange — otherwise the NSE feed returns nothing for a
+  // BSE-primary symbol and `applyKiteMarketProtection` falls through.
+  const wsSymbols = visible
+    ? dataArray.map(item => {
+        const resolved = resolveZerodhaSymbol(item, symbolMap);
+        return {
+          ...item,
+          symbol: resolved.tradingsymbol || item.symbol,
+          tradingSymbol: resolved.tradingsymbol || item.tradingSymbol,
+          exchange: resolved.exchange || item.exchange,
+        };
+      })
+    : [];
   const { getLTPForSymbol: wsGetLTP } = useWebSocketCurrentPrice(wsSymbols);
 
-  // REST fallback for initial load (WebSocket may take a moment to connect)
+  // REST fallback for initial load (WebSocket may take a moment to connect).
+  // Uses advice-side {symbol, exchange} — but note that for BE-series / BSE-
+  // primary stocks whose advice is stale (VIKASECO-EQ tagged NSE but
+  // actually BSE-primary), Angel One returns no LTP on NSE. The authoritative
+  // fix is server-side: /zerodha/convert-symbol's `ltp` field falls through
+  // to a live fetch on the resolved exchange when the Redis cache is cold.
+  // See ccxt-india app_zerodha.py: _get_cached_ltp / convert_symbol().
   const [restPrices, setRestPrices] = useState({});
   useEffect(() => {
     if (!visible || dataArray.length === 0) return;
@@ -342,14 +393,31 @@ const RebalanceModal = ({
     fetchInitialPrices();
   }, [visible]);
 
-  // Unified LTP getter: prefer WebSocket (real-time), fall back to REST
+  // Unified LTP getter. Preference order:
+  //   1. WebSocket on the scripmaster-resolved symbol (e.g. 'VIKASECO' subscribed on BSE)
+  //   2. WebSocket on the raw advice-side symbol ('VIKASECO-EQ' on NSE)
+  //   3. REST-fetched (Angel One) market-data price on the raw symbol
+  //   4. Scripmaster Redis-cached `ltp` from /zerodha/convert-symbol
+  // (4) is load-bearing for BE-series / BSE-primary stocks whose NSE ws
+  // feed never emits — without it the Step-3 review shows ₹0 for
+  // VIKASECO-EQ even though Kite's own confirmation page has the LTP.
   const getLTPForSymbol = useCallback(
     symbol => {
+      if (!symbol) return null;
+      const info = symbolMap?.[symbol];
+      const resolvedSym = info?.zerodha_symbol;
+      if (resolvedSym) {
+        const wsResolved = wsGetLTP(resolvedSym);
+        if (wsResolved && wsResolved > 0) return wsResolved;
+      }
       const wsPrice = wsGetLTP(symbol);
       if (wsPrice && wsPrice > 0) return wsPrice;
-      return restPrices[symbol] ?? null;
+      const restPrice = restPrices[symbol];
+      if (restPrice && restPrice > 0) return restPrice;
+      if (info?.ltp && info.ltp > 0) return info.ltp;
+      return null;
     },
-    [wsGetLTP, restPrices],
+    [wsGetLTP, restPrices, symbolMap],
   );
 
   const initializedRef = useRef(false);
@@ -393,7 +461,7 @@ const RebalanceModal = ({
 
     const requestHeaders = {
       'Content-Type': 'application/json',
-      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
       'aq-encrypted-key': generateToken(
         Config.REACT_APP_AQ_KEYS,
         Config.REACT_APP_AQ_SECRET,
@@ -402,19 +470,46 @@ const RebalanceModal = ({
 
     const markAsExecuted = async () => {
       try {
-        await axios.post(
-          `${server.ccxtServer.baseUrl}rebalance/process-trade`,
-          {
-            user_broker: 'DummyBroker',
-            user_email: userEmail,
-            trades: [],
-            model_id: modelPortfolioModelId,
-            modelName: storeModalName,
-            advisor: advisorTag,
-            unique_id: calculatedPortfolioData?.uniqueId,
-          },
-          {headers: requestHeaders},
-        );
+        // SDK executeAdvice dual-path (Phase C) — DummyBroker already-aligned
+        // (empty trades). SDK path when flag is on; legacy below as fallback.
+        let alreadyAlignedDone = false;
+        if (sdkExecuteAdviceEnabled) {
+          try {
+            await sdkClient.executeAdvice(
+              {
+                kind: 'mpRebalance',
+                clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                brokerName: 'DummyBroker',
+                modelId: modelPortfolioModelId,
+                modelName: storeModalName,
+                uniqueId: calculatedPortfolioData?.uniqueId,
+                trades: [],
+              },
+              // skipReview + presentResult=false — host owns both UIs.
+              { skipReview: true, presentResult: false },
+            );
+            alreadyAlignedDone = true;
+            console.log('[RebalanceModal] SDK executeAdvice (already-aligned) completed');
+          } catch (sdkErr) {
+            console.error('[RebalanceModal] SDK executeAdvice (already-aligned) failed, falling back to legacy:', sdkErr?.message);
+          }
+        }
+
+        if (!alreadyAlignedDone) {
+          await axios.post(
+            `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+            {
+              user_broker: 'DummyBroker',
+              user_email: userEmail,
+              trades: [],
+              model_id: modelPortfolioModelId,
+              modelName: storeModalName,
+              advisor: advisorTag,
+              unique_id: calculatedPortfolioData?.uniqueId,
+            },
+            {headers: requestHeaders},
+          );
+        }
 
         await axios.put(
           `${server.ccxtServer.baseUrl}rebalance/update/subscriber-execution`,
@@ -573,18 +668,45 @@ const RebalanceModal = ({
   };
 
   const handleZerodhaRedirect = async () => {
+    // Pre-flight: refuse to send orders with missing exchange. Kite Publisher
+    // silently drops basket items whose symbol/exchange combo it can't resolve.
+    const exchangeCheck = validateStockExchanges(stockDetails);
+    if (!exchangeCheck.valid) {
+      const missingList = exchangeCheck.missing.join(', ');
+      console.error('[ZerodhaPublisher] Blocked due to missing exchange:', missingList);
+      Toast.show({
+        type: 'error',
+        text1: 'Order blocked — missing exchange',
+        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        visibilityTime: 8000,
+      });
+      return;
+    }
+
     setLoading(true);
     try {
+      // Cross-publisher cleanup — also wipe Fyers pending state so a
+      // prior partial Fyers attempt doesn't replay on next mount.
+      // Per SDK_ORCHESTRATION_AUDIT.md § Pass 2 / Suspected defect #3.
       await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
       await AsyncStorage.removeItem('zerodhaAdditionalPayload');
+      await AsyncStorage.removeItem('stockDetailsFyersOrder');
       await AsyncStorage.setItem(
         'zerodhaAdditionalPayload',
         JSON.stringify(additionalPayload),
       );
 
       const basket = stockDetails.map(stock => {
-        // Calculate price
-        const ltp = getLTPForSymbol(stock.tradingSymbol);
+        // Resolve advice-side `tradingSymbol`/`exchange` through ccxt-india's
+        // scripmaster. Handles -EQ stripping, BE→BSE diversion, BSE-primary
+        // stocks mislabeled NSE. `cachedLtp` is a Redis-cached server-side
+        // price that lets applyKiteMarketProtection fire even when the
+        // user's live WebSocket hasn't emitted anything (common for
+        // BE-series stocks like VIKASECO where NSE feed has no data).
+        const resolved = resolveZerodhaSymbol(stock, symbolMap);
+        const liveLtp = getLTPForSymbol(resolved.tradingsymbol)
+          || getLTPForSymbol(stock.tradingSymbol);
+        const ltp = liveLtp && liveLtp > 0 ? liveLtp : (resolved.cachedLtp || 0);
         let orderPrice = 0;
 
         if (stock.orderType === 'LIMIT') {
@@ -598,8 +720,10 @@ const RebalanceModal = ({
 
         let baseOrder = {
           variety: 'regular',
-          tradingsymbol: stock.tradingSymbol,
-          exchange: stock.exchange || 'NSE',
+          tradingsymbol: resolved.tradingsymbol,
+          // exchange is guaranteed non-empty by validateStockExchanges() above;
+          // resolved.exchange prefers the scripmaster answer over stock.exchange.
+          exchange: resolved.exchange,
           transaction_type: (stock.transactionType || 'BUY').toUpperCase(),
           order_type: mapKiteOrderType(stock.orderType),
           quantity: parseInt(stock.quantity, 10) || 1,
@@ -613,8 +737,10 @@ const RebalanceModal = ({
           baseOrder.readonly = true;
         }
 
-        console.log('[RebalanceModal] Basket item:', JSON.stringify(baseOrder));
-        return baseOrder;
+        // MARKET → LIMIT-IOC with 1% market-protection buffer for GSM/T2T/BE stocks.
+        const protectedOrder = applyKiteMarketProtection(baseOrder, ltp, stock.transactionType);
+        console.log('[RebalanceModal] Basket item:', JSON.stringify(protectedOrder));
+        return protectedOrder;
       });
 
       const currentISTDateTime = new Date();
@@ -805,6 +931,16 @@ const RebalanceModal = ({
         }
 
         setOrderPlacementResponse(orderResults);
+        // Zerodha publisher lane — outgoing trades variant-tagged below
+        // would normally come from `tradesWithVariant`, but at this point
+        // in the function scope only `zerodhaStockDetails` is available.
+        // Tag them on the spot for the fallback lookup.
+        setLastSubmittedTrades?.(
+          (zerodhaStockDetails || []).map(t => ({
+            ...t,
+            variant: t?.variant || computeTradeVariant(allowAfterHoursOrders),
+          })),
+        );
         setOpenSucessModal(true);
         setOpenRebalanceModal(false);
         eventEmitter.emit('OrderPlacedReferesh');
@@ -844,6 +980,8 @@ const RebalanceModal = ({
 
         AsyncStorage.removeItem('stockDetailsZerodhaOrder');
         AsyncStorage.removeItem('zerodhaAdditionalPayload');
+        // Cross-publisher cleanup — drop Fyers pending state too.
+        AsyncStorage.removeItem('stockDetailsFyersOrder');
         getRebalanceRepair();
         getModelPortfolioStrategyDetails();
       } catch (error) {
@@ -901,8 +1039,12 @@ const RebalanceModal = ({
         ),
       };
 
-      // Store stock details for post-processing
+      // Store stock details for post-processing.
+      // Cross-publisher cleanup — also wipe Zerodha pending state.
+      // Per SDK_ORCHESTRATION_AUDIT.md § Pass 2 / Suspected defect #3.
       await AsyncStorage.removeItem('stockDetailsFyersOrder');
+      await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+      await AsyncStorage.removeItem('zerodhaAdditionalPayload');
       await AsyncStorage.setItem(
         'stockDetailsFyersOrder',
         JSON.stringify(stockDetails),
@@ -920,7 +1062,10 @@ const RebalanceModal = ({
         { headers: requestHeaders },
       );
 
-      // Place orders via Fyers API through process-trade
+      // Place orders via Fyers API through process-trade.
+      // Trade variant tagged on every per-trade object — see
+      // docs/APP_ARCHITECTURE.md § 4.5.2 Trade variant field.
+      const fyersVariant = computeTradeVariant(allowAfterHoursOrders);
       const payload = {
         clientId: clientCode,
         accessToken: jwtToken,
@@ -931,25 +1076,71 @@ const RebalanceModal = ({
         model_id: additionalPayload.model_id || modelPortfolioModelId,
         unique_id: additionalPayload.unique_id,
         returnDateTime: istDatetime,
-        trades: stockDetails,
+        trades: stockDetails.map(stock => ({ ...stock, variant: fyersVariant })),
         caPendingInfo: calculatedPortfolioData?.caPendingInfo || [],
       };
 
-      const response = await axios.post(
-        `${server.ccxtServer.baseUrl}rebalance/process-trade`,
-        payload,
-        { headers: requestHeaders, timeout: 120000 },
-      );
+      // SDK executeAdvice dual-path (Phase C) — Fyers publisher path.
+      let checkData;
+      if (sdkExecuteAdviceEnabled) {
+        try {
+          const sdkResult = await sdkClient.executeAdvice(
+            {
+              kind: 'mpRebalance',
+              clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              brokerName: 'Fyers',
+              modelId: additionalPayload.model_id || modelPortfolioModelId,
+              modelName: additionalPayload.modelName,
+              uniqueId: additionalPayload.unique_id,
+              trades: payload.trades,
+            },
+            // skipReview + presentResult=false — host owns both UIs.
+            { skipReview: true, presentResult: false },
+          );
+          // 2026-05-07: SDK now passes through ccxt's original
+          // `orderStatus` / `errorCode` / `message_aq` /
+          // `orderStatusMessage` / `tradingSymbol` via spread (see
+          // AqSdkClient.ts Step 3). Previously we overwrote
+          // `orderStatus: row.status` with the SDK enum, which
+          // erased the broker-side rejection code (e.g. AB4036
+          // cautionary listing) — RecommendationSuccessModal then
+          // showed "All Orders Placed Successfully" for orders the
+          // broker had actually rejected. Pass through unchanged.
+          checkData = sdkResult?.rows || [];
+          console.log('[RebalanceModal] SDK executeAdvice (Fyers) result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+        } catch (sdkErr) {
+          console.error('[RebalanceModal] SDK executeAdvice (Fyers) failed, falling back to legacy:', sdkErr?.message);
+          checkData = null;
+        }
+      }
 
-      const checkData = response?.data?.results;
+      if (!checkData) {
+        const response = await axios.post(
+          `${server.ccxtServer.baseUrl}rebalance/process-trade`,
+          payload,
+          { headers: requestHeaders, timeout: 120000 },
+        );
+        checkData = response?.data?.results;
+      }
+
       setOrderPlacementResponse(checkData);
+      // Capture outgoing trade list (variant-tagged) so the success modal
+      // can recover `variant` per row when ccxt-india doesn't echo it.
+      setLastSubmittedTrades?.(payload.trades);
 
-      // Handle TPIN rejection for Fyers sell orders
+      // Handle TPIN rejection for Fyers sell orders — equity delivery only
       if (checkData && checkData.length > 0) {
-        const allSell = checkData.every(s => s.transactionType === 'SELL');
-        const isMixed =
-          checkData.some(s => s.transactionType === 'BUY') &&
-          checkData.some(s => s.transactionType === 'SELL');
+        const eqSells = checkData.filter(s => {
+          const txnType = (s.transactionType || s.TransactionType || '').toUpperCase();
+          if (txnType !== 'SELL') return false;
+          const exchange = (s.exchange || s.Exchange || '').toUpperCase();
+          const productType = (s.productType || s.ProductType || 'CNC').toUpperCase();
+          if (['NFO', 'BFO', 'MCX'].includes(exchange)) return false;
+          if (['MIS', 'NRML', 'CARRYFORWARD'].includes(productType)) return false;
+          return true;
+        });
+        const allSell = eqSells.length > 0 && checkData.every(s => s.transactionType === 'SELL');
+        const isMixed = eqSells.length > 0 && checkData.some(s => s.transactionType === 'BUY');
         const rejectedSellCount = checkData.reduce((count, order) => {
           return isOrderRejected(order?.orderStatus) &&
             order.transactionType === 'SELL'
@@ -1061,6 +1252,9 @@ const RebalanceModal = ({
       );
 
       await AsyncStorage.removeItem('stockDetailsFyersOrder');
+      // Cross-publisher cleanup — drop Zerodha pending state too.
+      await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+      await AsyncStorage.removeItem('zerodhaAdditionalPayload');
 
       // Emit structured portfolio events (matching prod)
       portfolioEvents.emit(PORTFOLIO_EVENTS.HOLDINGS_REFRESH, {
@@ -1127,10 +1321,20 @@ const RebalanceModal = ({
 
     setLoading(true);
 
-    // Pre-order EDIS checks
-    const allSellPre = stockDetails?.every(s => s.transactionType === 'SELL');
-    const isMixedPre = stockDetails?.some(s => s.transactionType === 'BUY') &&
-      stockDetails?.some(s => s.transactionType === 'SELL');
+    // Pre-order EDIS checks — only for equity delivery (CNC) sells.
+    // Derivatives (NFO/BFO/MIS/NRML) do NOT need EDIS/DDPI authorization.
+    const equityDeliverySells = stockDetails?.filter(s => {
+      const txnType = (s.transactionType || s.TransactionType || '').toUpperCase();
+      if (txnType !== 'SELL') return false;
+      const exchange = (s.exchange || s.Exchange || '').toUpperCase();
+      const productType = (s.productType || s.ProductType || 'CNC').toUpperCase();
+      if (['NFO', 'BFO', 'MCX'].includes(exchange)) return false;
+      if (['MIS', 'NRML', 'CARRYFORWARD'].includes(productType)) return false;
+      return true;
+    }) || [];
+    const hasEquitySells = equityDeliverySells.length > 0;
+    const allSellPre = hasEquitySells && stockDetails?.every(s => s.transactionType === 'SELL');
+    const isMixedPre = hasEquitySells && stockDetails?.some(s => s.transactionType === 'BUY');
 
     if (broker === 'Dhan' && (allSellPre || isMixedPre) &&
       (!dhanEdisStatus || !dhanEdisStatus?.data || dhanEdisStatus?.data?.length === 0 || dhanEdisStatus?.data?.some((h) => h.edis === false))) {
@@ -1184,10 +1388,19 @@ const RebalanceModal = ({
         trade => trade.modelId === modelPortfolioModelId,
       );
 
+    // Trade variant — `"AMO" | "REGULAR"`. Tagged on every per-trade
+    // object at submit. See docs/APP_ARCHITECTURE.md § 4.5.2 Trade
+    // variant field. Display-only — drives the amber AMO pill in
+    // RecommendationSuccessModal. ccxt-india doesn't echo this field on
+    // rebalance/process-trade; the success modal falls back to looking
+    // it up against `originalStockDetails` (passed below).
+    const variant = computeTradeVariant(allowAfterHoursOrders);
+    const tradesWithVariant = stockDetails.map(stock => ({ ...stock, variant }));
+
     const getBasePayload = () => ({
       user_broker: broker,
       user_email: userEmail,
-      trades: stockDetails,
+      trades: tradesWithVariant,
       model_id: modelPortfolioModelId,
     });
 
@@ -1207,7 +1420,8 @@ const RebalanceModal = ({
       } else if (broker === 'Hdfc Securities') {
         return { apiKey: defaultDecrypt(apiKey), accessToken: jwtToken };
       } else if (broker === 'Kotak') {
-        return { consumerKey: defaultDecrypt(apiKey), consumerSecret: defaultDecrypt(secretKey), accessToken: jwtToken, viewToken, sid, serverId };
+        // Kotak NEO UUID flow (2026-04-22) — no consumer secret.
+        return { consumerKey: defaultDecrypt(apiKey), accessToken: jwtToken, viewToken, sid, serverId };
       } else if (broker === 'Fyers') {
         return { clientId: clientCode, accessToken: jwtToken };
       } else if (broker === 'Motilal Oswal') {
@@ -1294,8 +1508,55 @@ const RebalanceModal = ({
       data: JSON.stringify(payload),
     };
 
-    await axios
-      .request(config)
+    // SDK executeAdvice dual-path (Phase C) — main broker path.
+    // When SDK is enabled, try the SDK orchestrator first. On failure,
+    // fall through to the legacy axios path. The SDK result is wrapped
+    // in a response-shaped object so the downstream .then() handler
+    // works unchanged.
+    let sdkResponse = null;
+    if (sdkExecuteAdviceEnabled) {
+      try {
+        const sdkResult = await sdkClient.executeAdvice(
+          {
+            kind: 'mpRebalance',
+            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            brokerName: broker,
+            modelId: payload.model_id,
+            modelName: payload.modelName,
+            uniqueId: payload.unique_id,
+            trades: payload.trades,
+          },
+          // 2026-05-07:
+          // - skipReview=true: RebalanceModal Step 3 already shows
+          //   the trade list + Note + Place Order button — SDK
+          //   review sheet would be a redundant second confirmation.
+          // - presentResult=false: legacy RecommendationSuccessModal
+          //   (rendered by RebalanceAdvices on order completion)
+          //   already shows the per-row success/failure breakdown +
+          //   cautionary-listing banner + manual-placement guidance.
+          //   Letting the SDK ALSO render its TradeResultModal stacks
+          //   two result UIs and leaves a phantom Modal-window white
+          //   patch on the left edge that intercepts touches (the
+          //   SDK overlay's `phase: 'result'` never transitions back
+          //   to `idle` once the result fires, so the Modal stays
+          //   mounted indefinitely).
+          { skipReview: true, presentResult: false },
+        );
+        // 2026-05-07: pass through SDK rows verbatim. The SDK now
+        // preserves ccxt's original `orderStatus` / `errorCode` /
+        // `message_aq` / `tradingSymbol` via spread, so frontend
+        // utilities (orderStatusUtils.normalizeOrderStatus, the
+        // cautionary-listing detection in RecommendationSuccessModal,
+        // etc.) consume the broker-flavoured fields directly — same
+        // code path as the legacy axios flow, no second translation.
+        sdkResponse = { data: { results: sdkResult?.rows || [] } };
+        console.log('[RebalanceModal] SDK executeAdvice (main) result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
+      } catch (sdkErr) {
+        console.error('[RebalanceModal] SDK executeAdvice (main) failed, falling back to legacy:', sdkErr?.message);
+      }
+    }
+
+    await (sdkResponse ? Promise.resolve(sdkResponse) : axios.request(config))
       .then(async response => {
         const checkData = response?.data?.results;
         console.log('[RebalanceModal] process-trade response:', JSON.stringify({
@@ -1305,6 +1566,7 @@ const RebalanceModal = ({
           error: response?.data?.error,
         }));
         setOrderPlacementResponse(response?.data?.results);
+        setLastSubmittedTrades?.(tradesWithVariant);
 
         // Handle session expired - broker needs reconnection
         if (response?.data?.sessionExpired) {
@@ -1340,8 +1602,11 @@ const RebalanceModal = ({
               orderStatus: 'REJECTED',
               orderStatusMessage: errorMsg,
               message_aq: errorMsg,
+              // Carry variant through synthetic-rejection rendering too.
+              variant: trade.variant || 'REGULAR',
             }));
             setOrderPlacementResponse(syntheticResults);
+            setLastSubmittedTrades?.(payload.trades);
             setOpenRebalanceModal(false);
             setLoading(false);
             setOpenSucessModal(true);
@@ -1380,15 +1645,19 @@ const RebalanceModal = ({
           return;
         }
 
-        const isMixed =
-          checkData?.some(stock => stock.transactionType === 'BUY') &&
-          checkData?.some(stock => stock.transactionType === 'SELL');
-        const allBuy = checkData?.every(
-          stock => stock.transactionType === 'BUY',
-        );
-        const allSell = checkData?.every(
-          stock => stock.transactionType === 'SELL',
-        );
+        // Equity delivery sells only — derivatives don't need EDIS/DDPI
+        const eqSellsPost = (checkData || []).filter(s => {
+          const txnType = (s.transactionType || s.TransactionType || '').toUpperCase();
+          if (txnType !== 'SELL') return false;
+          const exchange = (s.exchange || s.Exchange || '').toUpperCase();
+          const productType = (s.productType || s.ProductType || 'CNC').toUpperCase();
+          if (['NFO', 'BFO', 'MCX'].includes(exchange)) return false;
+          if (['MIS', 'NRML', 'CARRYFORWARD'].includes(productType)) return false;
+          return true;
+        });
+        const isMixed = eqSellsPost.length > 0 && checkData?.some(stock => stock.transactionType === 'BUY');
+        const allBuy = checkData?.every(stock => stock.transactionType === 'BUY');
+        const allSell = eqSellsPost.length > 0 && checkData?.every(stock => stock.transactionType === 'SELL');
 
         const rejectedSellCount = (checkData || []).reduce(
           (count, order) => {
@@ -1440,6 +1709,7 @@ const RebalanceModal = ({
         if (allOrdersFailed && backendOrderErrors.length > 0) {
           // Show success modal with failure details (matches web behavior)
           setOrderPlacementResponse(checkData);
+          setLastSubmittedTrades?.(tradesWithVariant);
           setOpenSucessModal(true);
           setOpenRebalanceModal(false);
           setLoading(false);
@@ -1686,7 +1956,9 @@ const RebalanceModal = ({
     }
   };
 
-  const isMarketHours = IsMarketHours();
+  // `allowAfterHoursOrders` is destructured at the top of the component
+  // body — single source of truth (see comment at top).
+  const marketGateOpen = IsMarketHours() || allowAfterHoursOrders;
 
   const ListItem = React.memo(
     ({
@@ -1824,7 +2096,10 @@ const RebalanceModal = ({
               <WebView
                 ref={webViewRef}
                 style={{ flex: 1 }}
-                source={{ html: htmlContent }}
+                source={{
+                  html: htmlContent,
+                  baseUrl: getPublisherWebViewBaseUrl(configData),
+                }}
                 onNavigationStateChange={handleWebViewNavigationStateChange}
                 javaScriptEnabled={true}
                 domStorageEnabled={true}
@@ -2153,15 +2428,15 @@ const RebalanceModal = ({
                     onPress={onSlideComplete}
                     style={[
                       styles.nextStepButton,
-                      (!isMarketHours || loading) && styles.buttonDisabled,
+                      (!marketGateOpen || loading) && styles.buttonDisabled,
                       loading && styles.buttonLoading,
                     ]}
-                    disabled={!isMarketHours || loading}>
+                    disabled={!marketGateOpen || loading}>
                     {loading ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
                       <Text style={styles.nextStepButtonText}>
-                        {!isMarketHours ? 'Market is Closed' : 'Place Order'}
+                        {!marketGateOpen ? 'Market is Closed' : 'Place Order'}
                       </Text>
                     )}
                   </TouchableOpacity>

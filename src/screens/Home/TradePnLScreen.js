@@ -21,7 +21,6 @@ import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
 import formatCurrency from '../../utils/formatCurrency';
-import { getAdvisorSubdomain } from '../../utils/variantHelper';
 
 const TradePnLScreen = () => {
   const {configData} = useTrade();
@@ -47,7 +46,7 @@ const TradePnLScreen = () => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
             'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
           },
         },

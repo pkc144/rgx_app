@@ -1,4 +1,4 @@
-import React, {useRef} from 'react';
+import React, {useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,16 @@ const DhanOAuthUI = ({
 }) => {
   const webViewRef = useRef(null);
   const insets = useSafeAreaInsets();
+
+  // Opt 3: Progress-driven overlay. Dhan's partner-login page has heavy
+  // JS/fonts/analytics — `onLoadEnd` doesn't fire for 5-10s. Show the
+  // "Loading Dhan login…" overlay only until the WebView reports 30%
+  // progress, then let Dhan's partial page render through while assets
+  // continue downloading. `loadedOnce` is a latch so reloads from
+  // partner-login.dhan.co's own nav don't re-flash the overlay.
+  const [progress, setProgress] = useState(0);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const overlayVisible = !loadedOnce && progress < 0.3;
 
   React.useEffect(() => {
     if (!isVisible) return;
@@ -59,34 +69,44 @@ const DhanOAuthUI = ({
             <Text style={styles.loadingText}>Connecting Dhan...</Text>
           </View>
         ) : (
-          <WebView
-            ref={webViewRef}
-            source={{uri: authUrl}}
-            style={styles.webView}
-            nestedScrollEnabled={true}
-            onNavigationStateChange={handleWebViewNavigationStateChange}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            startInLoadingState={true}
-            cacheEnabled={false}
-            sharedCookiesEnabled={true}
-            thirdPartyCookiesEnabled={true}
-            scrollEnabled={true}
-            originWhitelist={['*']}
-            mixedContentMode="compatibility"
-            setSupportMultipleWindows={false}
-            userAgent={
-              Platform.OS === 'android'
-                ? 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
-                : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile Safari/604.1'
-            }
-            renderLoading={() => (
-              <View style={styles.loadingContainer}>
+          // Opt 2: WebView mounts in parallel with the modal so its
+          // Chromium instance is warm by the time the URL resolves.
+          <View style={styles.webViewWrap}>
+            <WebView
+              ref={webViewRef}
+              source={{uri: authUrl}}
+              style={styles.webView}
+              nestedScrollEnabled={true}
+              onNavigationStateChange={handleWebViewNavigationStateChange}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              // startInLoadingState={false} — we manage the overlay
+              // ourselves via onLoadProgress so the user sees Dhan's
+              // partial page at 30% instead of a blank screen until
+              // every last asset finishes.
+              startInLoadingState={false}
+              onLoadProgress={({nativeEvent}) => setProgress(nativeEvent.progress)}
+              onLoadEnd={() => setLoadedOnce(true)}
+              cacheEnabled={false}
+              sharedCookiesEnabled={true}
+              thirdPartyCookiesEnabled={true}
+              scrollEnabled={true}
+              originWhitelist={['*']}
+              mixedContentMode="compatibility"
+              setSupportMultipleWindows={false}
+              userAgent={
+                Platform.OS === 'android'
+                  ? 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36'
+                  : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile Safari/604.1'
+              }
+            />
+            {overlayVisible && (
+              <View style={styles.loadingOverlay} pointerEvents="none">
                 <ActivityIndicator size="large" color="#0056B7" />
                 <Text style={styles.loadingText}>Loading Dhan login...</Text>
               </View>
             )}
-          />
+          </View>
         )}
         {onSwitchToManual && (
           <TouchableOpacity onPress={onSwitchToManual} style={styles.manualLink}>
@@ -126,6 +146,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins-SemiBold',
     color: '#000',
   },
+  webViewWrap: {
+    flex: 1,
+    width: SCREEN_WIDTH,
+  },
   webView: {
     flex: 1,
     width: SCREEN_WIDTH,
@@ -134,6 +158,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.96)',
   },
   loadingText: {
     marginTop: 10,
