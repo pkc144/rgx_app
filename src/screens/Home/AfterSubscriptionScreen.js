@@ -66,6 +66,7 @@ const AfterSubscriptionScreen = ({route}) => {
   const config = useConfig();
   const gradientStart = config?.gradient1 || '#002651';
   const gradientEnd = config?.gradient2 || '#0056B7';
+  const themeColor = config?.themeColor || '#0056B7';
   const {fileName} = route.params;
   const auth = getAuth();
   const user = auth.currentUser;
@@ -611,70 +612,101 @@ const AfterSubscriptionScreen = ({route}) => {
                         </View>
                       )}
                       {tableData?.length > 0 ? (
-                        <View style={{paddingHorizontal: 16, paddingTop: 8, flex: 1}}>
-                          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                            <View>
-                              <View style={{flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB'}}>
-                                <Text style={{width: 110, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280'}}>Stock</Text>
-                                <Text style={{width: 95, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Current Price</Text>
-                                <Text style={{width: 90, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Avg. Buy</Text>
-                                <Text style={{width: 80, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Returns</Text>
-                                <Text style={{width: 70, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Weight</Text>
-                                <Text style={{width: 70, fontSize: 11, fontFamily: 'Poppins-Medium', color: '#6B7280', textAlign: 'right'}}>Shares</Text>
-                              </View>
-                              <FlatList
-                                data={tableData}
-                                keyExtractor={(item, idx) => item.symbol + idx}
-                                scrollEnabled={true}
-                                nestedScrollEnabled={true}
-                                renderItem={({item}) => {
-                                  const hasPrice = item.currentPrice !== 'N/A';
-                                  const hasReturns = item.returns !== 'N/A';
-                                  const hasWeight = Number.isFinite(item.weights);
-                                  return (
-                                  <View style={{flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', alignItems: 'center'}}>
-                                    <View style={{width: 110, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap'}}>
-                                      <Text style={{fontSize: 12, fontFamily: 'Poppins-Medium', color: '#1F2937'}}>{item.symbol}</Text>
-                                      {item.isPhantom && (
-                                        <Text style={{
-                                          marginLeft: 4,
-                                          fontSize: 9,
-                                          fontFamily: 'Poppins-SemiBold',
-                                          color: '#92400E',
-                                          backgroundColor: '#FEF3C7',
-                                          borderWidth: 1,
-                                          borderColor: '#FDE68A',
-                                          paddingHorizontal: 4,
-                                          paddingVertical: 1,
-                                          borderRadius: 3,
-                                        }}>
-                                          Broker: {item.actualQty}
-                                        </Text>
-                                      )}
-                                    </View>
-                                    <Text style={{width: 95, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>
+                        <FlatList
+                          data={tableData}
+                          keyExtractor={(item, idx) => item.symbol + idx}
+                          scrollEnabled={true}
+                          nestedScrollEnabled={true}
+                          contentContainerStyle={{paddingHorizontal: 12, paddingTop: 10, paddingBottom: 16, gap: 10}}
+                          ListFooterComponent={
+                            <Text style={{fontSize: 9, fontFamily: 'Poppins-Regular', color: '#9CA3AF', marginTop: 4, textAlign: 'center'}}>
+                              Prices may be delayed.
+                            </Text>
+                          }
+                          renderItem={({item}) => {
+                            const hasPrice = item.currentPrice !== 'N/A';
+                            const hasReturns = item.returns !== 'N/A';
+                            const hasWeight = Number.isFinite(item.weights);
+                            const isPositive = hasReturns && item.returns >= 0;
+                            const displaySymbol = item.symbol.replace(/-EQ$|-BE$|-N$/, '');
+                            return (
+                              <View style={{
+                                backgroundColor: '#fff',
+                                borderRadius: 12,
+                                borderLeftWidth: 3,
+                                borderLeftColor: themeColor,
+                                paddingHorizontal: 14,
+                                paddingVertical: 12,
+                                elevation: 2,
+                                shadowColor: '#000',
+                                shadowOffset: {width: 0, height: 1},
+                                shadowOpacity: 0.08,
+                                shadowRadius: 3,
+                              }}>
+                                {/* Card header: symbol + returns badge */}
+                                <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10}}>
+                                  <View style={{flex: 1, marginRight: 8}}>
+                                    <Text style={{fontSize: 14, fontFamily: 'Poppins-SemiBold', color: '#1F2937'}}>{displaySymbol}</Text>
+                                    {item.isPhantom && (
+                                      <Text style={{
+                                        fontSize: 9, fontFamily: 'Poppins-SemiBold',
+                                        color: '#92400E', backgroundColor: '#FEF3C7',
+                                        borderWidth: 1, borderColor: '#FDE68A',
+                                        paddingHorizontal: 5, paddingVertical: 1,
+                                        borderRadius: 3, alignSelf: 'flex-start', marginTop: 2,
+                                      }}>
+                                        Broker qty: {item.actualQty}
+                                      </Text>
+                                    )}
+                                  </View>
+                                  <View style={{
+                                    backgroundColor: isPositive ? '#DCFCE7' : (hasReturns ? '#FEE2E2' : '#F3F4F6'),
+                                    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+                                  }}>
+                                    <Text style={{
+                                      fontSize: 13, fontFamily: 'Poppins-SemiBold',
+                                      color: isPositive ? '#16A34A' : (hasReturns ? '#DC2626' : '#9CA3AF'),
+                                    }}>
+                                      {hasReturns ? `${isPositive ? '+' : ''}${item.returns.toFixed(2)}%` : 'N/A'}
+                                    </Text>
+                                  </View>
+                                </View>
+                                {/* Data grid: 2 × 2 */}
+                                <View style={{flexDirection: 'row', gap: 8}}>
+                                  <View style={{flex: 1, backgroundColor: '#F8FAFF', borderRadius: 8, padding: 8}}>
+                                    <Text style={{fontSize: 10, fontFamily: 'Poppins-Regular', color: '#6B7280', marginBottom: 2}}>Current Price</Text>
+                                    <Text style={{fontSize: 13, fontFamily: 'Poppins-Medium', color: '#1F2937'}}>
                                       {hasPrice ? `₹${parseFloat(item.currentPrice).toFixed(2)}` : 'N/A'}
                                     </Text>
-                                    <Text style={{width: 90, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>₹{parseFloat(item.avgBuyPrice).toFixed(2)}</Text>
-                                    <Text style={{width: 80, fontSize: 12, fontFamily: 'Poppins-SemiBold', color: hasReturns ? (item.returns >= 0 ? '#16A34A' : '#DC2626') : '#9CA3AF', textAlign: 'right'}}>
-                                      {hasReturns ? `${item.returns >= 0 ? '+' : ''}${item.returns.toFixed(2)}%` : 'N/A'}
-                                    </Text>
-                                    <Text style={{width: 70, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>
-                                      {hasWeight ? `${item.weights.toFixed(2)}%` : '-'}
-                                    </Text>
-                                    <Text style={{width: 70, fontSize: 12, fontFamily: 'Poppins-Regular', color: '#374151', textAlign: 'right'}}>{item.shares}</Text>
                                   </View>
-                                  );
-                                }}
-                              />
-                            </View>
-                          </ScrollView>
-                          <Text style={{fontSize: 9, fontFamily: 'Poppins-Regular', color: '#9CA3AF', marginTop: 6, textAlign: 'center'}}>
-                            Prices may be delayed. Scroll to see all stocks.
-                          </Text>
-                        </View>
+                                  <View style={{flex: 1, backgroundColor: '#F8FAFF', borderRadius: 8, padding: 8}}>
+                                    <Text style={{fontSize: 10, fontFamily: 'Poppins-Regular', color: '#6B7280', marginBottom: 2}}>Avg. Buy</Text>
+                                    <Text style={{fontSize: 13, fontFamily: 'Poppins-Medium', color: '#1F2937'}}>
+                                      ₹{parseFloat(item.avgBuyPrice).toFixed(2)}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <View style={{flexDirection: 'row', gap: 8, marginTop: 8}}>
+                                  <View style={{flex: 1, backgroundColor: '#F8FAFF', borderRadius: 8, padding: 8}}>
+                                    <Text style={{fontSize: 10, fontFamily: 'Poppins-Regular', color: '#6B7280', marginBottom: 2}}>Shares</Text>
+                                    <Text style={{fontSize: 13, fontFamily: 'Poppins-Medium', color: '#1F2937'}}>{item.shares}</Text>
+                                  </View>
+                                  <View style={{flex: 1, backgroundColor: '#F8FAFF', borderRadius: 8, padding: 8}}>
+                                    <Text style={{fontSize: 10, fontFamily: 'Poppins-Regular', color: '#6B7280', marginBottom: 2}}>Weight</Text>
+                                    <Text style={{fontSize: 13, fontFamily: 'Poppins-Medium', color: '#1F2937'}}>
+                                      {hasWeight ? `${item.weights.toFixed(2)}%` : '—'}
+                                    </Text>
+                                  </View>
+                                </View>
+                              </View>
+                            );
+                          }}
+                        />
                       ) : (
-                        <EmptyStateInfoMP />
+                        <EmptyStateInfoMP
+                          title="No Holdings Yet"
+                          subtitle="Accept and execute your first rebalance to start building your portfolio."
+                        />
                       )}
                     </SafeAreaView>
                   ),

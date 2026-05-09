@@ -475,15 +475,19 @@ const RebalanceModal = ({
         let alreadyAlignedDone = false;
         if (sdkExecuteAdviceEnabled) {
           try {
-            await sdkClient.executeAdvice({
-              kind: 'mpRebalance',
-              clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              brokerName: 'DummyBroker',
-              modelId: modelPortfolioModelId,
-              modelName: storeModalName,
-              uniqueId: calculatedPortfolioData?.uniqueId,
-              trades: [],
-            });
+            await sdkClient.executeAdvice(
+              {
+                kind: 'mpRebalance',
+                clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                brokerName: 'DummyBroker',
+                modelId: modelPortfolioModelId,
+                modelName: storeModalName,
+                uniqueId: calculatedPortfolioData?.uniqueId,
+                trades: [],
+              },
+              // skipReview + presentResult=false — host owns both UIs.
+              { skipReview: true, presentResult: false },
+            );
             alreadyAlignedDone = true;
             console.log('[RebalanceModal] SDK executeAdvice (already-aligned) completed');
           } catch (sdkErr) {
@@ -1080,20 +1084,29 @@ const RebalanceModal = ({
       let checkData;
       if (sdkExecuteAdviceEnabled) {
         try {
-          const sdkResult = await sdkClient.executeAdvice({
-            kind: 'mpRebalance',
-            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            brokerName: 'Fyers',
-            modelId: additionalPayload.model_id || modelPortfolioModelId,
-            modelName: additionalPayload.modelName,
-            uniqueId: additionalPayload.unique_id,
-            trades: payload.trades,
-          });
-          checkData = (sdkResult?.rows || []).map(row => ({
-            ...row,
-            orderStatus: row.status,
-            tradingSymbol: row.symbol,
-          }));
+          const sdkResult = await sdkClient.executeAdvice(
+            {
+              kind: 'mpRebalance',
+              clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              brokerName: 'Fyers',
+              modelId: additionalPayload.model_id || modelPortfolioModelId,
+              modelName: additionalPayload.modelName,
+              uniqueId: additionalPayload.unique_id,
+              trades: payload.trades,
+            },
+            // skipReview + presentResult=false — host owns both UIs.
+            { skipReview: true, presentResult: false },
+          );
+          // 2026-05-07: SDK now passes through ccxt's original
+          // `orderStatus` / `errorCode` / `message_aq` /
+          // `orderStatusMessage` / `tradingSymbol` via spread (see
+          // AqSdkClient.ts Step 3). Previously we overwrote
+          // `orderStatus: row.status` with the SDK enum, which
+          // erased the broker-side rejection code (e.g. AB4036
+          // cautionary listing) — RecommendationSuccessModal then
+          // showed "All Orders Placed Successfully" for orders the
+          // broker had actually rejected. Pass through unchanged.
+          checkData = sdkResult?.rows || [];
           console.log('[RebalanceModal] SDK executeAdvice (Fyers) result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
         } catch (sdkErr) {
           console.error('[RebalanceModal] SDK executeAdvice (Fyers) failed, falling back to legacy:', sdkErr?.message);
@@ -1503,21 +1516,40 @@ const RebalanceModal = ({
     let sdkResponse = null;
     if (sdkExecuteAdviceEnabled) {
       try {
-        const sdkResult = await sdkClient.executeAdvice({
-          kind: 'mpRebalance',
-          clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          brokerName: broker,
-          modelId: payload.model_id,
-          modelName: payload.modelName,
-          uniqueId: payload.unique_id,
-          trades: payload.trades,
-        });
-        const mappedRows = (sdkResult?.rows || []).map(row => ({
-          ...row,
-          orderStatus: row.status,
-          tradingSymbol: row.symbol,
-        }));
-        sdkResponse = { data: { results: mappedRows } };
+        const sdkResult = await sdkClient.executeAdvice(
+          {
+            kind: 'mpRebalance',
+            clientAdviceId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            brokerName: broker,
+            modelId: payload.model_id,
+            modelName: payload.modelName,
+            uniqueId: payload.unique_id,
+            trades: payload.trades,
+          },
+          // 2026-05-07:
+          // - skipReview=true: RebalanceModal Step 3 already shows
+          //   the trade list + Note + Place Order button — SDK
+          //   review sheet would be a redundant second confirmation.
+          // - presentResult=false: legacy RecommendationSuccessModal
+          //   (rendered by RebalanceAdvices on order completion)
+          //   already shows the per-row success/failure breakdown +
+          //   cautionary-listing banner + manual-placement guidance.
+          //   Letting the SDK ALSO render its TradeResultModal stacks
+          //   two result UIs and leaves a phantom Modal-window white
+          //   patch on the left edge that intercepts touches (the
+          //   SDK overlay's `phase: 'result'` never transitions back
+          //   to `idle` once the result fires, so the Modal stays
+          //   mounted indefinitely).
+          { skipReview: true, presentResult: false },
+        );
+        // 2026-05-07: pass through SDK rows verbatim. The SDK now
+        // preserves ccxt's original `orderStatus` / `errorCode` /
+        // `message_aq` / `tradingSymbol` via spread, so frontend
+        // utilities (orderStatusUtils.normalizeOrderStatus, the
+        // cautionary-listing detection in RecommendationSuccessModal,
+        // etc.) consume the broker-flavoured fields directly — same
+        // code path as the legacy axios flow, no second translation.
+        sdkResponse = { data: { results: sdkResult?.rows || [] } };
         console.log('[RebalanceModal] SDK executeAdvice (main) result:', sdkResult?.status, sdkResult?.rows?.length, 'rows');
       } catch (sdkErr) {
         console.error('[RebalanceModal] SDK executeAdvice (main) failed, falling back to legacy:', sdkErr?.message);

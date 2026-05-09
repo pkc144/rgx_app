@@ -758,14 +758,39 @@ const Phase3SdkBrokerModal = ({
             </View>
           </ScrollView>
         ) : (
-          // Form phase — single scroll surface (the SDK form's own
-          // ScrollView). EgressIpCallout + Phase3BrokerHelp pass via
-          // BrokerCredentialForm's `headerSlot` prop so they live INSIDE
-          // the form's scroll surface — eliminates the nested-scroll
-          // dead zone (outer ScrollView vs inner SDK form ScrollView)
-          // that was reported as "scroll down on Zerodha was not
-          // working" 2026-05-01. Mirror of tidi_new
-          // Phase3SdkConnectScreen unified-scroll fix (commit 2c6cb9c).
+          // Form phase — outer ScrollView wrapping everything so the
+          // full page scrolls as one unit. The SDK form's own
+          // internal ScrollView is disabled via nestedScrollEnabled.
+          <ScrollView
+            contentContainerStyle={styles.scrollPad}
+            nestedScrollEnabled={true}
+            keyboardShouldPersistTaps="handled">
+          {errorInfo ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorTitle}>{errorInfo.title}</Text>
+              <Text style={styles.errorBody}>{errorInfo.body}</Text>
+              {errorInfo.technical ? (
+                <Text style={styles.errorTechnical}>
+                  {errorInfo.technical}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {IP_WHITELIST_BROKERS.has(brokerName) ? (
+            <View style={styles.calloutWrap}>
+              <EgressIpCallout
+                broker={brokerName}
+                customerEmail={emailFromCtx || ''}
+                onAcknowledgeChange={(ready) => setEgressReady(!!ready)}
+              />
+            </View>
+          ) : null}
+
+          {brokerName !== 'Zerodha' ? (
+            <Phase3BrokerHelp brokerName={brokerName} />
+          ) : null}
+
           <View
             style={[
               styles.formWrap,
@@ -776,42 +801,6 @@ const Phase3SdkBrokerModal = ({
               schemaOverride={schemaOverride || undefined}
               key={`${brokerName}-${schemaOverride ? 'pre' : 'fresh'}`}
               encrypt={encryptField}
-              headerSlot={
-                <View>
-                  {errorInfo ? (
-                    <View style={styles.errorBox}>
-                      <Text style={styles.errorTitle}>{errorInfo.title}</Text>
-                      <Text style={styles.errorBody}>{errorInfo.body}</Text>
-                      {errorInfo.technical ? (
-                        <Text style={styles.errorTechnical}>
-                          {errorInfo.technical}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ) : null}
-                  {IP_WHITELIST_BROKERS.has(brokerName) ? (
-                    <View style={styles.calloutWrap}>
-                      <EgressIpCallout
-                        broker={brokerName}
-                        customerEmail={emailFromCtx || ''}
-                        onAcknowledgeChange={(ready) =>
-                          setEgressReady(!!ready)
-                        }
-                      />
-                    </View>
-                  ) : null}
-                  {brokerName === 'Angel One' && Config?.REACT_APP_ANGEL_ONE_API_KEY ? (
-                    <View style={styles.cautionaryBox}>
-                      <Text style={styles.cautionaryTitle}>Cautionary-listed stocks</Text>
-                      <Text style={styles.cautionaryBody}>
-                        Angel One does not allow stocks under "Exchange Cautionary Listing" to be placed through the broker API. If your portfolio includes such stocks during a rebalance, they will be skipped — you'll need to place those orders manually in the Angel One app.
-                      </Text>
-                    </View>
-                  ) : brokerName !== 'Zerodha' ? (
-                    <Phase3BrokerHelp brokerName={brokerName} />
-                  ) : null}
-                </View>
-              }
               onContinueToOauth={(collected) => {
                 const extras = {...collected};
                 if (brokerName === 'Zerodha') {
@@ -828,6 +817,7 @@ const Phase3SdkBrokerModal = ({
               onError={onError}
             />
           </View>
+        </ScrollView>
         )}
       </View>
     </Pressable>

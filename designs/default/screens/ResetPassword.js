@@ -34,9 +34,11 @@ import Text from '../primitives/Text';
 import Icon from '../primitives/Icon';
 import Spinner from '../primitives/Spinner';
 
-const AlphaQuarkLogo = require('../../../src/assets/logo.png');
+// Default-variant logo now resolved via `useTokens().assets.logoPng` and
+// passed in as `defaultLogo`. See Phase 2 (whitelabel-sync, 2026-05-09) and
+// docs/DESIGN_SYSTEM_ARCHITECTURE.md § Variant assets.
 
-const renderLogo = (LogoComponent, configLoading) => {
+const renderLogo = (LogoComponent, configLoading, defaultLogo) => {
     if (configLoading) return <View style={styles.logo} />;
     if (LogoComponent && typeof LogoComponent === 'function') {
         return <LogoComponent style={styles.logo} />;
@@ -53,7 +55,7 @@ const renderLogo = (LogoComponent, configLoading) => {
     if (LogoComponent && typeof LogoComponent === 'object') {
         return <Image source={LogoComponent} style={styles.logo} resizeMode="contain" />;
     }
-    return <Image source={AlphaQuarkLogo} style={styles.logo} resizeMode="contain" />;
+    return <Image source={defaultLogo} style={styles.logo} resizeMode="contain" />;
 };
 
 const ResetPassword = ({ viewModel, actions }) => {
@@ -105,7 +107,7 @@ const ResetPassword = ({ viewModel, actions }) => {
                         </TouchableOpacity>
 
                         <View style={styles.logoContainer}>
-                            {renderLogo(logoComponent, configLoading)}
+                            {renderLogo(logoComponent, configLoading, tokens.assets.logoPng)}
                             <Text
                                 variant="title"
                                 style={{

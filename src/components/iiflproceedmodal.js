@@ -102,6 +102,7 @@ const IIFLProceedModal = ({
       const response = await axios.post(
         `${server.ccxtServer.baseUrl}/iifl/login/client`,
         {
+          user_email: userEmail,
           auth_token: authCode,
           client_code: clientId,
         },

@@ -200,6 +200,8 @@ export const BROKER_SUPPORT = {
   iifl: {
     name: "IIFL",
     displayName: "IIFL Securities",
+    unavailable: true,
+    unavailableReason: "IIFL Securities integration is temporarily unavailable. Please use another broker.",
     orderTypes: {
       MARKET: true,
       LIMIT: true,
@@ -213,7 +215,7 @@ export const BROKER_SUPPORT = {
       oco: false,
       gtt_multi_leg: false,
     },
-    notes: "GTT orders not supported. Only regular SL/SL_M orders available.",
+    notes: "IIFL Securities broker integration is temporarily unavailable.",
     gttAlternative: "Use SL order type - will be valid only for the trading day.",
   },
 
@@ -255,6 +257,25 @@ export const BROKER_SUPPORT = {
     },
     notes: "GTT orders not supported. Only regular SL/SL_M orders available.",
     gttAlternative: "Use SL order type - will be valid only for the trading day.",
+  },
+
+  axis: {
+    name: "Axis Securities",
+    displayName: "Axis Securities",
+    orderTypes: {
+      MARKET: true,
+      LIMIT: true,
+      SL: false,
+      SL_M: false,
+      GTT: false,
+      GTT_OCO: false,
+    },
+    features: {
+      slpt: false,
+      oco: false,
+      gtt_multi_leg: false,
+    },
+    notes: "Supports Market and Limit orders only.",
   },
 
   nuvama: {
@@ -303,6 +324,10 @@ const BROKER_NAME_MAP = {
   "motilal oswal": "motilal_oswal",
   motilaloswal: "motilal_oswal",
   nuvama: "nuvama",
+  axis: "axis",
+  "axis securities": "axis",
+  "axis direct": "axis",
+  axisdirect: "axis",
 };
 
 /**
@@ -320,6 +345,24 @@ export const normalizeBrokerName = (brokerName) => {
 export const getBrokerSupport = (brokerName) => {
   const key = normalizeBrokerName(brokerName);
   return BROKER_SUPPORT[key] || null;
+};
+
+/**
+ * Check if broker is currently available (backend endpoints operational).
+ * Returns false for brokers whose backend integration is down.
+ */
+export const isBrokerAvailable = (brokerName) => {
+  const broker = getBrokerSupport(brokerName);
+  if (!broker) return true; // Unknown brokers assumed available
+  return !broker.unavailable;
+};
+
+/**
+ * Get unavailability message for a broker.
+ */
+export const getBrokerUnavailableReason = (brokerName) => {
+  const broker = getBrokerSupport(brokerName);
+  return broker?.unavailableReason || null;
 };
 
 /**

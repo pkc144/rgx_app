@@ -161,7 +161,8 @@ const BespokePerformanceScreen = ({ route }) => {
                     },
                 )
                 .then(res => {
-                    const portfolioData = res.data[0].originalData;
+                    const portfolioData = res?.data?.[0]?.originalData;
+                    if (!portfolioData) return;
                     setStrategyDetails(portfolioData);
                     if (portfolioData?.model?.rebalanceHistory?.length > 0) {
                         const latest = [...portfolioData.model.rebalanceHistory].sort(
@@ -191,7 +192,8 @@ const BespokePerformanceScreen = ({ route }) => {
                     },
                 )
                 .then(res => {
-                    const portfolioData = res.data[0].originalData;
+                    const portfolioData = res?.data?.[0]?.originalData;
+                    if (!portfolioData) return;
                     setModalContext(prev => ({ ...prev, singleStrategyDetails: portfolioData }));
                     setSingleStrategyDetails(portfolioData);
                     if (portfolioData?.model?.rebalanceHistory?.length > 0) {
@@ -245,8 +247,12 @@ const BespokePerformanceScreen = ({ route }) => {
         }
     }, [broker, userDetails]);
 
-    const subscribed =
-        planDetails?.subscribed_by?.filter(email => email === userEmail).length > 0;
+    // The optional chain `planDetails?.subscribed_by?.filter(...)` is unsafe
+    // when `subscribed_by` is a defined-but-non-array value (object or
+    // string). The API has been observed returning non-array shapes. Guard
+    // explicitly with `Array.isArray()` before calling array methods.
+    const subscribed = Array.isArray(planDetails?.subscribed_by)
+        && planDetails.subscribed_by.includes(userEmail);
 
     const clientCode = userDetails?.clientCode;
     const apiKey = userDetails?.apiKey;

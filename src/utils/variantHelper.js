@@ -5,8 +5,14 @@ export const getAdvisorSubdomain = () => {
   const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
   const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
 
-  // Return subdomain if exists, otherwise default to 'common'
-  return variantConfig?.subdomain || 'common';
+  // Return subdomain if exists, otherwise fall back to the variant name itself
+  return variantConfig?.subdomain || selectedVariant;
+};
+
+export const getAdvisorRaCode = () => {
+  const selectedVariant = Config?.APP_VARIANT || 'alphaquark';
+  const variantConfig = APP_VARIANTS[selectedVariant] || APP_VARIANTS['alphaquark'] || {};
+  return variantConfig?.advisorRaCode || null;
 };
 
 export const getGoogleWebClientId = () => {

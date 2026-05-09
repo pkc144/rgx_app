@@ -6,7 +6,7 @@ import axios from 'axios';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {getAuth, onAuthStateChanged} from '@react-native-firebase/auth';
 import notifee, {EventType} from '@notifee/react-native';
-import GradientView from './src/components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import {
   useSafeAreaInsets,
   SafeAreaProvider,
@@ -15,7 +15,6 @@ import { handleOAuthCallback } from './src/services/ZerodhaOAuthService';
 import Config from 'react-native-config';
 
 import Navigation from './src/components/Navigation';
-import RegionGate from './src/components/RegionGate';
 import {CartProvider} from './src/components/CartContext';
 import {ModalProvider} from './src/components/ModalContext';
 import {SocialProofProvider} from './src/components/SocialProofProvider';
@@ -185,7 +184,7 @@ const App = () => {
     const insets = useSafeAreaInsets();
 
     return (
-      <GradientView
+      <LinearGradient
         colors={['rgba(0, 86, 183, 1)', 'rgba(0, 86, 183, 1)']}
         start={{x: 0, y: 0}}
         end={{x: 1, y: 0}}
@@ -196,13 +195,10 @@ const App = () => {
           translucent={true}
           backgroundColor="transparent"
         />
-      </GradientView>
+      </LinearGradient>
     );
   };
 
-  // Wrap the app in <AqSdkProvider/> ONLY when SDK integration is on.
-  // When off, SdkRootWrapper is a no-op fragment so the legacy code
-  // path is unchanged. Behind REACT_APP_SDK_INTEGRATION=true.
   const SdkRootWrapper = isSdkIntegrationEnabled()
     ? ({children}) => (
         <SdkProviderRoot userEmail={userEmail}>{children}</SdkProviderRoot>
@@ -214,7 +210,6 @@ const App = () => {
       <UpdateAppModal />
       <CustomStatusBar barStyle={'dark-content'} />
       <GestureHandlerRootView style={{flex: 1}}>
-       <RegionGate>
         <DesignProvider>
           <SocialProofProvider>
             <CartProvider>
@@ -241,7 +236,6 @@ const App = () => {
             </CartProvider>
           </SocialProofProvider>
         </DesignProvider>
-       </RegionGate>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );

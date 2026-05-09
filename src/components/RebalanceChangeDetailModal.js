@@ -86,11 +86,13 @@ const RebalanceChangeDetailModal = ({
             const history = portfolioData.model.rebalanceHistory;
             setRebalanceData(history);
             processTableData(history);
-            setLoading(false);
           }
+          setLoading(false);
         })
-        .catch(err => console.log(err));
-      setLoading(false);
+        .catch(err => {
+          console.log('Error fetching strategy details:', err);
+          setLoading(false);
+        });
     }
   };
 
@@ -115,7 +117,6 @@ const RebalanceChangeDetailModal = ({
 
     // Process current allocations
     const processedData = latestRebalance.adviceEntries.map((entry, index) => {
-      setLoading(true);
       const currentAlloc = parseFloat(entry.value) * 100 || 0;
       const previousValue = previousAllocMap[entry.symbol];
       const previousAlloc = previousValue ? previousValue * 100 : null;

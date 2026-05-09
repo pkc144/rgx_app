@@ -9,7 +9,7 @@
  *   Props (flat — not viewModel/actions, since this is a memo leaf):
  *     navigationState  — { index, routes: [{ key, title }] }
  *     jumpTo           — (key: string) => void
- *     isSubscriptionActive — boolean — when true, first tab shows lock icon
+ *     isSubscriptionActive — boolean — when true, ALL tabs are locked (premium gate active = user not subscribed)
  */
 
 import React, { memo } from 'react';
@@ -22,8 +22,8 @@ const CustomTabBarMPPerformance = memo(({ navigationState, jumpTo, isSubscriptio
       {navigationState.routes.map((route, idx) => {
         const isActive = navigationState.index === idx;
 
-        // Disable first tab if subscription is active
-        const isDisabled = idx === 0 && isSubscriptionActive;
+        // Lock ALL tabs when premium gate is active (user not subscribed)
+        const isDisabled = isSubscriptionActive;
 
         return (
           <TouchableOpacity

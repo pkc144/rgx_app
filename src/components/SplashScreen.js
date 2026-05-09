@@ -3,15 +3,17 @@ import {View, Image, StyleSheet, Dimensions} from 'react-native';
 import ProgressBar from 'react-native-progress-bar-horizontal';
 import Config from 'react-native-config';
 import AlphaQuarkLogo from '../assets/logo.png';
+import AlphanomyLogo from './AlphanomyLogo';
 import auth from '@react-native-firebase/auth';
 import axios from 'axios';
 import {useNavigation} from '@react-navigation/native';
 import server from '../utils/serverConfig';
 import {generateToken} from '../utils/SecurityTokenManager';
+import {SvgUri} from 'react-native-svg';
 import {useConfig} from '../context/ConfigContext';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {getRaId, getUserData, storeLoginData} from '../utils/storageUtils';
+import {getRaId, getUserData, storeLoginData, tryResolveAdvisor, updateRACodeAndConfig} from '../utils/storageUtils';
 export default function SplashScreen() {
   const [progress, setProgress] = useState(0.0);
   const screenWidth = Dimensions.get('window').width;
@@ -83,11 +85,26 @@ export default function SplashScreen() {
               });
             }
 
-            setTimeout(() => {
-              navigation.replace(
-                hasAdvisorRaCode ? 'Home' : 'SignUpRADetails',
-              );
-            }, 2000);
+            if (hasAdvisorRaCode) {
+              setTimeout(() => navigation.replace('Home'), 2000);
+            } else {
+              // Try auto-resolve before showing RA ID screen
+              const resolveResult = await tryResolveAdvisor(email);
+              if (resolveResult.resolved) {
+                console.log('🎯 Splash: Auto-resolved advisor:', resolveResult.advisor_ra_code);
+                const configResult = await updateRACodeAndConfig(
+                  resolveResult.advisor_ra_code,
+                  email,
+                );
+                if (configResult.success) {
+                  setTimeout(() => navigation.replace('Home'), 2000);
+                } else {
+                  setTimeout(() => navigation.replace('SignUpRADetails'), 2000);
+                }
+              } else {
+                setTimeout(() => navigation.replace('SignUpRADetails'), 2000);
+              }
+            }
           } catch (error) {
             console.error('Error checking user status:', error.message);
             setTimeout(() => navigation.replace('Login'), 2000);
@@ -122,11 +139,27 @@ export default function SplashScreen() {
     <View style={styles.container}>
       {/* Logo Section - Wait for config to load before showing logo */}
       <View style={styles.logoContainer}>
-        {configLoading ? (
+        {/*
+          Alphanomy variant: short-circuit the config-driven logo
+          cascade and render the JS-drawn brand mark (gradient + bolt).
+          The alphanomy fork doesn't ship a finalized PNG, and the
+          shared default at src/assets/logo.png is the AlphaQuark
+          asset — falling through any of the branches below would show
+          the wrong tenant's logo on splash.
+        */}
+        {Config?.DESIGN_VARIANT === 'alphanomy' ? (
+          <AlphanomyLogo size={150} />
+        ) : configLoading ? (
           // Show nothing or a placeholder while config is loading
           <View style={{width: 150, height: 150}} />
         ) : LogoComponent && typeof LogoComponent === 'function' ? (
           <LogoComponent width={200} height={200} />
+        ) : LogoComponent && typeof LogoComponent === 'string' && LogoComponent.endsWith('.svg') ? (
+          <SvgUri
+            uri={LogoComponent}
+            width={150}
+            height={150}
+          />
         ) : LogoComponent && typeof LogoComponent === 'string' ? (
           <Image
             source={{uri: LogoComponent}}

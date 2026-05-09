@@ -17,6 +17,8 @@ import RazorpayCheckout from "react-native-razorpay";
 import AwesomeAlert from 'react-native-awesome-alerts';
 import Coin from '../../assets/coin.svg';
 import Config from "react-native-config";
+import { useTrade } from '../TradeContext';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 const { width } = Dimensions.get('window');
 const COIN_SIZE = (width - 80) / 2;
 
@@ -119,6 +121,7 @@ const CoinAnimation = ({ isSelected, children }) => {
   );
 };
 const TokenPurchaseModal = ({setShowFailAlert,setselectedCoin,setModalVisible,setShowAlert, userEmail,visible, PurchaseToken}) => {
+  const { configData } = useTrade();
   const [selectedCoin, setSelectedCoin] = useState(null);
 
   const coins = [
@@ -149,7 +152,7 @@ const TokenPurchaseModal = ({setShowFailAlert,setselectedCoin,setModalVisible,se
       currency: "INR",
       key: Config.REACT_APP_RAZORPAY_LIVE_API_KEY, // Replace with your Razorpay Key
       amount: price * 100, // Razorpay uses paise (1 INR = 100 paise)
-      name: "ARFS",
+      name: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || configData?.appName || getAdvisorSubdomain(),
     
       prefill: {
         email: userEmail,

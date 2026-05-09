@@ -44,9 +44,14 @@ import Icon from '../primitives/Icon';
 import Spinner from '../primitives/Spinner';
 
 const Glogo = require('../../../src/assets/GLogo.png');
-const AlphaQuarkLogo = require('../../../src/assets/logo.png');
 
-const renderLogo = (LogoComponent, configLoading) => {
+// Module-scope `require(...)` of the default-variant logo intentionally
+// removed in Phase 2 (whitelabel-sync, 2026-05-09). The default logo now
+// comes from `useTokens().assets.logoPng` so a variant overlay's
+// `designs/<variant>/tokens/assets.js` can swap it without touching this
+// presentation file. See docs/DESIGN_SYSTEM_ARCHITECTURE.md § Variant assets.
+
+const renderLogo = (LogoComponent, configLoading, defaultLogo) => {
     if (configLoading) return <View style={styles.logo} />;
     if (LogoComponent && typeof LogoComponent === 'function') {
         return <LogoComponent style={styles.logo} />;
@@ -63,7 +68,7 @@ const renderLogo = (LogoComponent, configLoading) => {
     if (LogoComponent && typeof LogoComponent === 'object') {
         return <Image source={LogoComponent} style={styles.logo} resizeMode="contain" />;
     }
-    return <Image source={AlphaQuarkLogo} style={styles.logo} resizeMode="contain" />;
+    return <Image source={defaultLogo} style={styles.logo} resizeMode="contain" />;
 };
 
 const LoginScreen = ({ viewModel, actions }) => {
@@ -114,7 +119,7 @@ const LoginScreen = ({ viewModel, actions }) => {
 
                         <View style={styles.content}>
                             <View style={styles.logoContainer}>
-                                {renderLogo(logoComponent, configLoading)}
+                                {renderLogo(logoComponent, configLoading, tokens.assets.logoPng)}
                                 <Text variant="title" style={styles.logoText}>
                                     {whiteLabelText || Config?.REACT_APP_WHITE_LABEL_TEXT}
                                 </Text>

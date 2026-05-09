@@ -316,6 +316,7 @@ const MPReviewTradeModal = ({
 
     setLoading(true);
 
+    try {
     // Pre-order: validate exchange information
     const hasExchangeEmpty = stockDetails.some((item) => item.exchange === ' ');
     if (hasExchangeEmpty) {
@@ -354,7 +355,7 @@ const MPReviewTradeModal = ({
     const getBasePayload = () => ({
       modelName: strategyDetails?.model_name,
       advisor: strategyDetails?.advisor,
-      model_id: latestRebalance.model_Id,
+      model_id: latestRebalance?.model_Id,
       unique_id: calculatedPortfolioData?.uniqueId,
       user_broker: broker,
       user_email: userEmail,
@@ -426,8 +427,7 @@ const MPReviewTradeModal = ({
       }
     };
 
-    try {
-      // SDK executeAdvice dual-path (Phase C) — main broker path.
+    // SDK executeAdvice dual-path (Phase C) — main broker path.
       // When the SDK is enabled, try the orchestrator first. On failure,
       // fall through to legacy. SDK result wrapped to match response shape.
       let response;

@@ -158,7 +158,7 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
   const getRebalanceRepair = () => {
     let repairData = JSON.stringify({
       modelName: modelNames,
-      advisor: modelPortfolioStrategy[0]['advisor'],
+      advisor: configData?.config?.REACT_APP_HEADER_NAME,
       userEmail: userEmail,
       userBroker: broker,
     });
@@ -253,12 +253,69 @@ const RebalanceAdvices = React.memo(({userEmail, orderscreen, type}) => {
 
     if (!latest) return null;
 
-    // Find execution for this user AND current broker
-    const userExecution = latest?.subscriberExecutions?.find(
-      execution =>
-        execution?.user_email === userEmail &&
-        (!broker || execution?.user_broker === broker),
+    // 3-tier execution matching (mirrors tidi RebalanceStatusService
+    // _matchExecution). Pre-2026-05-04 this was a single find() that
+    // required BOTH user_email AND user_broker to match — switching
+    // broker made the pending rebalance invisible.
+    //
+    //   Tier 1: exact (email + current broker)
+    //   Tier 2: DummyBroker fallback (markAsExecuted always writes
+    //           DummyBroker — covers users who executed before
+    //           connecting a real broker)
+    //   Tier 3: any email match (the entry exists but was written
+    //           with a different broker — still pending for this user)
+    //
+    // Special case: if Tier 1 finds a toExecute entry but Tier 2
+    // shows executed, use Tier 2 — the portfolio is already aligned
+    // from a prior DummyBroker execution.
+    const executions = (latest?.subscriberExecutions || []).filter(
+      e => e?.user_email === userEmail,
     );
+    let userExecution = null;
+    if (executions.length > 0) {
+      const brokerMatch = executions.find(e => e?.user_broker === broker);
+      const dummyMatch = executions.find(
+        e => e?.user_broker === 'DummyBroker',
+      );
+      const anyMatch = executions[0];
+
+      if (brokerMatch) {
+        // Tier 1 found — but check DummyBroker override
+        const bStatus = (brokerMatch.status || '').toLowerCase();
+        if (
+          (bStatus === 'toexecute' || bStatus === '') &&
+          dummyMatch &&
+          (dummyMatch.status || '').toLowerCase() === 'executed'
+        ) {
+          userExecution = dummyMatch;
+        } else {
+          userExecution = brokerMatch;
+        }
+      } else if (dummyMatch) {
+        // Tier 2
+        userExecution = dummyMatch;
+      } else {
+        // Tier 3 — entry exists but for a DIFFERENT real broker.
+        // Executed on broker A does NOT mean executed on broker B
+        // (different broker = different holdings/positions). So:
+        //   - If the other broker's status is "executed", treat
+        //     current broker as fresh toExecute (user needs to
+        //     rebalance on THIS broker too).
+        //   - If the other broker's status is "toExecute"/"pending"/
+        //     "partial", pass it through — the rebalance is pending
+        //     regardless of which broker it was written against.
+        const otherStatus = (anyMatch?.status || '').toLowerCase();
+        if (otherStatus === 'executed') {
+          userExecution = {
+            ...anyMatch,
+            status: 'toExecute',
+            user_broker: broker,
+          };
+        } else {
+          userExecution = anyMatch;
+        }
+      }
+    }
 
     return {userExecution, latest, matchingPortfolioItem};
   };
@@ -706,10 +763,8 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
         visibilityTime: 4500,
         position: 'bottom',
       });
-      setLoading(false);
-      return;
     }
-    if (!_fundsPreflight.ok) {
+    if (!_fundsPreflight.ok && _fundsPreflight.reason !== 'TRANSIENT') {
       setOpenTokenExpireModel(true);
       setLoading(false);
     } else if ((matchingFailedTrades ? "repair" : null) && userExecution?.status !== "toExecute") {
@@ -1005,6 +1060,13 @@ const angelOneApiKey = configData?.config?.REACT_APP_ANGEL_ONE_API_KEY;
           currentBroker={broker}
           // Fallback source for `variant` lookups on the rebalance/MP lane.
           originalStockDetails={lastSubmittedTrades}
+          // 2026-05-07: model context required by the per-row "Mark
+          // as Placed" inline editor for FAILURE rows. Backend looks
+          // up the rebalanceHistory entry by modelId + userEmail.
+          userEmail={userEmail}
+          modelId={modelPortfolioModelId}
+          modelName={storeModalName}
+          uniqueId={calculatedPortfolioData?.uniqueId}
         />
       )}
 

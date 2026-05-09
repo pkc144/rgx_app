@@ -150,6 +150,12 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
     setActivateNowModel(false);
   };
 
+  const ccxtHeaders = {
+    'Content-Type': 'application/json',
+    'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+    'aq-encrypted-key': generateToken(Config.REACT_APP_AQ_KEYS, Config.REACT_APP_AQ_SECRET),
+  };
+
   const verifyEdis = async () => {
     try {
       const response = await axios.post(
@@ -159,6 +165,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           jwtToken: userDetails.jwtToken,
           userEmail: userDetails?.email,
         },
+        { headers: ccxtHeaders },
       );
       setEdisStatus(response.data);
       console.log('AngleOne response', response.data);
@@ -175,6 +182,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           clientId: clientCode,
           accessToken: userDetails.jwtToken,
         },
+        { headers: ccxtHeaders },
       );
       console.log('Dhan Reponse', response.data);
       setDhanEdisStatus(response.data);
@@ -539,7 +547,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         visibilityTime: 4500,
         position: 'bottom',
       });
-      return true;
+      return false;
     }
     setOpenTokenExpireModel(true);
     return true;
@@ -1714,9 +1722,8 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         visibilityTime: 4500,
         position: 'bottom',
       });
-      return;
     }
-    const isFundsEmpty = !_fundsPreflight.ok;
+    const isFundsEmpty = !_fundsPreflight.ok && _fundsPreflight.reason !== 'TRANSIENT';
 
     const currentBroker = freshUser?.user_broker ?? userDetails?.user_broker;
     const currentBrokerRejectedCount = await getRejectedCount();
@@ -2478,9 +2485,8 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
         visibilityTime: 4500,
         position: 'bottom',
       });
-      return;
     }
-    const isFundsEmpty = !_fundsPreflight.ok && _fundsPreflight.reason !== 'NOT_CONNECTED';
+    const isFundsEmpty = !_fundsPreflight.ok && _fundsPreflight.reason !== 'NOT_CONNECTED' && _fundsPreflight.reason !== 'TRANSIENT';
 
     // Check order must match web: no broker → broker selection, then expired → token expire
     if (!broker) {
@@ -2772,6 +2778,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
               accessToken: userDetails.jwtToken,
               userEmail: userDetails.email,
             },
+            { headers: ccxtHeaders },
           );
           setZerodhaDdpiStatus(response.data);
         } catch (error) {
@@ -2793,6 +2800,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
               userEmail: userDetails.email,
               edis: userDetails.edis,
             },
+            { headers: ccxtHeaders },
           );
           console.log('response edit::', response.data);
           setZerodhaDdpiStatus(response.data);

@@ -4,7 +4,8 @@ const { getDefaultConfig, mergeConfig } = require("@react-native/metro-config");
 const defaultConfig = getDefaultConfig(__dirname);
 const { resolver: { sourceExts, assetExts } } = defaultConfig;
 
-// @alphaquark/mobile-sdk lives outside this project root (../alphaquark-mobile-sdk).
+// @alphaquark/mobile-sdk lives outside this project root at ../../alphaquark-mobile-sdk
+// (i.e. codes/alphaquark-mobile-sdk — one level above codes/github/).
 // npm installed it via the file: dep into node_modules/@alphaquark/mobile-sdk as a
 // symlink, but Metro's default resolver doesn't follow symlinks across watchFolder
 // boundaries — it returned "Unable to resolve module @alphaquark/mobile-sdk".
@@ -14,7 +15,7 @@ const { resolver: { sourceExts, assetExts } } = defaultConfig;
 //      project rebuilds when the SDK is re-tsc'd.
 // Scoped to ONLY the SDK path (not the whole parent dir, which has 50+ unrelated
 // projects and would tank Metro's startup).
-const SDK_PATH = path.resolve(__dirname, '../alphaquark-mobile-sdk/packages/rn');
+const SDK_PATH = path.resolve(__dirname, '../../alphaquark-mobile-sdk/packages/rn');
 
 /**
  * Metro configuration

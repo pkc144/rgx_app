@@ -366,8 +366,11 @@ const BrokerSelectionModal = ({ viewModel, actions }) => {
                         )}
                     </View>
                 )}
+                {/* AngelOneCautionaryWarning must render INSIDE the Modal so it
+                  * appears in the same Android window. Rendering it outside (in the
+                  * main window) means it's behind the modal window and invisible. */}
+                {renderAngelOneWarning()}
             </Modal>
-            {renderAngelOneWarning()}
         </>
     );
 };

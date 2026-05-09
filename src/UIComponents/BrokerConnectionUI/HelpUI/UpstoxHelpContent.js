@@ -2,7 +2,6 @@ import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   Linking,
   TouchableOpacity,
@@ -10,19 +9,18 @@ import {
 } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import LinkifiedUrl from './LinkifiedUrl';
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 
-const UpstoxHelpContent = ({expanded, onExpandChange}) => {
-  const brokerConnectRedirectURL = Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+const UpstoxHelpContent = ({expanded, onExpandChange, brokerConnectRedirectURL: redirectURLProp}) => {
+  const brokerConnectRedirectURL = redirectURLProp || Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
   useEffect(() => {
     onExpandChange?.(expanded);
   }, [expanded]);
 
   return (
     <View>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{paddingBottom: 20}}>
+      <View style={[styles.container, {paddingBottom: 20}]}>
         <View style={styles.videoBox}>
           <YoutubePlayer
             height={screenHeight * 0.24}
@@ -37,12 +35,8 @@ const UpstoxHelpContent = ({expanded, onExpandChange}) => {
         <View style={styles.content}>
           <Text style={styles.instruction}>
             1. Visit{' '}
-            <Text
-              onPress={() => Linking.openURL('https://shorturl.at/plWYJ')}
-              style={styles.link}>
-              https://shorturl.at/pIWYJ
-            </Text>{' '}
-            your phone number. Verify your identity with the OTP and continue.
+            <LinkifiedUrl url="https://shorturl.at/plWYJ" />{' '}
+            and log in with your phone number. Verify your identity with the OTP and continue.
           </Text>
           <Text style={styles.instruction}>
             2. Enter your 6-digit PIN and continue.
@@ -52,13 +46,12 @@ const UpstoxHelpContent = ({expanded, onExpandChange}) => {
           <>
             <Text style={styles.instruction}>
               3. Click on the "New App" button. Fill in the "App Name" field
-              with "AlphaQuark" or a name of your choice. Enter the "Redirect
-              URL" as{' '}
-              <Text
-                onPress={() => Linking.openURL(brokerConnectRedirectURL)}
-                style={styles.link}>
-                {brokerConnectRedirectURL}
-              </Text>{' '}
+              with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of your choice. Paste your
+              dedicated static IP (claimed in the IP-whitelist panel above)
+              into the "Allowed IPs" field — Upstox rejects every order from
+              a non-whitelisted IP with UDAPI1154 "static IP mismatch", so
+              this step is mandatory. Enter the "Redirect URL" as{' '}
+              <LinkifiedUrl url={brokerConnectRedirectURL} />{' '}
               You can skip the Postback URL and Description as they are
               optional. Accept the Terms & Conditions and click on the
               "Continue" button. Please ensure that the "Redirect URL" is
@@ -76,7 +69,7 @@ const UpstoxHelpContent = ({expanded, onExpandChange}) => {
             </Text>
           </>
         )}
-      </ScrollView>
+      </View>
     </View>
   );
 };

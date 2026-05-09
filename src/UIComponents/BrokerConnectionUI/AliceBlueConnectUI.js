@@ -14,6 +14,84 @@ import {ChevronLeft, XIcon} from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
+// AliceBlue OTP-validate interceptor (workaround for AliceBlue's broken
+// post-OTP redirect, 2026-04-26).
+//
+// AliceBlue's SPA flow:
+//   1. POST /omk/auth/access/v1/otp/validate → returns {result:[{redirectUrl,
+//      accessToken, authorized}]}
+//   2. SPA calls /omk/client-rest/profile/getUser to populate profile data
+//   3. ONLY THEN does the SPA navigate to the redirectUrl
+//
+// Step 2 returns 401 because AliceBlue's Keycloak `alice-kb` client config
+// only allow-lists localhost origins (`http:/​/localhost:3002,5050,9943,9000` in
+// the JWT's `allowed-origins` claim). When the SPA calls getUser from
+// `ant.aliceblueonline.com`, Keycloak rejects the cross-origin call with
+// 401 — AliceBlue's own production origin isn't in their own client config.
+// The SPA aborts the redirect on this 401, and the user stays stuck on
+// the OTP screen which falls back to the password screen on retry.
+//
+// Workaround: monkey-patch fetch + XHR before the SPA loads, intercept
+// the OTP-validate RESPONSE, extract `result[0].redirectUrl`, and
+// force-navigate via `window.location` — bypassing the broken getUser
+// step. We DON'T need profile data; we only need the redirectUrl which
+// AliceBlue already sends in the OTP-validate response.
+//
+// This works for any origin AliceBlue's portal might be hosted at,
+// because we patch on the WebView side, not via origin headers.
+const ALICEBLUE_REDIRECT_INTERCEPTOR = `
+(function () {
+  if (window.__aqAliceblueIntercept) return;
+  window.__aqAliceblueIntercept = true;
+
+  function maybeRedirect(bodyText) {
+    try {
+      var data = JSON.parse(bodyText);
+      var url = data && data.result && data.result[0] && data.result[0].redirectUrl;
+      if (url && typeof url === 'string' && url.indexOf('authCode=') !== -1) {
+        // Defer slightly to let the SPA settle, then force the redirect.
+        setTimeout(function () { window.location.href = url; }, 50);
+      }
+    } catch (e) { /* not JSON / not the response we care about */ }
+  }
+
+  // Patch fetch
+  var origFetch = window.fetch;
+  if (origFetch) {
+    window.fetch = function (input, init) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var p = origFetch.apply(this, arguments);
+      if (url.indexOf('/otp/validate') !== -1) {
+        p.then(function (resp) {
+          try { resp.clone().text().then(maybeRedirect); } catch (e) {}
+        }).catch(function () {});
+      }
+      return p;
+    };
+  }
+
+  // Patch XMLHttpRequest
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    this.__aqUrl = url;
+    return origOpen.apply(this, arguments);
+  };
+  var origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (body) {
+    var xhr = this;
+    if (xhr.__aqUrl && xhr.__aqUrl.indexOf('/otp/validate') !== -1) {
+      xhr.addEventListener('load', function () {
+        try { maybeRedirect(xhr.responseText); } catch (e) {}
+      });
+    }
+    return origSend.apply(this, arguments);
+  };
+
+  console.log('[AQ] AliceBlue OTP-validate interceptor armed');
+})();
+true;
+`;
+
 const {width: SCREEN_WIDTH, height: SCREEN_HEIGHT} = Dimensions.get('screen');
 
 const AliceBlueConnectUI = ({
@@ -67,6 +145,10 @@ const AliceBlueConnectUI = ({
             style={styles.webView}
             nestedScrollEnabled={true}
             onNavigationStateChange={handleWebViewNavigationStateChange}
+            // Inject before any AliceBlue page script runs, so our
+            // fetch / XHR monkey-patches are in place before the SPA
+            // makes its OTP-validate call.
+            injectedJavaScriptBeforeContentLoaded={ALICEBLUE_REDIRECT_INTERCEPTOR}
             javaScriptEnabled={true}
             domStorageEnabled={true}
             startInLoadingState={true}

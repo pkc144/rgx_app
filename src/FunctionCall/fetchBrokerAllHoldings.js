@@ -48,10 +48,9 @@ export const fetchBrokerAllHoldings = async (
 
   switch (broker) {
     case 'IIFL Securities':
-      if (!clientCode) return null;
-      data = JSON.stringify({clientCode});
-      url = `${server.ccxtServer.baseUrl}iifl/all-holdings`;
-      break;
+      // IIFL backend endpoints are currently unavailable (404)
+      console.warn('[fetchAllHoldings] IIFL Securities integration is temporarily unavailable');
+      return null;
 
     case 'ICICI Direct':
       if (!apiKey || !jwtToken || !secretKey) return null;
@@ -102,10 +101,10 @@ export const fetchBrokerAllHoldings = async (
       break;
 
     case 'Kotak':
-      if (!jwtToken || !apiKey || !secretKey || !sid) return null;
+      // Kotak NEO UUID flow (2026-04-22) — no consumer secret.
+      if (!jwtToken || !apiKey || !sid) return null;
       data = JSON.stringify({
         consumerKey: checkValidApiAnSecret(apiKey),
-        consumerSecret: checkValidApiAnSecret(secretKey),
         accessToken: jwtToken,
         viewToken,
         sid,
@@ -156,7 +155,8 @@ export const fetchBrokerAllHoldings = async (
         clientCode: clientCode,
         accessToken: stripBearer(jwtToken),
       });
-      url = `${server.ccxtServer.baseUrl}motilal-oswal/all-holdings`;
+      // motilal-oswal/all-holdings returns 404; fallback to /holdings which is available
+      url = `${server.ccxtServer.baseUrl}motilal-oswal/holdings`;
       break;
 
     default:

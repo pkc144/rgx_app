@@ -50,7 +50,11 @@ import {
   AlertCircle,
   XCircle,
 } from 'lucide-react-native';
-import logo from '../../../src/assets/fadedlogo.png';
+import useTokens from '../../../src/theme/useTokens';
+
+// Default-variant faded logo now resolved via `useTokens().assets.logoFadedPng`
+// — see Phase 2 (whitelabel-sync, 2026-05-09) and
+// docs/DESIGN_SYSTEM_ARCHITECTURE.md § Variant assets.
 
 // Badge component
 const StatusBadge = ({ type }) => {
@@ -167,6 +171,7 @@ const TradeItem = ({ item, index, isInGrid, isExpanded, onToggle }) => {
 };
 
 const BasketCard = ({ viewModel, actions, slots }) => {
+  const tokens = useTokens();
   const {
     basketName = 'Basket',
     date = new Date(),
@@ -224,7 +229,7 @@ const BasketCard = ({ viewModel, actions, slots }) => {
 
         <View style={styles.logoContainer} pointerEvents="none">
           <Image
-            source={logo}
+            source={tokens.assets.logoFadedPng}
             style={[styles.logo, { tintColor: '#FFFFFF' }]}
             resizeMode="contain"
           />

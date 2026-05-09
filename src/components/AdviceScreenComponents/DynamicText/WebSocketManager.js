@@ -9,14 +9,34 @@ const WebSocketManager = (() => {
   let subscribers = new Map();
   let socket = null;
   let latestLTPs = new Map();
-  let subscribedSymbols = new Set();
-  let configData = null; // Store globally
-  let userEmail = null; // Store globally
+  let subscribedSymbols = new Map(); // symbol -> exchange (was Set, now Map for reconnect re-subscription)
+  let configData = null;
+  let userEmail = null;
+  let connectingPromise = null; // Guard against concurrent connect() calls
+  let connectResolve = null;   // Stored so connect_error can resolve stale Promise
 
   const baseWsUrl = server.websocket.baseUrl;
 
+  // Helper to get current subscription params, with fallback to Firebase auth
+  const getSubscriptionParams = () => ({
+    userEmail: userEmail || getAuth()?.currentUser?.email,
+    dbName: configData?.config?.REACT_APP_HEADER_NAME || "prod",
+  });
+
+  // Re-subscribe all tracked symbols (used on reconnect)
+  const resubscribeAll = () => {
+    if (subscribedSymbols.size === 0) return;
+    const symbolsToResubscribe = Array.from(subscribedSymbols.entries()).map(
+      ([symbol, exchange]) => ({ symbol, exchange })
+    );
+    const params = getSubscriptionParams();
+    axios.post(`${baseWsUrl}subscribe-array`, {
+      ...params,
+      symbolExchange: symbolsToResubscribe,
+    }).catch(() => {});
+  };
+
   return {
-    // NEW: Initialize method to be called once at app startup
     initialize(config, email) {
       configData = config;
       userEmail = email;
@@ -26,8 +46,18 @@ const WebSocketManager = (() => {
       if (!instance) {
         instance = {
           connect() {
-            return new Promise((resolve) => {
-              if (socket && socket.connected) return resolve();
+            // Already connected
+            if (socket && socket.connected) return Promise.resolve();
+            // Connection in progress — reuse the same promise instead of creating a new socket
+            if (connectingPromise) return connectingPromise;
+
+            connectingPromise = new Promise((resolve) => {
+              connectResolve = resolve;
+              // Clean up any stale socket before creating a new one
+              if (socket) {
+                try { socket.removeAllListeners(); socket.disconnect(); } catch(e) {}
+                socket = null;
+              }
 
               socket = io(`${baseWsUrl}ltp`, {
                 path: "/socket.io",
@@ -39,20 +69,29 @@ const WebSocketManager = (() => {
               });
 
               socket.on("connect", () => {
-                socket.emit("subscribe_me", {
-                  userEmail: userEmail || "31395cse@gmail.com",
-                  dbName: configData?.config?.REACT_APP_HEADER_NAME || "prod"
-                });
+                const params = getSubscriptionParams();
+                socket.emit("subscribe_me", params);
 
-                // Wait a short time after subscribe_me to ensure server processes it
-                // before resolving the promise and allowing subscriptions
+                // Re-subscribe all existing symbols on reconnection
+                resubscribeAll();
+
                 setTimeout(() => {
-                  resolve();
+                  connectingPromise = null;
+                  const r = connectResolve;
+                  connectResolve = null;
+                  if (r) r();
                 }, 200);
               });
 
-              socket.on("connect_error", (e) => {
-                // Connection error - silent
+              socket.on("connect_error", () => {
+                // Resolve stale Promise so any awaiting subscribeToAllSymbols
+                // callers unblock and can still POST to subscribe-array (HTTP,
+                // not socket-dependent). They'll be picked up by resubscribeAll
+                // on the next successful reconnect.
+                connectingPromise = null;
+                const r = connectResolve;
+                connectResolve = null;
+                if (r) r();
               });
 
               socket.on("ltp_update", (data) => {
@@ -68,9 +107,11 @@ const WebSocketManager = (() => {
               });
 
               socket.on("disconnect", () => {
-                // WebSocket disconnected - silent
+                connectingPromise = null;
               });
             });
+
+            return connectingPromise;
           },
 
           async subscribeToAllSymbols(symbols) {
@@ -88,14 +129,14 @@ const WebSocketManager = (() => {
 
               if (cleanSymbols.length === 0) return;
 
-              const response = await axios.post(`${baseWsUrl}subscribe-array`, {
-                userEmail: userEmail,
+              const params = getSubscriptionParams();
+              await axios.post(`${baseWsUrl}subscribe-array`, {
+                ...params,
                 symbolExchange: cleanSymbols,
-                dbName: configData?.config?.REACT_APP_HEADER_NAME || "prod",
               });
 
-              cleanSymbols.forEach(({ symbol }) => {
-                subscribedSymbols.add(symbol);
+              cleanSymbols.forEach(({ symbol, exchange }) => {
+                subscribedSymbols.set(symbol, exchange);
                 if (!subscribers.has(symbol)) {
                   subscribers.set(symbol, []);
                 }
@@ -123,6 +164,9 @@ const WebSocketManager = (() => {
             }
 
             if (!subscribedSymbols.has(symbol)) {
+              // Track immediately so resubscribeAll() picks this up on any
+              // reconnect even if the subscribe-array POST below hasn't fired yet.
+              subscribedSymbols.set(symbol, exchange);
               this.subscribeToAllSymbols([{ symbol, exchange }]);
             }
           },
@@ -139,10 +183,14 @@ const WebSocketManager = (() => {
           },
 
           disconnect() {
-            if (socket) socket.disconnect();
+            if (socket) {
+              socket.removeAllListeners();
+              socket.disconnect();
+            }
             subscribers.clear();
             subscribedSymbols.clear();
             latestLTPs.clear();
+            connectingPromise = null;
             socket = null;
           },
         };

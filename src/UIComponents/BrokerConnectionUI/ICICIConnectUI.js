@@ -22,9 +22,10 @@ import {
   ChevronDown,
 } from 'lucide-react-native';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import iciciIcon from '../../assets/icici.png';
 import ICICIHelpContent from './HelpUI/ICICIHelpContent';
+import EgressIpCallout from '../../components/BrokerConnectionModal/EgressIpCallout';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
@@ -50,6 +51,13 @@ const ICICIConnectUI = ({
   initiateAuth,
   handleWebViewNavigationStateChange,
   shouldRenderContent,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
@@ -70,7 +78,7 @@ const ICICIConnectUI = ({
   return (
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
-        <GradientView
+        <LinearGradient
           colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
@@ -91,7 +99,7 @@ const ICICIConnectUI = ({
             }}
             resizeMode="contain"
           />
-        </GradientView>
+        </LinearGradient>
         {shouldRenderContent && !showWebView && expanded && (
           /* Full Screen Help when expanded */
           <View style={styles.fullScreenHelp}>
@@ -139,6 +147,19 @@ const ICICIConnectUI = ({
                 </View>
               </TouchableOpacity>
 
+              {/* Egress-IP gate (see EgressIpCallout). ICICI requires a
+                  dedicated static IP whitelisted in Breeze API app → IP
+                  Whitelist. */}
+              <EgressIpCallout
+                broker="icicidirect"
+                customerId={egressUserId}
+                customerEmail={egressUserEmail}
+                configData={configData}
+                onAcknowledgeChange={setEgressReady}
+                showUnmetAck={unmetAck}
+                onUnmetAckHandled={() => setUnmetAck && setUnmetAck(false)}
+              />
+
               {/* API & Secret Inputs */}
               <View style={styles.inputCard}>
                 <View style={styles.connectRow}>
@@ -185,11 +206,13 @@ const ICICIConnectUI = ({
                       styles.proceedButton,
                       {
                         backgroundColor:
-                          apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                          apiKey && secretKey && egressReady
+                            ? '#0056B7'
+                            : '#d3d3d3',
                       },
                     ]}
                     onPress={initiateAuth}
-                    disabled={!(apiKey && secretKey)}>
+                    disabled={!(apiKey && secretKey && egressReady)}>
                     {loading ? (
                       <ActivityIndicator size={27} color="#fff" />
                     ) : (

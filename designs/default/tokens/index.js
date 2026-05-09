@@ -29,3 +29,4 @@ export { DEFAULT_SPACING, buildSpacing } from '../../../src/theme/spacing';
 export { DEFAULT_TYPOGRAPHY, buildTypography } from '../../../src/theme/typography';
 export { DEFAULT_RADII, buildRadii } from '../../../src/theme/radii';
 export { DEFAULT_SHADOWS, buildShadows } from '../../../src/theme/shadows';
+export { DEFAULT_ASSETS, buildAssets } from '../../../src/theme/assets';

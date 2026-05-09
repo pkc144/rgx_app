@@ -235,6 +235,7 @@ const ZerodhaConnectModal = ({
       !hasConnectedZerodha.current
     ) {
       let data = JSON.stringify({
+        user_email: userEmail,
         apiKey: apiKey,
         apiSecret: secretKey,
         requestToken: zerodhaRequestToken,

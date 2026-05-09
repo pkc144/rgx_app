@@ -47,10 +47,8 @@ const buildOrderBookPayload = (broker, credentials) => {
 
   switch (broker) {
     case 'IIFL Securities':
-      return {
-        url: `${server.ccxtServer.baseUrl}iifl/order-book`,
-        data: {clientCode},
-      };
+      // IIFL backend endpoints are currently unavailable (404)
+      throw new Error('IIFL Securities integration is temporarily unavailable');
 
     case 'ICICI Direct':
       if (!apiKey || !jwtToken || !secretKey) {
@@ -119,14 +117,16 @@ const buildOrderBookPayload = (broker, credentials) => {
       };
 
     case 'Kotak':
-      if (!jwtToken || !apiKey || !secretKey || !sid) {
+      // Kotak NEO UUID flow (2026-04-22): apiKey is the UUID API Access
+      // Token; there is no secondary consumer secret. ccxt's
+      // get_kotak_credentials_with_fallback no longer expects one.
+      if (!jwtToken || !apiKey || !sid) {
         throw new Error('Kotak: Missing required credentials');
       }
       return {
         url: `${server.ccxtServer.baseUrl}kotak/order-book`,
         data: {
           consumerKey: decryptCredential(apiKey),
-          consumerSecret: decryptCredential(secretKey),
           accessToken: jwtToken,
           sid,
           serverId: serverId || '',
@@ -208,13 +208,8 @@ const buildCancelOrderPayload = (broker, credentials, orderId, orderDetails = {}
 
   switch (broker) {
     case 'IIFL Securities':
-      return {
-        url: `${server.ccxtServer.baseUrl}iifl/cancel-order`,
-        data: {
-          clientCode,
-          orderId,
-        },
-      };
+      // IIFL backend endpoints are currently unavailable (404)
+      throw new Error('IIFL Securities integration is temporarily unavailable');
 
     case 'ICICI Direct':
       return {
@@ -277,7 +272,6 @@ const buildCancelOrderPayload = (broker, credentials, orderId, orderDetails = {}
         url: `${server.ccxtServer.baseUrl}kotak/order-cancel`,
         data: {
           consumerKey: decryptCredential(apiKey),
-          consumerSecret: decryptCredential(secretKey),
           accessToken: jwtToken,
           sid,
           serverId: serverId || '',
@@ -702,20 +696,8 @@ const buildModifyOrderPayload = (broker, credentials, orderId, modifications) =>
       };
 
     case 'Kotak':
-      return {
-        url: `${server.ccxtServer.baseUrl}kotak/modify-order`,
-        data: {
-          consumerKey: decryptCredential(apiKey),
-          consumerSecret: decryptCredential(secretKey),
-          accessToken: jwtToken,
-          sid,
-          serverId: serverId || '',
-          orderId,
-          price: modifications.price,
-          quantity: modifications.quantity,
-          orderType: modifications.orderType || 'LIMIT',
-        },
-      };
+      // Kotak modify-order endpoint is not available (404); cancel and re-place instead
+      throw new Error('Order modification is not supported for Kotak. Please cancel the order and place a new one.');
 
     default:
       throw new Error(`Order modification not supported for broker: ${broker}`);

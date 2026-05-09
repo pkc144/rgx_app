@@ -38,7 +38,9 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
-			<array/>
+			<array>
+				<string>rgxapp</string>
+			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
@@ -106,6 +108,7 @@
 		<string>ObviouslyDemo-NarrowBlack.otf</string>
 		<string>ObviouslyNarrow-Black.otf</string>
 		<string>Gillies.ttf</string>
+		<string>Azonix.otf</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

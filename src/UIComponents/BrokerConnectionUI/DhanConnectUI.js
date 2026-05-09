@@ -22,7 +22,7 @@ import {
   ChevronLeft,
 } from 'lucide-react-native';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import DhanHelpContent from './HelpUI/DhanHelpContent';
 import dhanIcon from '../../assets/dhan.png';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -68,7 +68,7 @@ const DhanConnectUI = ({
       <View style={styles.fullScreen}>
         <View style={{flex: 1, paddingTop: insets.top}}>
           {/* Header */}
-          <GradientView
+          <LinearGradient
             colors={['#0B3D91', '#0056B7']}
             start={{x: 0, y: 0}}
             end={{x: 1, y: 1}}
@@ -80,7 +80,7 @@ const DhanConnectUI = ({
               <Text style={styles.headerTitle}>Connect to Dhan</Text>
             </View>
             <Image source={dhanIcon} style={styles.headerIcon} />
-          </GradientView>
+          </LinearGradient>
 
           {/* Scrollable Content */}
           {expanded ? (

@@ -23,7 +23,7 @@ import {
 import axios from 'axios';
 import MPInvestNowModal from '../../components/ModelPortfolioComponents/MPInvestNowModal';
 import PaymentSuccessModal from '../../components/ModelPortfolioComponents/PaymentSuccessModal';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import MPCard from '../../components/ModelPortfolioComponents/MPCard';
 import {getAuth} from '@react-native-firebase/auth';
 import server from '../../utils/serverConfig';
@@ -36,6 +36,8 @@ import {useTrade} from '../TradeContext';
 import CustomTabBar from './CustomTabbar';
 import {useConfig} from '../../context/ConfigContext';
 import { useComponent } from '../../design/useDesign';
+import useHomeMarketSummary from '../Home/hooks/useHomeMarketSummary';
+import { shapeMpPlan, shapeBespokePlan } from '../../utils/alphanomyPlanShape';
 
 const {width, width: ScreenWidth} = Dimensions.get('window');
 
@@ -49,6 +51,10 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
 
   const Presentation = useComponent('screens.ModelPortfolioScreen');
 
+  // Variant-facing live tickers — must run unconditionally at top of the
+  // component (rules-of-hooks). Default presentation ignores `tickers`.
+  const { tickers } = useHomeMarketSummary();
+
   const [allStrategy, setAllStrategy] = useState([]);
   const [allBespoke, setAllBespoke] = useState([]);
   const auth = getAuth();
@@ -56,6 +62,21 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const navigation = useNavigation();
   const user = auth.currentUser;
   const userEmail = user?.email;
+
+  // Variant-facing user name for the alphanomy `_AppHeader` greeting.
+  // Declared AFTER `user` so we don't TDZ-read an undeclared binding.
+  const userName = userDetails?.name || user?.displayName || '';
+
+  // Variant-facing alphanomy plan rows — derived from the same catalog
+  // state the legacy MP card list reads (`allStrategy`, `allBespoke`).
+  // Default presentation ignores `alphanomyPlans`.
+  const alphanomyPlans = React.useMemo(
+      () => ({
+          mp: (allStrategy || []).map((p) => shapeMpPlan(p)).filter(Boolean),
+          bespoke: (allBespoke || []).map((p) => shapeBespokePlan(p)).filter(Boolean),
+      }),
+      [allStrategy, allBespoke],
+  );
   const [loading, setLoading] = useState();
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -262,6 +283,68 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     });
     setPaymentModal(true);
   };
+
+  // Auto-open the payment modal when arriving from the alphanomy HomeScreen's
+  // Subscribe button. Home navigates with route params:
+  //   { kind: 'mp' | 'bespoke', subscribe: true, planName: <string> }
+  // We wait for the matching catalog list to load (allStrategy / allBespoke),
+  // switch to the correct tab via the routes array (order varies based on
+  // `config.bespokePlansEnabled` / `config.modelPortfolioEnabled`), find the
+  // plan by name, fire handlePricingCardClick, then clear the params so the
+  // effect doesn't refire on rerenders.
+  const route = useRoute();
+  useEffect(() => {
+    const params = route?.params;
+    if (!params || !params.kind) return;
+
+    // 1. Tab switching (always happens if kind is present)
+    const tabKey =
+      params.kind === 'bespoke' ? 'bespoke' : 'modelportfolio';
+    const tabIdx = routes.findIndex(r => r.key === tabKey);
+    if (tabIdx >= 0 && tabIdx !== index) setIndex(tabIdx);
+
+    // 2. Action processing (subscribe / viewMore)
+    const wantsSubscribe = params.subscribe === true;
+    const wantsViewMore = params.viewMore === true;
+    if (!wantsSubscribe && !wantsViewMore) {
+      // If it's just 'View All', we clear the params after switching tabs
+      if (typeof navigation?.setParams === 'function') {
+        navigation.setParams({
+          kind: undefined,
+          subscribe: undefined,
+          viewMore: undefined,
+          planName: undefined,
+        });
+      }
+      return;
+    }
+
+    const list = params.kind === 'bespoke' ? allBespoke : allStrategy;
+    if (!Array.isArray(list) || list.length === 0) return;
+    const target =
+      (params.planName &&
+        list.find(p => p?.name === params.planName)) ||
+      list[0];
+    if (!target) return;
+
+    if (wantsSubscribe) {
+      handlePricingCardClick(target);
+    } else {
+      // View More — same path the legacy MPCard's onViewMore takes:
+      //   MP → MPPerformanceScreen, Bespoke → BespokePerformanceScreen.
+      if (params.kind === 'bespoke') handleCardClickBespoke(target);
+      else handleCardClick(target);
+    }
+    if (typeof navigation?.setParams === 'function') {
+      navigation.setParams({
+        kind: undefined,
+        subscribe: undefined,
+        viewMore: undefined,
+        planName: undefined,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route?.params, allStrategy, allBespoke, routes]);
 
   const handleCardClickSelect = item => setSelectedCard(item);
 
@@ -550,11 +633,43 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         selectedPlan,
         showHeader: !(type === 'tab'),
         width,
+        // Additive — default presentation ignores these.
+        tickers,
+        userEmail,
+        userName,
+        config,
+        alphanomyPlans,
       }}
       actions={{
         onGoBack: () => navigation.goBack(),
         onTabIndexChange: setIndex,
         onCloseModal: () => setModalVisible(false),
+        // Alphanomy variant: tapping Subscribe Now on a shaped plan card
+        // resolves the raw plan from allStrategy/allBespoke by id and fires
+        // the existing handlePricingCardClick → MPInvestNowModal opens.
+        onSubscribe: (planId, kind) => {
+          const list = kind === 'bespoke' ? allBespoke : allStrategy;
+          if (!Array.isArray(list) || !planId) return;
+          const raw = list.find(
+            (p) => (p?._id || p?.id || p?.model_name) === planId,
+          );
+          if (raw) handlePricingCardClick(raw);
+        },
+        // Alphanomy variant: tapping View More resolves the raw plan and
+        // routes to the same legacy detail screen alphaquark navigates to:
+        //   MP plan → handleCardClick → MPPerformanceScreen
+        //   Bespoke → handleCardClickBespoke → BespokePerformanceScreen
+        // Identical path to MPCard's `onViewMore: handleCardClick` on default.
+        onViewMore: (planId, kind) => {
+          const list = kind === 'bespoke' ? allBespoke : allStrategy;
+          if (!Array.isArray(list) || !planId) return;
+          const raw = list.find(
+            (p) => (p?._id || p?.id || p?.model_name) === planId,
+          );
+          if (!raw) return;
+          if (kind === 'bespoke') handleCardClickBespoke(raw);
+          else handleCardClick(raw);
+        },
       }}
       slots={{
         TabBarSlot: (props) => <CustomTabBar {...props} />,

@@ -192,9 +192,7 @@ const RebalanceCard = ({
           visibilityTime: 4500,
           position: 'bottom',
         });
-        return;
-      }
-      if (!_fundsPreflight.ok) {
+      } else if (!_fundsPreflight.ok) {
         if (setOpenTokenExpireModel) {
           setOpenTokenExpireModel(true);
         }
@@ -578,7 +576,6 @@ const RebalanceCard = ({
         const currentFunds = freshStatus?.funds ?? funds;
         const _fundsPreflight = classifyFundsResponse(currentFunds, currentBrokerStatus, freshStatus?.broker || broker);
         if (_fundsPreflight.reason === 'TRANSIENT') {
-          setShowCheckboxModal(false);
           Toast.show({
             type: 'info',
             text1: `${freshStatus?.broker || broker || 'Broker'} temporarily unavailable`,
@@ -586,17 +583,15 @@ const RebalanceCard = ({
             visibilityTime: 4500,
             position: 'bottom',
           });
-          setLoading(false);
-          return;
-        }
-        if (!_fundsPreflight.ok) {
+        } else if (!_fundsPreflight.ok) {
           setShowCheckboxModal(false);
           if (setOpenTokenExpireModel) {
             setOpenTokenExpireModel(true);
           }
           setLoading(false);
           return;
-        } else {
+        }
+        {
           setShowCheckboxModal(false);
           setCurrentStep(2);
           await handleCheckStatus();

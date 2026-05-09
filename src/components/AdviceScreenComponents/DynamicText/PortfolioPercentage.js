@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Text, StyleSheet, View } from 'react-native';
 import WebSocketManager from './WebSocketManager';
-import formatCurrency from '../../../utils/formatcurrency';
+import formatCurrency from '../../../utils/formatCurrency';
 
 const PortfolioPercentage = React.memo(
   ({ type, totalInvested, net_portfolio_updated }) => {
@@ -56,13 +56,18 @@ const PortfolioPercentage = React.memo(
     }, [net_portfolio_updated, handlePriceUpdate]);
 
     // ----------------------------
-    // 🔥 totalCurrent (safe)
+    // 🔥 totalCurrent (safe — fallback to averagePrice when LTP not yet received)
     // ----------------------------
+    let hasAllLTPs = true;
     const totalCurrent = (net_portfolio_updated?.order_results ?? []).reduce(
       (total, stock) => {
-        const ltp = Number(prices[stock.symbol]) || 0;
+        const liveLtp = Number(prices[stock.symbol]);
+        const avg = Number(stock.averagePrice) || 0;
+        // Use live LTP if available, otherwise fall back to averagePrice
+        const effectivePrice = (!isNaN(liveLtp) && liveLtp > 0) ? liveLtp : avg;
+        if (isNaN(liveLtp) || liveLtp <= 0) hasAllLTPs = false;
         const qty = Number(stock.quantity) || 0;
-        return total + ltp * qty;
+        return total + effectivePrice * qty;
       },
       0
     );
@@ -80,10 +85,11 @@ const PortfolioPercentage = React.memo(
     // ----------------------------
     const totalNetReturns = (net_portfolio_updated?.order_results ?? []).reduce(
       (total, stock) => {
-        const ltp = Number(prices[stock.symbol]) || 0;
+        const liveLtp = Number(prices[stock.symbol]);
         const avg = Number(stock.averagePrice) || 0;
+        const effectivePrice = (!isNaN(liveLtp) && liveLtp > 0) ? liveLtp : avg;
         const qty = Number(stock.quantity) || 0;
-        return total + (ltp - avg) * qty;
+        return total + (effectivePrice - avg) * qty;
       },
       0
     );
@@ -101,14 +107,19 @@ const PortfolioPercentage = React.memo(
             <Text
               style={{
                 color: '#FFFFFF',
-                fontSize: 32,
+                fontSize: 18,
                 fontFamily: 'Poppins-SemiBold',
-                marginTop: 4,
+                marginTop: 2,
               }}>
               {totalCurrent
                 ? `₹${formatCurrency(Math.round(totalCurrent))}`
                 : '-'}
             </Text>
+            {!hasAllLTPs && totalCurrent > 0 && (
+              <Text style={{color: 'rgba(255,255,255,0.6)', fontSize: 9, fontFamily: 'Poppins-Regular', marginTop: -2}}>
+                Prices may be delayed
+              </Text>
+            )}
           </View>
         )}
 

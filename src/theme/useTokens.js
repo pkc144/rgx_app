@@ -5,6 +5,7 @@ import { buildSpacing } from './spacing';
 import { buildTypography } from './typography';
 import { buildRadii } from './radii';
 import { buildShadows } from './shadows';
+import { buildAssets } from './assets';
 
 /**
  * Hook that returns the full resolved design-token bundle for the current
@@ -41,6 +42,7 @@ export const useTokens = () => {
             typography: buildTypography(config),
             radii: buildRadii(config),
             shadows: buildShadows(config),
+            assets: buildAssets(config),
         }),
         [
             // Colors deps (mirror useColors.js)
@@ -66,6 +68,7 @@ export const useTokens = () => {
             config.typographyTokens,
             config.radiiTokens,
             config.shadowTokens,
+            config.assetTokens,
         ]
     );
 };

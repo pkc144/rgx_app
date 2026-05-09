@@ -33,14 +33,12 @@ import {
 } from '@react-navigation/drawer'; // Import Drawer Navigator
 import {
   FolderClock,
-  BookmarkPlus,
   LogOut,
   Shield,
   FileText,
   DollarSign,
   Activity,
   History,
-  Notebook,
   Newspaper,
   Briefcase,
   XIcon,
@@ -51,6 +49,8 @@ import {
   Home,
   ChevronRight,
   AlignEndHorizontal,
+  Clipboard,
+  User,
 } from 'lucide-react-native';
 import HomeScreen from '../screens/Home/HomeScreen';
 import PhoneNumberScreen from '../screens/Authentication/PhoneNumberScreen';
@@ -178,19 +178,22 @@ const {
   tabIconColor,
 } = APP_VARIANTS[validVariant];
 const CustomTabBarIcon = ({name, focused}) => {
+  // Bottom-nav icons mirror the alphanomy-improved.html mockup's app
+  // chrome: house / file / briefcase / clipboard / user. The legacy
+  // mapping (Notebook / BookmarkPlus / Newspaper) predates the rebrand.
   let IconComponent;
   if (name === 'Home') {
     IconComponent = Home;
   } else if (name === 'More') {
-    IconComponent = BookmarkPlus;
+    IconComponent = User;
   } else if (name === 'Orders') {
-    IconComponent = Notebook;
+    IconComponent = FileText;
   } else if (name === 'Portfolio') {
     IconComponent = Briefcase;
   } else if (name === 'News') {
     IconComponent = Newspaper;
   } else if (name === 'Plans') {
-    IconComponent = Newspaper;
+    IconComponent = Clipboard;
   }
   return (
     <View
@@ -229,6 +232,8 @@ const CustomTabBarIcon = ({name, focused}) => {
     </View>
   );
 };
+
+const PlansTabWrapper = () => <ModelPortfolioScreen type="tab" />;
 
 const MainTabNavigator = () => {
   const {
@@ -352,9 +357,18 @@ if (state.routes[state.index]?.state) {
 
 const currentKey = currentTabRoute?.key || "";
 const currentName = currentTabRoute?.name || "";
+  // Variant-gated chrome: the legacy CustomToolbar (greeting + cart + bell +
+  // avatar + ticker strip) wraps every tab screen in the default variant.
+  // Variants that ship their own in-screen header (e.g. alphanomy's _AppHeader
+  // helper used by HomeScreen / OrderScreen / ModelPortfolioScreen) suppress
+  // it to avoid the duplicate-header look. Tenants who want the legacy
+  // chrome simply leave DESIGN_VARIANT unset (or set it to "default").
+  const showLegacyToolbar =
+    !Config?.DESIGN_VARIANT || Config.DESIGN_VARIANT === 'default';
+
   return (
     <SafeAreaView style={{flex: 1}}>
-      <CustomToolbar currentRoute={currentName} />
+      {showLegacyToolbar && <CustomToolbar currentRoute={currentName} />}
       <Tab.Navigator
         initialRouteName="Home"
         screenOptions={({route}) => ({
@@ -408,9 +422,9 @@ const currentName = currentTabRoute?.name || "";
           <Tab.Screen
             key="plans-screen"
             name="Plans"
-            options={{headerShown: false}}>
-            {() => <ModelPortfolioScreen type="tab" />}
-          </Tab.Screen>
+            options={{headerShown: false}}
+            component={PlansTabWrapper}
+          />
         )}
         <Tab.Screen
           name="More"

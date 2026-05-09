@@ -21,9 +21,10 @@ import {
   ChevronUp,
   ChevronDown,
 } from 'lucide-react-native';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
 import FyersHelpContent from './HelpUI/FyersHelpContent';
+import EgressIpCallout from '../../components/BrokerConnectionModal/EgressIpCallout';
 import fyersIcon from '../../assets/fyers.png';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
@@ -49,6 +50,13 @@ const FyersConnectUI = ({
   helpVisible,
   setHelpVisible,
   handleWebViewNavigationStateChange,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const insets = useSafeAreaInsets();
@@ -70,7 +78,7 @@ const FyersConnectUI = ({
       <View style={styles.fullScreen}>
         <View style={{flex: 1, paddingTop: insets.top}}>
           {/* Header */}
-          <GradientView
+          <LinearGradient
             colors={['#0B3D91', '#0056B7']}
             start={{x: 0, y: 0}}
             end={{x: 1, y: 1}}
@@ -82,7 +90,7 @@ const FyersConnectUI = ({
               <Text style={styles.headerTitle}>Connect Fyers</Text>
             </View>
             <Image source={fyersIcon} style={styles.headerIcon} />
-          </GradientView>
+          </LinearGradient>
 
           {showWebView ? (
             <WebView
@@ -138,6 +146,19 @@ const FyersConnectUI = ({
                   </View>
                 </Pressable>
 
+                {/* Egress-IP gate (see EgressIpCallout). Fyers requires a
+                    dedicated static IP whitelisted in the user's API
+                    Dashboard → App Details → Allowed IPs. */}
+                <EgressIpCallout
+                  broker="fyers"
+                  customerId={egressUserId}
+                  customerEmail={egressUserEmail}
+                  configData={configData}
+                  onAcknowledgeChange={setEgressReady}
+                  showUnmetAck={unmetAck}
+                  onUnmetAckHandled={() => setUnmetAck && setUnmetAck(false)}
+                />
+
                 {/* Input Card */}
                 <View style={styles.inputCard}>
                   <View style={styles.cardHeader}>
@@ -186,11 +207,13 @@ const FyersConnectUI = ({
                         styles.proceedButton,
                         {
                           backgroundColor:
-                            apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                            apiKey && secretKey && egressReady
+                              ? '#0056B7'
+                              : '#d3d3d3',
                         },
                       ]}
                       onPress={updateSecretKey}
-                      disabled={!(apiKey && secretKey)}>
+                      disabled={!(apiKey && secretKey && egressReady)}>
                       {loading ? (
                         <ActivityIndicator size={27} color="#fff" />
                       ) : (

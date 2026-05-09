@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator, Modal, TextInput } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { XIcon, FileText, Search, ExternalLink, RefreshCw, Filter, ArrowLeft, Calendar, ChevronLeft } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator, Modal, TextInput, Platform } from 'react-native';
+import { FileText, Search, Download, Filter, Calendar, ChevronLeft } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import RNFS from 'react-native-fs';
+import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
@@ -23,12 +24,8 @@ const ResearchReportScreen = () => {
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolsWithLTP, setSymbolsWithLTP] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showPdfModal, setShowPdfModal] = useState(false);
-  const [selectedPdfUrl, setSelectedPdfUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingRowIndex, setLoadingRowIndex] = useState(null);
-  const [webViewLoading, setWebViewLoading] = useState(false);
-  const [shouldLoadPdf, setShouldLoadPdf] = useState(false);
 
   // Date filter states
   const [startDate, setStartDate] = useState('');
@@ -57,31 +54,32 @@ const ResearchReportScreen = () => {
   const applyFilters = () => {
     let filtered = symbolsWithLTP;
     if (searchQuery && searchQuery.trim() !== '') {
-      filtered = filtered.filter(symbol =>
-        symbol.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+      filtered = filtered.filter(report =>
+        (report.symbol || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (report.stockName || '').toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     if (startDate || endDate) {
-      filtered = filtered.filter(symbol => {
-        if (!symbol.lastTradeDate) return true;
-        const tradeDate = new Date(symbol.lastTradeDate);
+      filtered = filtered.filter(report => {
+        if (!report.sentAt) return true;
+        const reportDate = new Date(report.sentAt);
         if (startDate) {
           const startDateTime = new Date(startDate);
           startDateTime.setHours(0, 0, 0, 0);
-          if (tradeDate < startDateTime) return false;
+          if (reportDate < startDateTime) return false;
         }
         if (endDate) {
           const endDateTime = new Date(endDate);
           endDateTime.setHours(23, 59, 59, 999);
-          if (tradeDate > endDateTime) return false;
+          if (reportDate > endDateTime) return false;
         }
         return true;
       });
     }
     filtered.sort((a, b) => {
-      if (!a.lastTradeDate || !b.lastTradeDate) return 0;
-      const dateA = new Date(a.lastTradeDate);
-      const dateB = new Date(b.lastTradeDate);
+      if (!a.sentAt || !b.sentAt) return 0;
+      const dateA = new Date(a.sentAt);
+      const dateB = new Date(b.sentAt);
       return sortOrder === 'latest' ? dateB - dateA : dateA - dateB;
     });
     setFilteredSymbols(filtered);
@@ -120,98 +118,159 @@ const ResearchReportScreen = () => {
           Config.REACT_APP_AQ_SECRET
         ),
       };
-      const tradeHistoryResponse = await fetch(`${server.server.baseUrl}api/trade-history/range-trades`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ userEmail }),
-      });
-      if (!tradeHistoryResponse.ok) {
-        throw new Error(`Failed to fetch trade history: ${tradeHistoryResponse.status}`);
-      }
-      const data = await tradeHistoryResponse.json();
-      let tradesData = [];
-      if (Array.isArray(data)) {
-        tradesData = data;
-      } else if (data && typeof data === "object") {
-        if (data.trades && Array.isArray(data.trades)) {
-          tradesData = data.trades;
-        } else if (data.data && Array.isArray(data.data)) {
-          tradesData = data.data;
-        } else {
-          tradesData = [data];
+
+      // Fetch from all three sources in parallel (matching web app)
+      const [ccxtResponse, backendResponse, uploadedResponse] = await Promise.allSettled([
+        fetch(
+          `${server.ccxtServer.baseUrl}misc/research-reports/user/${encodeURIComponent(userEmail)}`,
+          { method: "GET", headers }
+        ).then(res => res.json()),
+        fetch(
+          `${server.server.baseUrl}api/research-reports/user/${encodeURIComponent(userEmail)}`,
+          { method: "GET", headers }
+        ).then(res => res.json()),
+        fetch(
+          `${server.server.baseUrl}api/research-pdf/user/${encodeURIComponent(userEmail)}`,
+          { method: "GET", headers }
+        ).then(res => res.json()),
+      ]);
+
+      // CCXT reports
+      const ccxtReports = ccxtResponse.status === "fulfilled" && ccxtResponse.value?.success
+        ? (ccxtResponse.value.reports || []).map(r => ({
+            _id: r._id,
+            reportId: r.reportId,
+            symbol: r.symbol || '',
+            stockName: r.companyName || '',
+            sector: '',
+            currentPrice: null,
+            targetPrice: r.targetPrice || null,
+            stopLoss: null,
+            recommendationType: '',
+            timeHorizon: '',
+            pdfPresignedUrl: r.reportLink || '',
+            sentAt: r.sentToUserAt ? new Date(r.sentToUserAt) : (r.createdAt ? new Date(r.createdAt) : null),
+            researchDate: r.createdAt,
+            source: 'ccxt',
+          }))
+        : [];
+
+      // Backend reports (same source the app was already using)
+      const backendReports = backendResponse.status === "fulfilled" && backendResponse.value?.success
+        ? (backendResponse.value.data || []).map(report => ({
+            _id: report._id,
+            reportId: report.reportId,
+            symbol: report.stockInfo?.stockSymbol || '',
+            stockName: report.stockInfo?.stockName || '',
+            sector: report.stockInfo?.sector || '',
+            currentPrice: report.priceData?.currentPrice,
+            targetPrice: report.priceData?.targetPrice,
+            stopLoss: report.priceData?.stopLoss,
+            recommendationType: report.recommendation?.type || '',
+            timeHorizon: report.recommendation?.timeHorizon || '',
+            pdfPresignedUrl: report.pdfPresignedUrl || report.pdfFile?.s3Url || report.pdfUrl || '',
+            sentAt: report.sentAt ? new Date(report.sentAt) : null,
+            researchDate: report.researchDate,
+            source: report.source,
+          }))
+        : [];
+
+      // Uploaded PDF reports
+      const uploadedReports = uploadedResponse.status === "fulfilled" && uploadedResponse.value?.success
+        ? (uploadedResponse.value.reports || []).map(r => ({
+            _id: r.reportId,
+            reportId: r.reportId,
+            symbol: r.stockSymbol || '',
+            stockName: r.stockName || '',
+            sector: '',
+            currentPrice: null,
+            targetPrice: r.recommendation?.targetPrice || null,
+            stopLoss: null,
+            recommendationType: '',
+            timeHorizon: '',
+            pdfPresignedUrl: r.pdfUrl || '',
+            sentAt: null,
+            researchDate: r.createdAt || r.researchDate,
+            source: 'uploaded',
+          }))
+        : [];
+
+      // Merge and deduplicate by reportId (matching web app logic)
+      const reportMap = new Map();
+      [...ccxtReports, ...backendReports, ...uploadedReports].forEach(r => {
+        const key = r.reportId || r._id;
+        if (!reportMap.has(key)) {
+          reportMap.set(key, r);
         }
-      }
-      const tradedSymbols = [...new Set(
-        tradesData
-          .filter(trade => trade.exchange === "NSE")
-          .map(trade => trade.symbol)
-      )];
-      const symbolsWithInfo = tradedSymbols.map(symbol => {
-        const trades = tradesData.filter(trade =>
-          trade.symbol === symbol
-        );
-        const lastTrade = trades.length > 0 ? trades[trades.length - 1] : null;
-        return {
-          symbol: symbol,
-          name: getCompanyName(symbol.replace('-EQ', '')),
-          totalTrades: trades.length,
-          lastTradeDate: lastTrade ? new Date(lastTrade.date) : null,
-          buyTrades: trades.filter(t => t.type === 'BUY').length,
-          sellTrades: trades.filter(t => t.type === 'SELL').length,
-          exchange: 'NSE',
-          hasResearchReport: false,
-          reportLink: null,
-          ltp: lastTrade ? lastTrade.ltp : null, // Show Last Traded Price if available
-        };
       });
-      setAvailableSymbols(symbolsWithInfo);
-      setSymbolsWithLTP(symbolsWithInfo);
+
+      const allReports = Array.from(reportMap.values());
+      setAvailableSymbols(allReports);
+      setSymbolsWithLTP(allReports);
     } catch (error) {
+      console.error('Error fetching research reports:', error);
       setAvailableSymbols([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const getCompanyName = (symbol) => {
-    const companyNames = { /* unchanged mapping ... */ };
-    return companyNames[symbol] || symbol;
+  const showToast = (text2, type = 'success') => {
+    Toast.show({
+      type,
+      text2,
+      position: 'bottom',
+      text1Style: { color: 'black', fontSize: 11, fontFamily: 'Poppins-Medium' },
+      text2Style: { color: 'black', fontSize: 12, fontFamily: 'Poppins-Regular' },
+    });
   };
 
-  const handleOpenResearchReport = async (symbol) => {
-    setLoadingRowIndex(symbol);
+  const resolvePdfUrl = async (report) => {
+    if (report.pdfPresignedUrl) return report.pdfPresignedUrl;
+    const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+      'aq-encrypted-key': generateToken(
+        Config.REACT_APP_AQ_KEYS,
+        Config.REACT_APP_AQ_SECRET,
+      ),
+    };
+    const response = await fetch(
+      `${server.ccxtServer.baseUrl}comms/research-report-link/${advisorTag}/${report.symbol}`,
+      { method: 'GET', headers },
+    );
+    const data = await response.json();
+    return data?.link && data.link !== '-' ? data.link : null;
+  };
+
+  const handleDownloadResearchReport = async (report) => {
     try {
-      const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || '';
-      const url = `${server.ccxtServer.baseUrl}comms/research-report-link/${advisorTag}/${symbol}`;
-      const headers = {
-        "Content-Type": "application/json",
-        "X-Advisor-Subdomain": configData?.config?.REACT_APP_HEADER_NAME,
-        "aq-encrypted-key": generateToken(
-          Config.REACT_APP_AQ_KEYS,
-          Config.REACT_APP_AQ_SECRET
-        ),
-      };
-      const response = await fetch(url, { method: "GET", headers });
-      if (response.status === 404) {
-        alert('No research report available for this trade');
-        setLoadingRowIndex(null);
+      setLoadingRowIndex(report._id);
+      const url = await resolvePdfUrl(report);
+      if (!url) {
+        showToast('No research report available', 'error');
         return;
       }
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-      const data = await response.json();
-      if (data.status === 0 && data.link) {
-        setSelectedPdfUrl(data.link);
-        setShowPdfModal(true);
-        setShouldLoadPdf(true);
-      } else if (data.status === 1) {
-        alert(data.message || 'No research report available for this trade');
+
+      const safeSymbol = (report.symbol || 'report').replace(/[^\w-]/g, '_');
+      const fileName = `${safeSymbol}_report_${Date.now()}.pdf`;
+      const path =
+        Platform.OS === 'android'
+          ? `${RNFS.DownloadDirectoryPath}/${fileName}`
+          : `${RNFS.DocumentDirectoryPath}/${fileName}`;
+
+      const { promise } = RNFS.downloadFile({ fromUrl: url, toFile: path });
+      const result = await promise;
+
+      if (result.statusCode === 200 && (await RNFS.exists(path))) {
+        showToast('Report saved to Downloads', 'success');
       } else {
-        alert('No research report available for this trade');
+        showToast('Failed to download report', 'error');
       }
-    } catch (err) {
-      alert('No research report available for this trade');
+    } catch (error) {
+      console.error('Error downloading research report:', error);
+      showToast('Failed to download report', 'error');
     } finally {
       setLoadingRowIndex(null);
     }
@@ -220,7 +279,7 @@ const ResearchReportScreen = () => {
   // Determine dynamic month text
   const getMonthText = () => {
     if (!filteredSymbols.length) return '--';
-    const mostRecent = filteredSymbols[0].lastTradeDate;
+    const mostRecent = filteredSymbols[0].sentAt;
     if (!mostRecent) return '--';
     return mostRecent.toLocaleDateString('en-US', { month: 'short' });
   };
@@ -360,53 +419,47 @@ const ResearchReportScreen = () => {
             <Text style={styles.loadingText}>Loading research reports...</Text>
           </View>
         ) : filteredSymbols.length > 0 ? (
-          filteredSymbols.map((symbol, idx) => (
-            <View style={styles.reportCard} key={idx}>
+          filteredSymbols.map((report, idx) => {
+            const recoType = (report.recommendationType || '').toUpperCase();
+            const isBuy = recoType === 'BUY';
+            const isSell = recoType === 'SELL';
+            return (
+            <View style={styles.reportCard} key={report._id || idx}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.reportSymbol}>
-                  {symbol.symbol} <Text style={styles.reportNSE}>({symbol.exchange})</Text>
+                  {report.symbol} {report.stockName ? <Text style={styles.reportNSE}>({report.stockName})</Text> : null}
                 </Text>
                 <Text style={styles.reportLTP}>
-                  LTP : <Text style={{ fontWeight: '700' }}>{symbol.ltp || '--'}</Text>
+                  LTP : <Text style={{ fontWeight: '700' }}>{report.currentPrice || '--'}</Text>
                 </Text>
               </View>
               <View style={styles.reportCenter}>
+                {recoType ? (
                 <View
                   style={[
                     styles.tradeChip,
-                    symbol.buyTrades > symbol.sellTrades
-                      ? styles.buyChip
-                      : symbol.buyTrades < symbol.sellTrades
-                      ? styles.sellChip
-                      : styles.mixedChip,
+                    isBuy ? styles.buyChip : isSell ? styles.sellChip : styles.mixedChip,
                   ]}
                 >
                   <Text
                     style={[
                       styles.tradeChipText,
-                      symbol.buyTrades > symbol.sellTrades
-                        ? styles.buyChipText
-                        : symbol.buyTrades < symbol.sellTrades
-                        ? styles.sellChipText
-                        : styles.mixedChipText,
+                      isBuy ? styles.buyChipText : isSell ? styles.sellChipText : styles.mixedChipText,
                     ]}
                   >
-                    {symbol.buyTrades > symbol.sellTrades
-                      ? 'Buy'
-                      : symbol.buyTrades < symbol.sellTrades
-                      ? 'Sell'
-                      : 'Mixed'}
+                    {isBuy ? 'Buy' : isSell ? 'Sell' : recoType}
                   </Text>
                 </View>
+                ) : null}
                 <Text style={styles.reportDate}>
-                  {symbol.lastTradeDate
-                    ? symbol.lastTradeDate.toLocaleDateString('en-US', {
+                  {report.sentAt
+                    ? report.sentAt.toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',
                       }) +
                       ' ' +
-                      symbol.lastTradeDate.toLocaleTimeString('en-US', {
+                      report.sentAt.toLocaleTimeString('en-US', {
                         hour: 'numeric',
                         minute: '2-digit',
                         second: '2-digit',
@@ -417,17 +470,18 @@ const ResearchReportScreen = () => {
               </View>
               <TouchableOpacity
                 style={styles.reportRight}
-                onPress={() => handleOpenResearchReport(symbol.symbol)}
-                disabled={loadingRowIndex === symbol.symbol}
+                onPress={() => handleDownloadResearchReport(report)}
+                disabled={loadingRowIndex === report._id}
               >
-                {loadingRowIndex === symbol.symbol ? (
+                {loadingRowIndex === report._id ? (
                   <ActivityIndicator size="small" color="#045DFF" />
                 ) : (
-                  <ExternalLink size={18} color="#045DFF" />
+                  <Download size={18} color="#045DFF" />
                 )}
               </TouchableOpacity>
             </View>
-          ))
+            );
+          })
         ) : (
           <View style={styles.emptyContainer}>
             <FileText size={48} color="#ccc" />
@@ -443,47 +497,6 @@ const ResearchReportScreen = () => {
         )}
       </ScrollView>
 
-      {/* PDF Modal */}
-      <Modal
-        visible={showPdfModal}
-        animationType="slide"
-        onRequestClose={() => {
-          setShowPdfModal(false);
-          setSelectedPdfUrl('');
-          setWebViewLoading(false);
-          setShouldLoadPdf(false);
-        }}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => {
-                setShowPdfModal(false);
-                setSelectedPdfUrl('');
-                setWebViewLoading(false);
-                setShouldLoadPdf(false);
-              }}
-            >
-              <XIcon size={24} color="#222" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Research Report</Text>
-          </View>
-          {shouldLoadPdf && selectedPdfUrl ? (
-            <WebView
-              source={{ uri: selectedPdfUrl }}
-              style={styles.webView}
-              onLoadStart={() => setWebViewLoading(true)}
-              onLoadEnd={() => setWebViewLoading(false)}
-            />
-          ) : (
-            <View style={styles.pdfLoadingContainer}>
-              <ActivityIndicator size="large" color="#407BFF" />
-              <Text style={styles.pdfLoadingText}>Loading PDF...</Text>
-            </View>
-          )}
-        </SafeAreaView>
-      </Modal>
     </SafeAreaView>
   );
 };

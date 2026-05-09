@@ -6,8 +6,15 @@ import { Info, Eye, EyeOff, X } from "lucide-react-native";
 import server from '../utils/serverConfig';
 import { generateToken } from '../utils/SecurityTokenManager';
 import Config from 'react-native-config';
+import useModalStore from '../GlobalUIModals/modalStore';
+import { refreshGrowwSession } from '../utils/growwRefresh';
 
-const OAUTH_BROKERS = ['Zerodha', 'Angel One', 'Dhan', 'Fyers', 'Upstox', 'AliceBlue', 'Groww', 'Hdfc Securities', 'Motilal Oswal'];
+// OAuth/re-consent brokers — the reconnect modal renders a single
+// "Reconnect {broker}" button for each. Groww is NOT in this list as
+// of 2026-04-21: it migrated to credential + TOTP-seed and has its
+// own dedicated branch (see broker === 'Groww' render block below)
+// that renders "Refresh Groww session" and calls refreshGrowwSession.
+const OAUTH_BROKERS = ['Zerodha', 'Angel One', 'Dhan', 'Fyers', 'Upstox', 'AliceBlue', 'Hdfc Securities', 'Motilal Oswal', 'Axis Securities'];
 
 const TokenExpireBrokerModal = ({
   openTokenExpireModel,
@@ -175,6 +182,38 @@ const TokenExpireBrokerModal = ({
     }
   };
 
+  // Groww takes a different steady-state path than the other
+  // OAuth brokers: we already store the customer's TOTP seed
+  // server-side (AES-256 at rest), so daily refresh is a single
+  // POST to /api/groww/refresh-token — no browser redirect, no
+  // re-pasting creds. Fall through to the connect modal only
+  // when the stored seed is missing (NO_TOTP_SEED → legacy
+  // upgrade) or rejected (INVALID_SEED → revoked key recovery).
+  const showModalAlert = useModalStore((state) => state.showAlert);
+  const handleGrowwRefresh = async () => {
+    setLoginLoading(true);
+    try {
+      await refreshGrowwSession({
+        userId,
+        advisorSubdomain: Config.REACT_APP_HEADER_NAME,
+        showAlert: showModalAlert,
+        onClose: () => setOpenTokenExpireModel(false),
+        onSuccess: () => {
+          if (getUserDetails) getUserDetails();
+        },
+        // NO_TOTP_SEED / INVALID_SEED → re-open the Groww connect
+        // modal so the customer can capture (or recapture) a seed.
+        onOpenConnectModal: () => {
+          if (checkValidApiAnSecret) {
+            checkValidApiAnSecret('Groww');
+          }
+        },
+      });
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (showSuccessMsg) {
       const timer = setTimeout(() => {
@@ -209,12 +248,26 @@ const TokenExpireBrokerModal = ({
           <Text style={styles.title}>
             {broker === 'Zerodha'
               ? 'Your Zerodha session has expired. Please reconnect to Kite to continue.'
-              : isOAuthBroker
-                ? `Your ${broker} session has expired. Please reconnect to continue.`
-                : 'Please login to your broker to continue investments'}
+              : broker === 'Groww'
+                ? 'Your Groww session has expired. Tap Refresh — no re-pasting credentials.'
+                : isOAuthBroker
+                  ? `Your ${broker} session has expired. Please reconnect to continue.`
+                  : 'Please login to your broker to continue investments'}
           </Text>
           <View style={styles.inputContainer}>
-            {isOAuthBroker && (
+            {broker === 'Groww' ? (
+              <TouchableOpacity
+                style={styles.submitButton}
+                onPress={handleGrowwRefresh}
+                disabled={loginLoading}
+              >
+                {loginLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Refresh Groww session</Text>
+                )}
+              </TouchableOpacity>
+            ) : isOAuthBroker && (
               <TouchableOpacity
                 style={styles.submitButton}
                 onPress={handleOAuthReconnect}

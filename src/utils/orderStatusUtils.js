@@ -6,12 +6,20 @@
 
 const SUCCESS_STATUSES = [
   'complete', 'completed', 'traded', 'filled', 'executed',
-  'placed', 'ordered', 'open', 'transit',
 ];
 
 const PENDING_STATUSES = [
   'pending', 'trigger pending', 'trigger_pending',
   'requested', 'am', 'after market',
+  'open', 'transit', 'placed', 'ordered',
+  // 2026-05-07: 'manually_placed' marks a trade the user placed
+  // at the broker directly (when broker rejected our automated
+  // attempt — cautionary listing, restricted scrip, low-funds,
+  // etc.). Treated as pending-but-placed so the result modal
+  // counts it toward `successCount` and renders the green card
+  // style. Mirrors the bespoke-flow `trade_place_status`
+  // 'manually_placed' value already used in /api/recommendation.
+  'manually_placed', 'manually placed',
 ];
 
 const REJECTED_STATUSES = [
@@ -55,8 +63,14 @@ export const isOrderSuccess = (status) =>
  */
 export const isOrderRejected = (status) => {
   const normalized = normalizeOrderStatus(status);
-  return normalized === 'rejected' || normalized === 'cancelled';
+  return normalized === 'rejected';
 };
+
+/**
+ * Check if order status indicates cancellation.
+ */
+export const isOrderCancelled = (status) =>
+  normalizeOrderStatus(status) === 'cancelled';
 
 /**
  * Check if order status indicates it is still pending.

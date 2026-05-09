@@ -48,7 +48,7 @@ const ProfileModal = ({
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
   const [userDetails, setuserDetails] = useState(null);
 
-  const advisorName = 'ARFS';
+  const advisorName = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || configData?.appName || getAdvisorSubdomain();
   const showTelegram = '0';
   const radius = 35;
   const circumference = 2 * Math.PI * radius;

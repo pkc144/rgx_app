@@ -14,19 +14,19 @@ const PortfolioCard2 = ({
     <View
       style={[
         styles.stickyCard,
-        {backgroundColor: pnlPercentage > 0 ? '#C84444' : '#16A085'},
+        {backgroundColor: parseFloat(profitAndLoss) >= 0 ? '#16A085' : '#C84444'},
       ]}>
       <View style={styles.pnlContainer}>
         <Text
-          style={{color: 'white', fontFamily: 'Poppins-Regular', fontSize: 28}}>
-          ₹180000
+          style={{color: 'white', fontFamily: 'Poppins-Regular', fontSize: 12, opacity: 0.8}}>
+          Current P&L
         </Text>
         <View style={styles.row1}>
           <View style={styles.pnlBorder}>
             <Text style={styles.pnlText2}>P&L</Text>
           </View>
 
-          {allHoldingsData?.totalprofitandloss > 0 ? (
+          {parseFloat(profitAndLoss) > 0 ? (
             <View style={styles.row}>
               <Text style={styles.pnlValuepos}>
                 +₹{formatCurrency(Math.abs(profitAndLoss))}
@@ -37,37 +37,23 @@ const PortfolioCard2 = ({
                 </Text>
               </View>
             </View>
-          ) : allHoldingsData?.totalprofitandloss < 0 ? (
-            <View style={{flexDirection: 'row'}}>
+          ) : parseFloat(profitAndLoss) < 0 ? (
+            <View style={styles.row}>
+              <Text style={styles.pnlValueneg}>
+                -₹{formatCurrency(Math.abs(profitAndLoss))}
+              </Text>
               <View style={styles.pnlPercentageContainerneg}>
                 <Text style={styles.pnlPercentageneg}>
-                  -₹{formatCurrency(Math.abs(profitAndLoss))}
+                  {pnlPercentage}%
                 </Text>
               </View>
             </View>
           ) : (
-            <View style={styles.row1}>
-              {allHoldingsData && allHoldingsData?.totalpnlpercentage ? (
-                <View
-                  style={
-                    allHoldingsData.totalpnlpercentage > 0
-                      ? styles.pnlPercentageContainerneg
-                      : styles.pnlPercentageContainerpos
-                  }>
-                  <Text
-                    style={
-                      allHoldingsData.totalpnlpercentage > 0
-                        ? styles.pnlPercentagepos
-                        : styles.pnlPercentagepos
-                    }>
-                    {pnlPercentage}%
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.pnlPercentageContainerpos}>
-                  <Text style={styles.pnlPercentagepos}>0.00%</Text>
-                </View>
-              )}
+            <View style={styles.row}>
+              <Text style={styles.pnlValuepos}>₹0</Text>
+              <View style={styles.pnlPercentageContainerpos}>
+                <Text style={styles.pnlPercentagepos}>0.00%</Text>
+              </View>
             </View>
           )}
         </View>
@@ -81,17 +67,16 @@ const PortfolioCard2 = ({
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'center',
-          color: 'white',
         }}>
         <Text style={styles.amountValue}>
-          {allHoldingsData
-            ? `₹${formatCurrency(parseInt(allHoldingsData?.totalinvvalue))}`
-            : '-'}
+          {allHoldingsData?.totalinvvalue
+            ? `₹${formatCurrency(parseInt(allHoldingsData.totalinvvalue))}`
+            : '₹0'}
         </Text>
         <Text style={styles.amountValue}>
-          {allHoldingsData
-            ? `₹${formatCurrency(parseInt(allHoldingsData?.totalholdingvalue))}`
-            : '-'}
+          {allHoldingsData?.totalholdingvalue
+            ? `₹${formatCurrency(parseInt(allHoldingsData.totalholdingvalue))}`
+            : '₹0'}
         </Text>
       </View>
     </View>

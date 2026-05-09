@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
+import LinkifiedUrl from './LinkifiedUrl';
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const HDFCHelpContent = ({expanded, onExpandChange }) => {
@@ -12,7 +13,7 @@ const HDFCHelpContent = ({expanded, onExpandChange }) => {
 
   return (
     <View>
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 0 }}>
+    <View style={styles.container}>
       <View style={styles.videoBox}>
         <YoutubePlayer
           height={screenHeight * 0.24}
@@ -27,7 +28,7 @@ const HDFCHelpContent = ({expanded, onExpandChange }) => {
                             style={styles.instruction}
                           >
                             1. Go to{" "}
-                            <Text onPress={() => Linking.openURL('https://developer.hdfcsec.com/')} style={styles.link}>https://developer.hdfcsec.com/</Text>
+                            <LinkifiedUrl url="https://developer.hdfcsec.com/" />
                           </Text>
                           <Text style={styles.instruction}>
                             2. Log in with your ID, password, and OTP.
@@ -43,20 +44,22 @@ const HDFCHelpContent = ({expanded, onExpandChange }) => {
                           </Text>
                           <Text style={styles.instruction}>
                             4. Click *Create* to make a new app. Enter app
-            name, redirect URL: {' '}
-            <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
-                              {brokerConnectRedirectURL}</Text>
+            name, paste your dedicated static IP (claimed in the
+            IP-whitelist panel above) into the "Allowed IPs" field on the
+            InvestRight app form — HDFC rejects orders from non-whitelisted
+            IPs. Set the redirect URL to: {' '}
+            <LinkifiedUrl url={brokerConnectRedirectURL} />
             {' '}and description, then click *Create *.
                           </Text>
                           <Text style={styles.instruction}>
                             5. Copy the *API* and *Secret Key* and paste
-            them into theAlphaQuark platform to connect
+            them into the {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'} platform to connect
             your broker.
                           </Text>
         </>
       )}
    
-    </ScrollView>
+    </View>
   
     </View>
 

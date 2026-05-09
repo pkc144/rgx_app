@@ -1,274 +1,141 @@
 # Model Portfolio Architecture
 
-> **Last updated**: 2026-04-17
+> **Last updated**: 2026-04-20 (synced to AlphaB2B v3.8.1)
 
 ## Overview
 
-Model portfolios allow advisors to create curated stock baskets that subscribers can invest in. The system handles subscription, trade execution, rebalancing, and performance tracking.
+Model Portfolios (MP) are advisor-created curated baskets that a client can subscribe to with a set amount. Subscribing triggers the initial buy trades, after which the plan appears in **My Plans** and participates in the rebalance flow.
 
-## Flow
-
-### 1. Subscription Flow
-
-```
-User browses available model portfolios
-    │  Screen: PlansScreen / ModelPortfolioScreen
-    │
-    ▼
-User taps "Subscribe" on a portfolio
-    │  Opens UserStrategySubscribeModal.js
-    │
-    ▼
-Payment processing (if required)
-    │  Razorpay / Cashfree / PayU
-    │
-    ▼
-Subscription created on backend
-    │  POST /api/model-portfolio/subscribe
-    │
-    ▼
-Portfolio appears in user's subscriptions
-```
-
-### 2. Trade Execution Flow
-
-```
-Advisor publishes rebalance signal
-    │  Backend calculates buy/sell trades per subscriber
-    │
-    ▼
-User sees rebalance notification
-    │  RebalanceAdvices.js shows pending trades
-    │
-    ▼
-User opens review modal → MPReviewTradeModal.js
-    │  Shows buy/sell trades with quantities and prices
-    │
-    ▼
-User confirms execution
-    │  ProcessTrades.js routes to broker-specific endpoints
-    │
-    ▼
-Orders placed → Results displayed
-    │  Success/failure per stock shown
-    │
-    ▼
-Portfolio holdings updated
-```
-
-### 3. Rebalancing Flow
-
-See [REBALANCING.md](REBALANCING.md) for detailed rebalancing architecture.
-
-## Key Files
+## Screens & Components
 
 | File | Purpose |
 |------|---------|
-| `src/components/ModelPortfolioComponents/MPReviewTradeModal.js` | Review and execute model portfolio trades |
-| `src/components/ModelPortfolioComponents/UserStrategySubscribeModal.js` | Subscribe to a model portfolio |
-| `src/services/ModelPortfolioService.js` | API calls for model portfolio operations |
-| `src/screens/Drawer/ModelPortfolioScreen.js` | Model portfolio listing screen |
-| `src/screens/Drawer/MPPerformanceScreen.js` | Portfolio performance tracking |
-| `src/components/AdviceScreenComponents/RebalanceAdvices.js` | Rebalance trade cards |
-| `src/components/AdviceScreenComponents/RebalanceModal.js` | Rebalance review modal |
-| `src/components/ModelPortfolioComponents/RecommendationSuccessModal.js` | Post-execution Trade Details modal — renders per-order success/failure list, status header summary, Cautionary Listing alert, and Insufficient Funds alert |
+| `src/screens/Drawer/ModelPortfolioScreen.js` | Top-level MP list with `Model Portfolio` / `Bespoke Plans` tabs |
+| `src/components/ModelPortfolioComponents/MPCard.js` | List card for a single plan |
+| `src/components/ModelPortfolioComponents/UserStrategySubscribeModal.js` | Subscribe-now modal (amount picker, broker check, pre-order validation) |
+| `src/components/ModelPortfolioComponents/MPReviewTradeModal.js` | Review trade modal (per-stock preview, EDIS/TPIN, place orders) |
+| `src/components/ModelPortfolioComponents/MPInvestNowModal.js` | Quick-invest entry |
+| `src/components/ModelPortfolioComponents/RecommendationSuccessModal.js` | Post-subscription success state |
+| `src/components/AdviceScreenComponents/MPStatusModal.js` | Per-order status panel with stale-failure guard |
+| `src/screens/Home/AfterSubscriptionScreen.js` | Post-subscribe dashboard: holdings table, distribution, funds |
+| `src/screens/Drawer/MPPerformanceScreen.js` | Per-plan performance: TOTAL INVESTED / TOTAL CURRENT / RETURNS top card |
 
-## Trade Types
-
-Model portfolio trades can be:
-- **Buy**: New positions or adding to existing
-- **Sell**: Reducing or exiting positions
-- **Rebalance**: Adjusting weights to match target allocation
-
-## Broker Integration
-
-Trade execution goes through the same broker infrastructure as regular stock advices:
-- `ProcessTrades.js` handles all broker-specific API routing
-- `buildBrokerPayloadFields()` constructs broker-specific payloads
-- `defaultDecrypt()` handles credential decryption
-
-## Backend APIs
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/model-portfolio/strategies` | List available model portfolios |
-| `POST /api/model-portfolio/subscribe` | Subscribe to a portfolio |
-| `POST /api/model-portfolio/rebalance/calculate` | Calculate rebalance trades |
-| `POST /api/model-portfolio/execute` | Execute model portfolio trades |
-| `GET /api/model-portfolio/performance` | Get portfolio performance data |
-
-## Parity with Web App
-
-Both mobile and web apps:
-- Use the same backend APIs for model portfolio operations
-- Share the same `buildBrokerPayloadFields()` logic
-- Support the same set of brokers for trade execution
-
-Differences:
-- Mobile uses `MPReviewTradeModal.js`, web uses `ReviewBrokerRecordsModal.js`
-- Mobile navigation is stack-based, web uses route-based navigation
-- Mobile has `DummyBrokerHoldingConfirmation` for simulation mode
-
-## Transient Service-Window Handling in MPReviewTradeModal (2026-04-17)
-
-Before the existing `allOrdersFailed` early-exit in the primary backend-order path (`api/model-portfolio-place-order`), `MPReviewTradeModal.js` now calls `detectTransientOrderWindowError(response?.data)` from `rebalanceHelpers.js`. When every failed row is a documented transient broker code (e.g. Upstox `UDAPI100074` during the 00:00–05:30 IST maintenance window), the modal:
-
-1. Shows a `Toast.show({ type: 'info', text1: 'Broker service window', text2: <message from detector> })`.
-2. Calls `enrollStatusCheckQueue()` so the failed rows reconcile when the broker reopens.
-3. Closes the review modal via `onCloseReviewTrade()` and clears loading.
-4. Returns — bypassing the `openSucess()` all-failed UI.
-
-The Fyers publisher path (second `allOrdersFailed` block in the same file) is intentionally **not wired** because the publisher SDK response shape differs and the status-recording chain (`rebalance/record-publisher-results`, `rebalance/update/subscriber-execution`) must run regardless of per-row outcome.
-
-See [REBALANCING.md](REBALANCING.md#wire-up-points-for-detecttransientorderwindowerror) for the full helper-and-wiring contract.
-
-## RebalanceCard Execution Status
-
-**File:** `src/UIComponents/RebalanceAdvicesUI/RebalanceCard.js`
-
-The rebalance card shows different button states depending on the user's execution record:
-
-| Condition | Button Label | Enabled | Color |
-|-----------|-------------|---------|-------|
-| No execution record (`!hasExecutionRecord`) | "No rebalance pending" | No | Default |
-| `status === 'executed'` | "Rebalance Accepted" | No | Grey |
-| `status === 'partial'` | "Retry Rebalance" | Yes | Orange |
-| `status === 'pending'` | "Check Order Status" | Yes | Yellow |
-| Repair mode | "View/action on updates" | Yes | Red |
-| Normal pending | "Accept Rebalance" | Yes | Default gradient |
-
-The `hasExecutionRecord` guard (added in commit `4c869c7`) prevents phantom buttons when no execution record exists for the selected broker. See [REBALANCING.md](REBALANCING.md#rebalancecard-execution-status-guard) for details.
-
-## DummyBroker Execution with Retry
-
-The `DummyBrokerHoldingConfirmation` component now retries the subscriber-execution status update once (2s delay) on failure, with a user-visible Toast error if the retry also fails. This prevents the status from being stuck at "pending" after a successful trade recording. See [REBALANCING.md](REBALANCING.md#dummybroker-status-update-retry) for the full flow.
-
-## Plans Tab Visibility (2026-04-17)
-
-**File:** `src/screens/Drawer/ModelPortfolioScreen.js`
-
-The Plans bottom-tab screen renders a `TabView` with a "Bespoke Plan" tab and a "Model Portfolio" tab. Tab visibility is driven purely by the advisor's feature flags from `ConfigContext`, not by data presence:
-
-```js
-if (config?.bespokePlansEnabled !== false) routes.push({key: 'bespoke', ...});
-if (config?.modelPortfolioEnabled !== false) routes.push({key: 'modelportfolio', ...});
-```
-
-This matches the web app (`prod-alphaquark-github` `Home.js`): both flags default to enabled when undefined. Each tab's scene renders its own empty state when the underlying list is empty, so users always see both tabs if both features are enabled — even when one list is empty. Previously the tab was hidden when its list had zero items, which collapsed the UI to a single full-width pill and hid the feature's existence from users.
-
-## Holdings Data Source Discrepancy — Broker Switch (2026-04-24)
-
-When a user switches to a new broker, the backend creates a fresh empty `model_portfolio_user` record for the new broker via `user_changed_broker()`. This creates a systematic mismatch between two data sources:
-
-| Screen | Data source | Broker filter | Shows stale data? |
-|--------|-------------|---------------|-------------------|
-| Portfolio Holdings tab (`AfterSubscriptionScreen`) | CCXT `rebalance/user-portfolio/latest` + aq_backend `subscription-raw-amount` | CCXT: uses `user_doc.user_broker`; aq_backend: tries current broker, falls back to ANY | **Yes** — fallback can serve old-broker holdings |
-| Rebalance Step 2 (`MPStatusModal`) | CCXT `rebalance/user-portfolio/latest` (no broker param) | Uses `user_doc.user_broker` | No — gets correct (empty) current-broker record |
-
-**Stale data detection:** `AfterSubscriptionScreen` now sets `isStalebrokerData = true` when CCXT returns empty for the current broker but the subscription endpoint returns data from another broker. A yellow warning banner appears in the Portfolio Holdings tab.
-
-**Race condition fix (2026-04-24):** `getSubscriptionData` now depends on `[strategyDetails, userDetails]`. Previously triggering on `[strategyDetails]` alone could fire with `userDetails = undefined`, sending `user_broker = ""` to aq_backend, which returned wrong-broker data.
-
-## AfterSubscriptionScreen Data Flow (2026-04-24)
-
-**File:** `src/screens/Home/AfterSubscriptionScreen.js`
-
-This screen (reached via "Detail on portfolio" in `RebalanceCard`) fetches from two sources in parallel:
+## Subscription Flow
 
 ```
-1. CCXT  GET rebalance/user-portfolio/latest/{email}/{model}
-         → returns last user_net_pf_model entry for user_doc.user_broker
-         → priority source for user_net_pf_model
-
-2. aq_backend  GET api/model-portfolio-db-update/subscription-raw-amount
-               ?email=&modelName=&user_broker=<current_broker>
-               → returns subscription_amount_raw + fallback user_net_pf_model
-               → falls back to ANY broker if current broker has no record
+User taps MPCard → UserStrategySubscribeModal opens
+    │   • Reads strategyDetails + user's broker credentials
+    │   • POST ccxt/rebalance/calculate  (just for amount/qty preview)
+    │   • EDIS pre-flight for 8 brokers (sells need authorization first)
+    │
+    ▼
+MPReviewTradeModal (per-stock table)
+    │   • User confirms
+    │   • POST ccxt/model-portfolio-place-order
+    │       with buildBrokerPayloadFields() credentials + caPendingInfo
+    │
+    ▼
+Results processed
+    │   Soft-fail path: detectTransientOrderWindowError → toast + enrollStatusCheckQueue
+    │   All-failed hard-fail: funds/EDIS/TPIN recovery modals
+    │   Success: RecommendationSuccessModal → HOLDINGS_REFRESH event
+    │
+    ▼
+AfterSubscriptionScreen
+    │   • TOTAL INVESTED / TOTAL CURRENT / CURRENT RETURNS top card
+    │   • TabView: Portfolio Holdings  |  Portfolio Distribution
 ```
 
-Merge rule: `user_net_pf_model = CCXT_data ?? subscription_data ?? []`
+## EDIS Pre-Flight Check
 
-`getSubscriptionData` must wait for `userDetails` (and thus `user_broker`) before running — the `useEffect` now depends on both `strategyDetails` and `userDetails`.
+Before submitting SELL orders for 8 brokers (AliceBlue, IIFL, ICICI, Upstox, Kotak, HDFC, Motilal, Groww), `UserStrategySubscribeModal` checks the user's `is_authorized_for_sell` status. If false, blocks submission with a user-friendly toast pointing them to the DDPI / TPIN flow.
 
-## Basket Leg Deduplication (2026-04-07)
+## Feature-Flag Tab Visibility (v5.3.0)
 
-**File:** `src/screens/TradeContext.js` (inside `flattenResponse`)
+`ModelPortfolioScreen` used to hide a tab when its list was empty (collapsing the UI to a single full-width pill). Now tab visibility is driven purely by feature flags:
 
-When the backend returns both a basket parent (with `basket_advice[]`) AND a standalone recommendation for the same symbol, the app previously showed both a BasketCard and a duplicate StockCard. Fixed by pre-computing a `basketLegSymbols` Set from all basket parents and filtering out matching standalone trades:
+- `config.modelPortfolioEnabled` (default true) → MP tab shows
+- `config.bespokePlansEnabled` (default true) → Bespoke tab shows
 
-```js
-const basketLegSymbols = new Set();
-rawTrades.forEach(item => {
-  if (item?.basket_advice?.length > 0) {
-    item.basket_advice.forEach(advice => {
-      if (advice.Symbol) basketLegSymbols.add(advice.Symbol);
-    });
-  }
-});
-// In regular trade path: if (basketLegSymbols.has(item?.Symbol)) return [];
-```
+Each tab's scene still renders its own empty-state copy, so a user on an advisor with no MP strategies sees the MP tab with an "No plans yet" card instead of a missing tab.
 
-Ported from web commit `158eddb` (prod-alphaquark-github `StockRecommendation.js`).
+## Post-Subscription UI (`AfterSubscriptionScreen`)
 
-## Exchange Validation at Order Entry (2026-04-21)
+### Duplicate Tab-Bar Fix (v5.3.0)
 
-**Why:** a Kite/Fyers Publisher basket containing a symbol with missing or blank `exchange` is silently dropped by the broker — no order is created, no error surfaces, and the mobile status-poll later shows "not in order book" with no actionable reason. A BSE-only symbol (e.g. ADARSHPL) sent with `exchange: 'NSE'` is a typical trigger.
+The outer screen has its own TabView (`Portfolio Holdings` / `Portfolio Distribution`). The `Portfolio Distribution` scene renders `<DistributionGrid />` — but `DistributionRowGrid.js` also has its own internal tab switcher. Without the `type` prop, both rendered and the user saw two "Portfolio Holdings" tabs stacked.
 
-**Helper:** `src/utils/brokerPublisher.js → validateStockExchanges(stockDetails)` returns `{ valid, missing }` — `missing` is the list of trading symbols whose `exchange` is empty/whitespace.
+**Fix**: pass `type="MPPerformanceScreen"` to `DistributionGrid`. `DistributionRowGrid.js` branches on this prop and hides its inner tabs, rendering only the grid.
 
-**Gate applied at every order-placement entry point:**
+### 6-Column Holdings Table (v5.3.0)
 
-| File | Function |
-|------|----------|
-| `src/components/ModelPortfolioComponents/MPReviewTradeModal.js` | `handleZerodhaRedirect`, `handleFyersRedirect` |
-| `src/components/ReviewZerodhaTradeModal.js` | `handleZerodhaRedirect` |
-| `src/components/AdviceScreenComponents/StockAdvices.js` | `handleZerodhaRedirect` |
-| `src/components/AdviceScreenComponents/RebalanceModal.js` | `handleZerodhaRedirect` |
-| `src/components/AdviceScreenComponents/AddtoCartModal.js` | `handleZerodhaRedirect` |
-| `src/screens/Drawer/IgnoreTradesScreen.js` | `handlefinal` |
+The outer Portfolio Holdings table is now the detailed 6-column layout:
 
-If `valid === false`, the gate shows a Toast listing the offending symbols and aborts before any payload is built. The `|| 'NSE'` silent defaults in the downstream basket builders were removed — post-validation, `stock.exchange` is guaranteed populated.
+| Stock | Current Price | Avg. Buy | Returns | Weight | Shares |
 
-**Upstream fix:** the backend `/api/zerodha/publisher/record-orders` and `/api/fyers/publisher/record-orders` endpoints now preserve `exchange` in the `orderResult` they return. Previously they omitted the field, which caused `user_net_pf_model.order_results[*].exchange` to be stored as blank — so subsequent Repair Trades flows re-entered the app with missing exchange and hit the same silent-drop bug.
+Wrapped in a horizontal `ScrollView` (six columns don't fit on narrow phones). Pre-5.3.0 the screen had a 4-column simplified view (Stock / Current / Avg Buy / P&L %) while the inner duplicate showed the 6-column version — users preferred the fuller one.
 
-## Rebalance Broker-Connect Intent TTL (2026-04-21)
+### N/A Fallback for Missing LTP (v5.3.0)
 
-**File:** `src/components/AdviceScreenComponents/RebalanceAdvices.js`
+Pre-5.3.0, when live WebSocket + saved snapshot + ccxt cache all missed, `tableData.currentPrice` fell back to `averagePrice`. Result: top card showed "TOTAL CURRENT ₹0 / RETURNS -100%" while rows showed "Current ₹1.24 / Avg ₹1.24 / P&L +0.0%" — confusing split signal.
 
-`RebalanceAdvices` had two coupled effects for the "user tapped rebalance card → prompted to connect broker → auto-continue to Step 2 after connect" flow:
+**Fix**: aligned with web's `StrategyDetailsWithPortfolioData.js:614-632`. Added a `hasValidPrice` gate (`resolvedLtp !== null && !isNaN && !== 0 && avg !== 0`) and emit literal `'N/A'` for `currentPrice` / `returns` when LTP is unavailable. The row renderer shows literal `N/A` text and a neutral gray for the returns cell. Mobile-only snapshot + ccxt-cache fallbacks remain in the resolution chain (legitimate offline sources); only the `avg` last-resort fallback was dropped.
 
-1. **Setter** (line ~266): when `brokerModel && storeModalName`, sets `wasBrokerModalOpenForRebalance.current = true`.
-2. **Auto-continue** (line ~272): when the broker modal closes with `brokerStatus === 'connected'` AND the intent ref is true AND `storeModalName` is set, fetches holdings and opens the rebalance flow.
+`avgBuyPrice` still renders independently so users can see what they paid.
 
-**Bug:** `storeModalName` is never cleared. If the user dismissed the rebalance-initiated broker modal without connecting, then later connected a broker from the Settings → Broker screen (a totally unrelated entry point), `brokerStatus` flipping to `connected` would fire the auto-continue on the stale intent — opening a rebalance the user never asked for.
+## `planSummary` Top Card (v5.3.0 — PortfolioScreen)
 
-**Fix:** replaced the boolean `wasBrokerModalOpenForRebalance` with a timestamp ref `rebalanceBrokerModalOpenedAt`. The auto-continue only fires if the intent is less than `REBALANCE_BROKER_INTENT_TTL_MS` (2 min) old. Legitimate auth flows complete well inside this window; stale intent from dismissed modals expires automatically.
+In `PortfolioScreen.js`, when the All-Holdings tab is active **and** a plan is selected, the top card now shows plan-specific aggregates (invested / current / returns) instead of broker-wide totals.
 
-## Post-Execution Trade Details Modal (2026-04-30)
+Implementation: a `planSummary` useMemo aggregates `totalInvested` / `totalCurrent` / `totalReturns` / `returnsPercentage` client-side from `planHoldings` using live LTP. `profitAndLoss` / `pnlPercentage` / `effectiveHoldingsData` prefer it when `selectedInnerTab === 0` (All Holdings) + plan selected. Pre-5.3.0, plan-specific aggregates only applied to `selectedInnerTab === 1` (MP tab).
 
-**File:** `src/components/ModelPortfolioComponents/RecommendationSuccessModal.js`
+## Transient Broker Errors (v5.3.0)
 
-Renders the post-execution status of a model-portfolio rebalance batch. Owns:
+`MPReviewTradeModal` wires `detectTransientOrderWindowError(response?.data)` at its all-orders-failed site (`api/model-portfolio-place-order`). When the entire batch is a known transient error (Upstox maintenance window, etc.), it:
 
-- **Status header summary** — drives one of: "All Orders Placed Successfully" / "Order Failed" / "Some orders are not placed" / "No Orders Placed". Header subtitle branches on which per-reason banners are showing, so it never claims orders are pending when every order is in a terminal state.
-- **Cautionary Listing alert** (yellow) — fires when any rejected order's `orderStatusMessage` contains both `cautionary` and `listing` (Angel One AB4036 / NSE GSM-equivalent). Lists the affected stocks as pill chips and instructs the user to place those manually via the broker app.
-- **Insufficient Funds alert** (red) — fires when any rejected order's message contains `insufficient fund`, `low fund`, `insufficient margin` (Zerodha/Kotak), or `insufficient balance` (Upstox/Fyers). Parses Angel One's "Available funds - Rs. {x} . You require Rs. {y}" pattern when present, summing Required across all rejected rows. Negative Available is rendered red to highlight margin-debit balances.
-- **Per-order list** — each `renderOrderItem` row shows the broker's `message_aq` / `orderStatusMessage` as the failure reason chip.
+1. Swaps the internal failure modal for a soft "Broker service window" toast
+2. Calls `enrollStatusCheckQueue` + `getRebalanceRepair`
+3. Clean-exits
 
-**Coexistence rule.** Cautionary and Insufficient Funds banners are independent — both can render at once when a single batch hits both reasons (production case 2026-04-29 Angel One: 7 cautionary + 19 LOW_FUNDS). The status header summary points the user at whichever banners are showing, rather than repeating their content.
+See `docs/REBALANCING.md` for the full transient-error contract.
 
-**Cross-repo parity.** Mirrors `tidi_new lib/components/home/portfolio/ExecutionStatusPage.dart` (commit `c6c61de` for the LOW_FUNDS banner + status-header fix). The tidi_new version additionally has a Retry Failed Orders button with cautionary/LOW_FUNDS filtering — Alphab2bapp's modal is read-only, so that filter doesn't apply here.
+**Fyers publisher path** (`MPReviewTradeModal.js:~1291`) intentionally skips this soft-fail — publisher SDK flow is mobile-specific and its status-recording chain must run even on transient failure.
 
-### AMO badge on result cards (2026-05-01)
+## Bespoke Plans → Rejected Tab (v5.3.0)
 
-`RecommendationSuccessModal` renders an amber **AMO** pill next to the existing PLACED/PENDING/REJECTED status pill on every per-order row whose `variant === "AMO"`. The pill uses `theme.colors.status.warning` text on `status.warningBg` background — both already in `src/theme/colors.js § DEFAULT_TOKENS.status` (no new tokens added).
+`HomeScreen.js` "View All" page now has an Active / Rejected tab switcher above `<StockAdvices>`:
+- **Active** — renders `type='All'` (the recommended list)
+- **Rejected** — renders `type='OSrejected'` against `rejectedTrades`
 
-`variant` is computed at submit time and threaded through every payload builder (bespoke `getOrderPayload`, rebalance `RebalanceModal`, MP `MPReviewTradeModal` / `UserStrategySubscribeModal`) using:
+`TradeContext` no longer double-pushes rejected bespoke into `recommended`, so rejected cards appear only in the Rejected tab.
 
-```js
-variant = (!IsMarketHours() && allowAfterHoursOrders === true) ? "AMO" : "REGULAR"
-```
+`StockCard.js` renders **Ignore + Trade Now** buttons when `type === 'OSrejected'` (replacing Add-to-Cart + Retry):
+- **Ignore** → `IgnoreAdviceModal` → `PUT /api/recommendation { trade_place_status: 'ignored' }`
+- **Trade Now** → reuses `handleSingleSelectStock` → `ReviewTradeModal`
 
-The component reads `variant` from each response item with a three-tier fallback (response field → match against the outgoing trade list passed in via `originalStockDetails` prop → default `"REGULAR"`). This means the AMO pill renders correctly even on the rebalance/MP lane where ccxt-india doesn't echo `variant` back (no ccxt-india change was needed for this feature).
+## MP Status Modal — Stale-Failure Guard
 
-Display-only — no change to the place-order payload. See `docs/APP_ARCHITECTURE.md § 4.5.2 Trade variant field` for the full contract.
+`MPStatusModal.js` previously marked an order as failed whenever the backend `rebalance_status` read `"failure"`, even if the live order on the broker side was `COMPLETE` or still PENDING (stale DB row). v5.2.4 added `isOrderSuccess` / `isOrderPending` checks before the "failed" state is rendered — live broker status takes precedence.
+
+## MP `advice_show_latest_days` Fix (v5.3.0)
+
+`TradeContext.js:fetchAdviceShowDays` was reading `response.data?.adviceShowLatestDays` from `/api/admin/frontend-config`. But the backend returns `{ success, data: { adviceShowLatestDays } }` — the wrong path yielded `undefined` → `Number(undefined) === NaN` → `setAdviceShowDays` never fired → the app kept the `useState(15)` fallback regardless of admin setting.
+
+**Fix**: read `response.data?.data?.adviceShowLatestDays`. Pair with `aq_backend_github` fix in `updateTermsConditions.js` so the admin's POST now writes to both `AdminAccess.adviceShowLatestDays` AND `AllAdvisorDetails.advice_show_latest_days` (the field `loginRoutes.js` reads first).
+
+## Model Portfolio Lifecycle
+
+| State | Source of truth |
+|-------|-----------------|
+| Pending subscription (recommended) | `modelPortfolioStrategyfinal` in `TradeContext` |
+| Active subscription | Backend user's `user_subscribed_strategies[]` array |
+| Rebalance pending | Backend `model_portfolios` stored with `rebalance_status` |
+| Executed / failed | `rebalance_status` + per-order `status` |
+
+Subscription creates the first set of orders via `api/model-portfolio-place-order`. Future changes to the model produce rebalances via `ccxt/rebalance/calculate` + `ccxt/rebalance/process-trade`.
+
+## RGX-Specific Notes
+
+- Every MP API call uses `X-Advisor-Subdomain: configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain()` so data writes land in the `rgxresearch` Mongo namespace.
+- Theme colors (MPCard gradient, basket color, etc.) come from `Config.js` `rgxresearch` variant, not hardcoded.
+- `BasketCard.js` regular-state gradient uses `configData.config.basket1 / basket2` (RGX → red; alphab2b → purple; falls back to web's navy palette if the variant is missing).

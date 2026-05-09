@@ -29,8 +29,8 @@ import axios from 'axios';
 import Icon from 'react-native-vector-icons/AntDesign';
 import server from '../utils/serverConfig';
 import {useCart} from '../components/CartContext';
-import GradientView from './GradientView';
-import formatCurrency from '../utils/formatcurrency';
+import LinearGradient from 'react-native-linear-gradient';
+import formatCurrency from '../utils/formatCurrency';
 import BrokerSelectionModal from './BrokerSelectionModal';
 import IIFLReviewTradeModal from './IIFLReviewTradeModal';
 import {useConfig} from '../context/ConfigContext';
@@ -179,7 +179,7 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
     return name?.length > 0 ? name[0]?.toUpperCase() : '';
   };
   return (
-    <GradientView
+    <LinearGradient
       colors={[gradient1, gradient2]}
       start={{x: 0, y: 0}}
       end={{x: 0, y: 1}}
@@ -228,6 +228,21 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
         </View>
         <View style={{}}>
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <TouchableOpacity
+              onPress={handleOpenCart}
+              style={styles.iconButton}
+              accessibilityLabel={`Open cart, ${cartCount} items`}>
+              <View style={styles.iconCircle}>
+                <ShoppingCart size={18} color="#FFFFFF" />
+                {cartCount > 0 && (
+                  <View style={styles.cartBadge}>
+                    <Text style={styles.cartBadgeText} numberOfLines={1}>
+                      {cartCount > 99 ? '99+' : cartCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => navigation.navigate('PushNotificationScreen')}
               style={styles.iconButton}>
@@ -283,7 +298,7 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
       </View>
 
       <MarketIndices />
-    </GradientView>
+    </LinearGradient>
   );
 });
 
@@ -317,6 +332,27 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#FF4444',
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: '#FF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.7)',
+  },
+  cartBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: 'Poppins-Medium',
+    lineHeight: 12,
   },
   toolbarText: {
     fontSize: 17,

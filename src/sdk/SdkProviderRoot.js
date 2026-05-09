@@ -13,10 +13,27 @@
  * error string so the developer knows what's missing.
  */
 import React, {useMemo} from 'react';
-import {AqSdkClient, AqSdkProvider} from '@alphaquark/mobile-sdk';
+import {AqSdkClient, AqSdkProvider, ExecuteAdviceOverlay as _MaybeExecuteAdviceOverlay} from '@alphaquark/mobile-sdk';
 import Config from 'react-native-config';
 
 import {getAdvisorSubdomain} from '../utils/variantHelper';
+
+// Defensive fallback (2026-05-07): the installed @alphaquark/mobile-sdk
+// version doesn't export `ExecuteAdviceOverlay`, so the named import
+// resolves to `undefined`. Rendering `<undefined />` throws
+// "Element type is invalid" at SdkProviderRoot, which puts the entire
+// app's React tree in an error state — every keystroke / focus event
+// re-evaluates the broken tree and the LoginScreen / SignupScreen
+// inputs misbehave (keyboard pops up briefly then dismisses; characters
+// disappear; can't type at all). Mask the undefined with a no-op so the
+// tree renders cleanly even if the SDK package is older than the app
+// expects. When the SDK ships ExecuteAdviceOverlay, this fallback
+// becomes a no-op and the real overlay is used. Tracked for cleanup
+// once the SDK package version pins are realigned.
+const ExecuteAdviceOverlay =
+    typeof _MaybeExecuteAdviceOverlay === 'function'
+        ? _MaybeExecuteAdviceOverlay
+        : () => null;
 
 const MINT_URL = Config?.REACT_APP_SDK_MINT_URL || '';
 const SDK_BASE_URL =
@@ -78,10 +95,15 @@ async function mintSession(userRef) {
   if (subdomain) {
     headers['X-Advisor-Subdomain'] = subdomain;
   }
-  const res = await fetch(MINT_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
+  const controller = new AbortController();
+  const mintTimeout = setTimeout(() => controller.abort(), 10000);
+  let res;
+  try {
+    res = await fetch(MINT_URL, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
       user_ref: userRef,
       // Scope set must match `aq_backend_github/utilities/
       // sessionToken.js` `ALL_SCOPES`. Today's whitelist is:
@@ -132,8 +154,11 @@ async function mintSession(userRef) {
         'sell_auth:write',
         'funds:read',
       ],
-    }),
-  });
+      }),
+    });
+  } finally {
+    clearTimeout(mintTimeout);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`mintSession failed: ${res.status} ${text}`);
@@ -161,9 +186,20 @@ export default function SdkProviderRoot({userEmail, children}) {
   );
   const effectiveUserRef = userEmail || SDK_TEST_USER_REF || null;
 
+  // 2026-05-07: <ExecuteAdviceOverlay /> MUST be rendered inside the
+  // provider tree. The SDK's `AqSdkClient.executeAdvice()` calls into
+  // the overlay's module-level `_showReview` / `_showResult` /
+  // `_setProgress` bridges to drive its review modal + progress + result
+  // UI. If the overlay component is not mounted, those bridges are no-
+  // ops (`_setState` is null), `_showReview` returns a Promise that
+  // never resolves, and the calling screen's spinner hangs forever.
+  // SDK_INTEGRATION_GUIDE.md § 2 explicitly requires this mount —
+  // omitting it was the silent root cause of the post-tap-Place-Order
+  // permanent spinner observed 2026-05-06/07.
   return (
     <AqSdkProvider client={client} userRef={effectiveUserRef}>
       {children}
+      <ExecuteAdviceOverlay />
     </AqSdkProvider>
   );
 }

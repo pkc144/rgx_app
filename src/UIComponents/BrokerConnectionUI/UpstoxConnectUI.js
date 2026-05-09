@@ -22,7 +22,8 @@ import {
 } from 'lucide-react-native';
 import WebView from 'react-native-webview';
 import UpstoxHelpContent from './HelpUI/UpstoxHelpContent';
-import GradientView from '../../components/GradientView';
+import EgressIpCallout from '../../components/BrokerConnectionModal/EgressIpCallout';
+import LinearGradient from 'react-native-linear-gradient';
 import upstoxIcon from '../../assets/upstox.png';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
@@ -47,6 +48,14 @@ const UpstoxConnectUI = ({
   authUrl,
   handleWebViewNavigationStateChange,
   scrollViewRef,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
+  brokerConnectRedirectURL,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const insets = useSafeAreaInsets();
@@ -67,7 +76,7 @@ const UpstoxConnectUI = ({
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
         {/* HEADER */}
-        <GradientView
+        <LinearGradient
           colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
@@ -92,7 +101,7 @@ const UpstoxConnectUI = ({
             style={styles.headerIcon}
             resizeMode="contain"
           />
-        </GradientView>
+        </LinearGradient>
 
         {/* CONTENT */}
         <View style={styles.contentContainer}>
@@ -104,7 +113,7 @@ const UpstoxConnectUI = ({
                 style={{flex: 1}}
                 contentContainerStyle={{padding: 10, paddingBottom: 20}}
                 showsVerticalScrollIndicator={true}>
-                <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} />
+                <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} brokerConnectRedirectURL={brokerConnectRedirectURL} />
                 <View style={[styles.toggleWrapper, {marginTop: 15, paddingBottom: insets.bottom + 10}]}>
                   <TouchableOpacity
                     style={styles.toggleContainer}
@@ -130,7 +139,7 @@ const UpstoxConnectUI = ({
                 keyboardShouldPersistTaps="handled">
                 {/* Help content */}
                 <View style={[styles.guideBox, {maxHeight: 280}]}>
-                  <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} />
+                  <UpstoxHelpContent expanded={expanded} onExpandChange={setExpanded} brokerConnectRedirectURL={brokerConnectRedirectURL} />
                 </View>
                 <TouchableOpacity
                   onPress={() => setExpanded(true)}
@@ -140,6 +149,19 @@ const UpstoxConnectUI = ({
                     <ChevronDown size={14} color="#000" />
                   </View>
                 </TouchableOpacity>
+
+                {/* Egress-IP gate (see EgressIpCallout). Upstox requires a
+                    dedicated static IP whitelisted in the user's developer
+                    portal (UDAPI1154 "static IP mismatch" otherwise). */}
+                <EgressIpCallout
+                  broker="upstox"
+                  customerId={egressUserId}
+                  customerEmail={egressUserEmail}
+                  configData={configData}
+                  onAcknowledgeChange={setEgressReady}
+                  showUnmetAck={unmetAck}
+                  onUnmetAckHandled={() => setUnmetAck && setUnmetAck(false)}
+                />
 
                 {/* Input card */}
                 <View style={styles.inputCard}>
@@ -187,11 +209,13 @@ const UpstoxConnectUI = ({
                       styles.proceedButton,
                       {
                         backgroundColor:
-                          apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                          apiKey && secretKey && egressReady
+                            ? '#0056B7'
+                            : '#d3d3d3',
                       },
                     ]}
                     onPress={updateSecretKey}
-                    disabled={!(apiKey && secretKey)}>
+                    disabled={!(apiKey && secretKey && egressReady)}>
                     {isLoading ? (
                       <ActivityIndicator size={27} color="#fff" />
                     ) : (

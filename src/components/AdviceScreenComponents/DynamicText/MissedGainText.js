@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Text, StyleSheet, View } from "react-native";
 import axios from 'axios';
 import { io } from "socket.io-client";
+import server from '../../../utils/serverConfig';
 
 // Create a singleton WebSocket manager
 const WebSocketManager = (() => {
@@ -16,7 +17,7 @@ const WebSocketManager = (() => {
           connect() {
             if (socket) return;
             
-            socket = io("wss://ccxt.alphaquark.in/ltp", {
+            socket = io(`${server.ccxtWs.baseUrl}/ltp`, {
               transports: ["websocket"],
               query: { EIO: "4" },
             });
@@ -48,7 +49,7 @@ const WebSocketManager = (() => {
           
           async subscribeToAPI(symbol) {
             try {
-              await axios.post("https://ccxt.alphaquark.in/websocket/subscribe", {
+              await axios.post(`${server.ccxtWs.httpUrl}/websocket/subscribe`, {
                 symbol,
                 exchange: "NSE" // Adjust as needed
               });

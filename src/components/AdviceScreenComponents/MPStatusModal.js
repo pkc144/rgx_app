@@ -26,7 +26,7 @@ import { Picker } from '@react-native-picker/picker';
 import { debounce } from 'lodash';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
-import { isOrderRejected } from '../../utils/orderStatusUtils';
+import { isOrderRejected, isOrderSuccess, isOrderPending } from '../../utils/orderStatusUtils';
 const { height: screenHeight } = Dimensions.get('window');
 const { width: screenWidth } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
@@ -79,6 +79,12 @@ const formatPrice = price => {
 };
 
 const isStockFailed = stock => {
+  // If orderStatus indicates the order was actually placed/executed (OPEN, TRANSIT,
+  // TRADED, COMPLETE, etc.), it is NOT failed — even if rebalance_status says "failure"
+  // due to stale data from backend missing OPEN/TRANSIT in SUCCESS_ORDER_MAPPING.
+  if (isOrderSuccess(stock.orderStatus) || isOrderPending(stock.orderStatus)) {
+    return false;
+  }
   return (
     isOrderRejected(stock.orderStatus) ||
     stock.rebalance_status === 'failed' ||
@@ -268,6 +274,13 @@ const MPStatusModal = ({
       return;
     }
 
+    // Use stockData from parent if already provided (avoids duplicate API call)
+    if (stockData && stockData.length > 0) {
+      processStockDataDirectly();
+      hasDataBeenFetched.current = true;
+      return;
+    }
+
     if (!userEmail || !modelName) {
       return;
     }
@@ -276,14 +289,11 @@ const MPStatusModal = ({
     setError(null);
 
       try {
-        console.log('🔍 Fetching portfolio for:', { userEmail, modelName, userbroker });
+        console.log('Fetching portfolio for:', { userEmail, modelName, userbroker });
 
         const response = await axios.get(
           `${server.ccxtServer.baseUrl}rebalance/user-portfolio/latest/${userEmail}/${modelName}`,
           {
-            params: {
-              broker: userbroker  // ✅ ADD THIS - Pass broker as query parameter
-            },
             headers: {
               'Content-Type': 'application/json',
               'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
@@ -292,15 +302,9 @@ const MPStatusModal = ({
                 Config.REACT_APP_AQ_SECRET,
               ),
             },
+            timeout: 15000,
           },
         );
-
-        console.log('📦 API Response:', {
-          broker: response.data?.data?.user_broker,  // ← Check top level now
-          portfolioBroker: response.data?.data?.user_net_pf_model?.user_broker,
-          orderResults: response.data?.data?.user_net_pf_model?.order_results?.length,
-          fullResponse: response.data
-        });
 
         hasDataBeenFetched.current = true;
 
@@ -313,24 +317,55 @@ const MPStatusModal = ({
           setPortfolioDocId(response.data.data._id.$oid);
         }
 
-        // ✅ ADD BROKER VALIDATION
+        // Broker-mismatch guard — defence against showing a stale
+        // previously-connected broker's portfolio snapshot after the
+        // user has switched brokers. The server returns whatever
+        // broker built the latest snapshot; if that broker isn't the
+        // user's currently-connected broker, the order_results belong
+        // to a different account and rendering them here would surface
+        // the wrong trades in the rebalance flow. Removed in 00fc0ce
+        // under the assumption that HoldingsMigrationModal fully
+        // covers this class of stale-data risk — but that modal only
+        // fires on the post-broker-connect path (TradeContext.
+        // fetchBrokerStatusModal), not on direct navigation into MP
+        // from Home/Portfolio. Restored here as a cheap belt-and-
+        // braces guard. If the migration modal later fully replaces
+        // this guard's scope (check every entry-path into MPStatusModal
+        // goes through migrationSummary first), this block can be
+        // safely removed.
         const portfolioBroker = response.data?.data?.user_broker;
         if (portfolioBroker && portfolioBroker !== userbroker) {
-          console.warn(`⚠️ Broker mismatch! Portfolio has ${portfolioBroker}, but user has ${userbroker}`);
-          console.warn('Clearing stale data from different broker');
+          console.warn(
+            `[MPStatusModal] Broker mismatch — snapshot=${portfolioBroker}, current=${userbroker}. Clearing stale data.`,
+          );
           setLocalStockList([]);
           onUpdateStockList([]);
           setIsLoading(false);
           return;
         }
 
-        if (
-          response.data &&
-          response.data.data &&
-          response.data.data.user_net_pf_model &&
-          response.data.data.user_net_pf_model.order_results
-        ) {
-          const orderResults = response.data.data.user_net_pf_model.order_results;
+        // Read order_results from user_net_pf_model OR fall back to
+        // advice_executed.order_results when user_net_pf_model is empty.
+        // ccxt-india's `_save_successful_trades` returns early when
+        // there are no successes (rebalancing.py:1453), leaving
+        // user_net_pf_model empty even though advice_executed has the
+        // full record. Production 2026-04-26: 26 AliceBlue orders
+        // rejected for margin shortfall, frontend showed "Execution
+        // Failed" with no per-order detail because it only read
+        // user_net_pf_model. Same fix landed in tidi_new
+        // ExecutionStatusPage.dart.
+        const _userNetPfOR =
+          response?.data?.data?.user_net_pf_model?.order_results;
+        const _adviceExecutedRaw = response?.data?.data?.advice_executed;
+        const _adviceExecutedOR = Array.isArray(_adviceExecutedRaw)
+          ? _adviceExecutedRaw[_adviceExecutedRaw.length - 1]?.order_results
+          : _adviceExecutedRaw?.order_results;
+        const _resolvedOR =
+          (Array.isArray(_userNetPfOR) && _userNetPfOR.length > 0)
+            ? _userNetPfOR
+            : _adviceExecutedOR;
+        if (Array.isArray(_resolvedOR)) {
+          const orderResults = _resolvedOR;
 
           if (orderResults.length > 0) {
             const mappedData = orderResults.map(item => ({
@@ -806,7 +841,7 @@ const MPStatusModal = ({
       i === index ? { ...item, quantity: quantity } : item,
     );
     setLocalStockList(updatedList);
-    // notifyParent(updatedList)
+    notifyParent(updatedList);
   };
 
   const handlePriceChange = (index, value) => {
@@ -817,7 +852,7 @@ const MPStatusModal = ({
         : item,
     );
     setLocalStockList(updatedList);
-    // notifyParent(updatedList)
+    notifyParent(updatedList);
   };
 
   const handleDeleteStock = index => {
@@ -1188,7 +1223,7 @@ const MPStatusModal = ({
                   ) : localStockList.length > 0 ? (
                     <FlatList
                       data={localStockList}
-                      keyExtractor={(_, index) => index.toString()}
+                      keyExtractor={(item, index) => item.reactKey || item.symbol || index.toString()}
                       renderItem={({ item, index }) => renderStockItem({ item, index })}
                       contentContainerStyle={styles.scrollViewContent}
                       keyboardShouldPersistTaps="handled"
@@ -1271,10 +1306,28 @@ const MPStatusModal = ({
                 </>
               ) : !isEditing ? (
                 <>
-                  <View style={styles.buttonRowContainer}>
+                  <View style={[styles.buttonRowContainer, {flexDirection: 'row', gap: 8, justifyContent: 'space-between', paddingHorizontal: 20}]}>
+                    <TouchableOpacity
+                      onPress={handleSwitchToEdit}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#fff',
+                        borderWidth: 1,
+                        borderColor: gradient2,
+                        borderRadius: 8,
+                        paddingVertical: 10,
+                        paddingHorizontal: 16,
+                        flex: 1,
+                      }}
+                      disabled={isUpdating}>
+                      <Icon name="edit-2" size={14} color={gradient2} style={{marginRight: 6}} />
+                      <Text style={{fontFamily: 'Poppins-Medium', fontSize: 13, color: gradient2}}>Edit Holdings</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
                       onPress={handleClose}
-                      style={[styles.nextStepButton, {backgroundColor: gradient2}]}
+                      style={[styles.nextStepButton, {backgroundColor: gradient2, flex: 1}]}
                       disabled={isUpdating || showTransitionLoader}>
                       <Text style={styles.nextStepButtonText}>Continue</Text>
                     </TouchableOpacity>

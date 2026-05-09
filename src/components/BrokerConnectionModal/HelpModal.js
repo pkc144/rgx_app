@@ -5,6 +5,7 @@ import YoutubePlayer from "react-native-youtube-iframe";
 import { ChevronLeft,XIcon,ChevronDown,ChevronUp, ClipboardList } from 'lucide-react-native';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 import Config from 'react-native-config';
+import LinkifiedUrl from '../../UIComponents/BrokerConnectionUI/HelpUI/LinkifiedUrl';
 const HelpModal = ({ broker, visible, onClose }) => {
   const [mpin, setMpin] = useState('');
   const [otp, setOtp] = useState('');
@@ -74,17 +75,13 @@ const HelpModal = ({ broker, visible, onClose }) => {
             <View style={styles.content}>
               <Text style={styles.instruction}>
                 1. Visit{" "}
-                <Text onPress={() => Linking.openURL('https://api.icicidirect.com/apiuser/home')} style={styles.link}>
-                  https://api.icicidirect.com/apiuser/home
-                </Text>{" "}
+                <LinkifiedUrl url="https://api.icicidirect.com/apiuser/home" />{" "}
                 and log in using your username and password. Verify your identity with the OTP and submit.
               </Text>
               <Text style={styles.instruction}>
-                2. Click on the "Register an App" tab, then fill in the "App Name" field with "AlphaQuark" or a name of
+                2. Click on the "Register an App" tab, then fill in the "App Name" field with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of
                 your choice. Enter the "Redirect URL" as{" "}
-                <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
-                  {brokerConnectRedirectURL}
-                </Text>{" "}
+                <LinkifiedUrl url={brokerConnectRedirectURL} />{" "}
                 and click "Submit". Please ensure that "redirect URL" is entered correctly as mentioned above.
               </Text>
               <Text style={styles.instruction}>
@@ -127,7 +124,7 @@ const HelpModal = ({ broker, visible, onClose }) => {
               style={styles.instruction}
             >
               1. Visit{" "}
-              <Text onPress={() => Linking.openURL('https://ant.aliceblueonline.com/apps')}  style={styles.link}>ant.aliceblueonline.com/apps</Text>{' '}
+              <LinkifiedUrl url="https://ant.aliceblueonline.com/apps" />{' '}
               with your phone number, password, and TOTP or mobile OTP.
             </Text>
           
@@ -177,13 +174,16 @@ const HelpModal = ({ broker, visible, onClose }) => {
               style={styles.instruction}
             >
               1. Visit{" "}
-              <Text onPress={() => Linking.openURL('https://myapi.fyers.in/dashboard')}  style={styles.link}>myapi.fyers.in/dashboard</Text>{' '}
+              <LinkifiedUrl url="https://fyers.in/web/api-dashboard/user-apps" />{' '}
+              (the new Fyers API dashboard — required for static-IP whitelisting)
             </Text>
             <Text style={styles.instruction}>
               2. Log in using your phone number, enter the TOTP, and your 4-digit PIN.
             </Text>
             <Text style={styles.instruction}>
-              3. Click on the "Create App" button. Provide an app name, paste the redirect URL as specified in the instructions, add a description, and delete the webhook. Grant all app permissions and check the box to accept the API Usage Terms and Conditions. Finally, click on "Create App."
+              3. Click "Create App". Provide an app name, paste the redirect URL as specified in the instructions, add a description, and delete the webhook. {"\n\n"}
+              ⚠️ <Text style={{fontWeight: '700'}}>You MUST tick the "Order Placement" permission</Text> — without it Fyers rejects every basket order with "algo orders are not allowed for this app". The checkbox is OFF by default. {"\n\n"}
+              Tick all other permissions you want, accept the API Usage Terms and Conditions, click "Create App", and on the next screen add your AlphaQuark egress IP under "IP Whitelist" (the address shown in the IP-whitelist callout on the connect page).
             </Text>
             <Text style={styles.instruction}>
               4. Scroll down to find the newly created app. Copy the App ID and Secret ID and paste them into your platform.
@@ -226,7 +226,7 @@ const HelpModal = ({ broker, visible, onClose }) => {
               style={styles.instruction}
             >
               1. Go to{" "}
-              <Text onPress={() => Linking.openURL('http://login.dhan.co')}  style={styles.link}>http://login.dhan.co</Text>{' '}
+              <LinkifiedUrl url="https://login.dhan.co" />{' '}
             </Text>
             <Text style={styles.instruction}>
               2. Click on your profile picture and choose "My Profile on Dhan". Under the Profile details, you'll find the "Client ID".
@@ -276,7 +276,7 @@ const HelpModal = ({ broker, visible, onClose }) => {
                 style={styles.instruction}
               >
                 1. Go to{" "}
-                <Text onPress={() => Linking.openURL('https://developer.hdfcsec.com/')} style={styles.link}>https://developer.hdfcsec.com/</Text>
+                <LinkifiedUrl url="https://developer.hdfcsec.com/" />
               </Text>
               <Text style={styles.instruction}>
                 2. Log in with your ID, password, and OTP.
@@ -287,13 +287,12 @@ const HelpModal = ({ broker, visible, onClose }) => {
               <Text style={styles.instruction}>
                 4. Click *Create* to make a new app. Enter app
 name, redirect URL: {' '}
-<Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
-                  {brokerConnectRedirectURL}</Text>
+<LinkifiedUrl url={brokerConnectRedirectURL} />
 {' '}and description, then click *Create *.
               </Text>
               <Text style={styles.instruction}>
                 5. Copy the *API* and *Secret Key* and paste
-them into theAlphaQuark platform to connect
+them into the {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'} platform to connect
 your broker.
               </Text>
             </View>
@@ -350,12 +349,7 @@ your broker.
         </Text>
 
         <View style={styles.linkContainer}>
-          <TouchableOpacity onPress={() => Linking.openURL("https://www.kotaksecurities.com/platform/kotak-neo-trade-api/")}>
-            <Text style={styles.link}>
-              https://www.kotaksecurities.com/platform/kotak-neo-trade-api/
-            </Text>
-          </TouchableOpacity>
-        
+          <LinkifiedUrl url="https://www.kotaksecurities.com/platform/kotak-neo-trade-api/" />
         </View>
 
         <Text style={styles.instruction1}>
@@ -368,12 +362,7 @@ your broker.
         </Text>
 
         <View style={styles.linkContainer}>
-          <TouchableOpacity onPress={() => Linking.openURL("https://www.kotaksecurities.com/switch-to-neo/")}>
-            <Text style={styles.link}>
-              https://www.kotaksecurities.com/switch-to-neo/
-            </Text>
-          </TouchableOpacity>
-    
+          <LinkifiedUrl url="https://www.kotaksecurities.com/switch-to-neo/" />
         </View>
 
         {/* STEP 2 */}
@@ -384,12 +373,7 @@ your broker.
         </Text>
 
         <View style={styles.linkContainer}>
-          <TouchableOpacity onPress={() => Linking.openURL("https://napi.kotaksecurities.com/devportal/apis")}>
-            <Text style={styles.link}>
-              https://napi.kotaksecurities.com/devportal/apis
-            </Text>
-          </TouchableOpacity>
-        
+          <LinkifiedUrl url="https://napi.kotaksecurities.com/devportal/apis" />
         </View>
 
         <Text style={styles.instruction1}>
@@ -397,7 +381,7 @@ your broker.
         </Text>
 
         <Text style={styles.instruction1}>
-          (ii) Create an Application: Navigate to the "Applications" section, click on "Add New Application," and fill required details (use any app name, e.g., AlphaQuark). Select Unlimited in Shared Quota, leave description & group empty, then save.
+          (ii) Create an Application: Navigate to the "Applications" section, click on "Add New Application," and fill required details (use any app name, e.g., {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}). Select Unlimited in Shared Quota, leave description & group empty, then save.
         </Text>
 
         <Text style={styles.instruction1}>
@@ -416,11 +400,7 @@ your broker.
         </Text>
 
         <View style={styles.linkContainer}>
-          <TouchableOpacity onPress={() => Linking.openURL("https://www.kotaksecurities.com/platform/kotak-neo-trade-api/totp-registration/")}>
-            <Text style={styles.link}>
-              https://www.kotaksecurities.com/platform/kotak-neo-trade-api/totp-registration/
-            </Text>
-          </TouchableOpacity>
+          <LinkifiedUrl url="https://www.kotaksecurities.com/platform/kotak-neo-trade-api/totp-registration/" />
         </View>
 
         <Text style={styles.instruction1}>
@@ -472,8 +452,8 @@ your broker.
               style={styles.instruction}
             >
               1. Visit{" "}
-              <Text onPress={() => Linking.openURL('https://shorturl.at/plWYJ')}  style={styles.link}>https://shorturl.at/pIWYJ</Text>{' '}
-your phone number. Verify your identity with the OTP
+              <LinkifiedUrl url="https://shorturl.at/plWYJ" />{' '}
+and log in with your phone number. Verify your identity with the OTP
 and continue.
             </Text>
             <Text style={styles.instruction}>
@@ -481,9 +461,8 @@ and continue.
             </Text>
             <Text style={styles.instruction}>
               3. Click on the "New App" button. Fill in the "App Name"
-field with "AlphaQuark" or a name of your choice.
-Enter the "Redirect URL" as <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
-{brokerConnectRedirectURL}</Text>
+field with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of your choice.
+Enter the "Redirect URL" as <LinkifiedUrl url={brokerConnectRedirectURL} />
 {' '} You can skip the Postback URL and Description as
 they are optional. Accept the Terms & Conditions
 and click on the "Continue" button. Please ensure that
@@ -540,9 +519,7 @@ designated screen.
           {/* STEP 1 */}
           <Text style={styles.instruction}>
             1. Visit{' '}
-            <Text onPress={() => Linking.openURL('https://www.motilaloswal.com')} style={styles.link}>
-              https://www.motilaloswal.com
-            </Text>{' '}
+            <LinkifiedUrl url="https://www.motilaloswal.com" />{' '}
             in your browser.
           </Text>
 
@@ -569,15 +546,11 @@ designated screen.
           {/* STEP 6 */}
           <Text style={styles.instruction}>
             6. On the Trading API page, click on <Text style={{ fontWeight: 'bold' }}>"Create an API Key"</Text>. 
-            Enter a name for your app (e.g., AlphaQuark) and enter the Redirect URL below:
+            Enter a name for your app (e.g., {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}) and enter the Redirect URL below:
           </Text>
 
           <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://ccxt.alphaquark.in/motilal-oswal/callback")}>
-              <Text style={styles.link}>
-                https://ccxt.alphaquark.in/motilal-oswal/callback
-              </Text>
-            </TouchableOpacity>
+            <LinkifiedUrl url="https://ccxtprod.alphaquark.in/motilal-oswal/callback" />
           </View>
 
           <Text style={styles.instruction}>
@@ -631,9 +604,7 @@ designated screen.
           {/* STEP 1 */}
           <Text style={styles.instruction}>
             1. Visit{' '}
-            <Text onPress={() => Linking.openURL('https://developers.kite.trade/apps')} style={styles.link}>
-              https://developers.kite.trade/apps
-            </Text>{' '}in your browser and sign up/login with your credentials.
+            <LinkifiedUrl url="https://developers.kite.trade/apps" />{' '}in your browser and sign up/login with your credentials.
           </Text>
 
           {/* STEP 2 */}
@@ -651,17 +622,13 @@ designated screen.
           <Text style={styles.instruction1}>- Set the Redirect URL to:</Text>
 
           <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://ccxt.alphaquark.in/zerodha/callback")}>
-              <Text style={styles.link}>https://ccxt.alphaquark.in/zerodha/callback</Text>
-            </TouchableOpacity>
+            <LinkifiedUrl url="https://ccxtprod.alphaquark.in/zerodha/callback" />
           </View>
 
           <Text style={styles.instruction1}>- Set the Postback URL to:</Text>
 
           <View style={styles.linkContainer}>
-            <TouchableOpacity onPress={() => Linking.openURL("https://ccxt.alphaquark.in/zerodha/postback")}>
-              <Text style={styles.link}>https://ccxt.alphaquark.in/zerodha/postback</Text>
-            </TouchableOpacity>
+            <LinkifiedUrl url="https://ccxtprod.alphaquark.in/zerodha/postback" />
           </View>
 
           <Text style={styles.instruction1}>- Provide a brief description (e.g., "Trading advisory application for client portfolio management").</Text>

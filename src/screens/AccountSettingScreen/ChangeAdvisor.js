@@ -192,7 +192,11 @@ const ChangeAdvisor = () => {
                 onNewRAIdChange: handleTextInputChange,
                 onUpdateRACode: handleUpdateRACode,
                 onBack: () => navigation?.goBack?.(),
-                onOpenNotifications: () => navigation.navigate('PushNotificationScreen'),
+                // Routes to the design-system NotificationListScreen
+                // (HTML § "08 · Notifications" port). The legacy
+                // PushNotificationScreen route is still registered but
+                // no in-app bell points at it on the alphanomy fork.
+                onOpenNotifications: () => navigation.navigate('NotificationListScreen'),
             }}
         />
     );

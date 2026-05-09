@@ -93,6 +93,12 @@ import ModelPortfolioScreen from './screens/ModelPortfolioScreen';
 import MPPerformanceScreen from './screens/MPPerformanceScreen';
 import MPInvestNowModal from './screens/MPInvestNowModal';
 
+// Phase J screens (2026-05-05) — Portfolio (bottom-tab Portfolio)
+import PortfolioScreen from './screens/PortfolioScreen';
+
+// Phase J follow-up (2026-05-06) — Notification list (HTML § 08)
+import NotificationListScreen from './screens/NotificationListScreen';
+
 // Phase G composites (2026-05-02) — heavy composites (batch 4)
 import StockCard from './composites/StockCard';
 import BasketCard from './composites/BasketCard';
@@ -177,6 +183,10 @@ const variant = {
         'screens.ModelPortfolioScreen': ModelPortfolioScreen,
         'screens.MPPerformanceScreen': MPPerformanceScreen,
         'screens.MPInvestNowModal': MPInvestNowModal,
+        // Screens (Phase J — bottom-tab Portfolio)
+        'screens.PortfolioScreen': PortfolioScreen,
+        // Screens (Phase J follow-up — Notification list)
+        'screens.NotificationListScreen': NotificationListScreen,
     },
     // SDK widget defaults — all 10 overridable slots.
     // Each file in sdk/ re-exports the SDK built-in OR provides a

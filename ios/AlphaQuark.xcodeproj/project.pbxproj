@@ -51,6 +51,8 @@
 		E44DD19B7EED445C85738A4B /* Poppins-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E17748BDD6104BFAB2A1A884 /* Poppins-Italic.ttf */; };
 		EC0E2987DAAEF31298CC6728 /* libPods-AlphaQuark.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 103D59F027E549BC88381706 /* libPods-AlphaQuark.a */; };
 		F5854BA6AECB4631A8B9F9F7 /* Satoshi-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = 2C15EBBCBF094A4EA7E89BE4 /* Satoshi-Regular.otf */; };
+		75109AA13BAC4DD9984C54CE /* Azonix.otf in Resources */ = {isa = PBXBuildFile; fileRef = C89EBC1C7CE949CF83F4A43D /* Azonix.otf */; };
+		3E5B046E738B4E21A03D3287 /* READ FIRST.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5E2EB500EB9A4DBC8338E54C /* READ FIRST.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -124,6 +126,8 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		FC7DEEB6EAE64ADEA742DDE2 /* Poppins-BoldItalic.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-BoldItalic.ttf"; path = "../src/assets/fonts/Poppins-BoldItalic.ttf"; sourceTree = "<group>"; };
 		FD7E5732FD0C4F2D8BDA2C7F /* Poppins-Black.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-Black.ttf"; path = "../src/assets/fonts/Poppins-Black.ttf"; sourceTree = "<group>"; };
+		C89EBC1C7CE949CF83F4A43D /* Azonix.otf */ = {isa = PBXFileReference; name = "Azonix.otf"; path = "../src/assets/fonts/Azonix.otf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		5E2EB500EB9A4DBC8338E54C /* READ FIRST.txt */ = {isa = PBXFileReference; name = "READ FIRST.txt"; path = "../src/assets/fonts/READ FIRST.txt"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -201,6 +205,8 @@
 				AC373AEB257F40038D0DDDCD /* ObviouslyNarrow-Black.otf */,
 				52B1CF0193E84107B0B4268F /* Gillies.ttf */,
 				95DDB21342A34D16B098884A /* OFL.txt */,
+				C89EBC1C7CE949CF83F4A43D /* Azonix.otf */,
+				5E2EB500EB9A4DBC8338E54C /* READ FIRST.txt */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -423,6 +429,8 @@
 				5FE7406BE57B49B0AC7487AF /* Gillies.ttf in Resources */,
 				7A5D461735FF4CE9BD3FDCFA /* OFL.txt in Resources */,
 				D8A0BD217E9436B7292EE4A6 /* PrivacyInfo.xcprivacy in Resources */,
+				75109AA13BAC4DD9984C54CE /* Azonix.otf in Resources */,
+				3E5B046E738B4E21A03D3287 /* READ FIRST.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

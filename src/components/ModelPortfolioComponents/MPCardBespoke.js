@@ -22,7 +22,7 @@ import {
   ArrowRight,
 } from 'lucide-react-native';
 import {useNavigation} from '@react-navigation/native';
-import GradientView from '../GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import Svg, {SvgUri} from 'react-native-svg';
 import LinePattern from '../../assets/Vector.svg';
 import Icon from 'react-native-vector-icons/AntDesign';
@@ -33,6 +33,20 @@ import moment from 'moment';
 import { useConfig } from '../../context/ConfigContext';
 import { useGstConfig } from '../../context/GstConfigContext';
 import { withGst, gstLabel } from '../../utils/gstHelpers';
+
+const ACCEPTABLE_DATE_FORMATS = [
+  'D MMM YYYY, HH:mm:ss',
+  'YYYY-MM-DDTHH:mm:ss.SSSZ',
+];
+
+const normalizeGroupName = name => {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .replace(/%20/g, ' ')
+    .replace(/\s+/g, '_')
+    .trim();
+};
 
 const MPCardBespoke = ({
   modelName,
@@ -212,68 +226,70 @@ const MPCardBespoke = ({
 
 
 
-   const ACCEPTABLE_DATE_FORMATS = [
-      'D MMM YYYY, HH:mm:ss',
-      'YYYY-MM-DDTHH:mm:ss.SSSZ',
-    ];
-  
-    // Updated function with comprehensive validation
-    const hasActiveSubscription = (planName, subscriptions) => {
-      // Format the plan name to match the format in subscriptions
-      const normalizeGroupName = name => {
-        if (!name) return '';
-        return name
-          .toLowerCase()
-          .replace(/%20/g, ' ')
-          .replace(/\s+/g, '_')
-          .trim();
-      };
-  
-      // Basic validation
-      if (!subscriptions || subscriptions.length === 0) return false;
-  
-      const matchingPlanSubs = subscriptions.filter(
-        sub => normalizeGroupName(sub?.plan) === normalizeGroupName(planName),
-      );
-      if (matchingPlanSubs.length === 0) return false;
-  
-      // Filter out deleted subscriptions
+    // Determine subscription status using backend-attached subscription field first,
+    // then falling back to subscriptionData from user profile
+    const getSubscriptionStatus = () => {
+      // Primary: use the subscription field the backend attaches per-plan
+      if (data?.subscription) {
+        const sub = data.subscription;
+        if (sub.status === 'deleted') return 'none';
+        if (sub.expiry === null) return 'active';
+        if (sub.expiry) {
+          const expiryDate = moment(sub.expiry, ACCEPTABLE_DATE_FORMATS);
+          if (expiryDate.isValid()) {
+            const daysLeft = expiryDate.diff(moment(), 'days');
+            if (daysLeft < 0) return 'expired';
+            if (daysLeft <= 7) return 'renew';
+            return 'active';
+          }
+        }
+      }
+
+      // Fallback: match against subscriptionData from user profile
+      const subscriptions = subscriptionData?.subscriptions;
+      if (!subscriptions || subscriptions.length === 0) return 'none';
+
+      const normalizedPlan = normalizeGroupName(modelName);
+      const matchingPlanSubs = subscriptions.filter(sub => {
+        const nSub = normalizeGroupName(sub?.plan);
+        return nSub === normalizedPlan ||
+          nSub.includes(normalizedPlan) ||
+          normalizedPlan.includes(nSub);
+      });
+      if (matchingPlanSubs.length === 0) return 'none';
+
       const activeSubscriptions = matchingPlanSubs.filter(
         sub => sub?.status !== 'deleted',
       );
-      if (activeSubscriptions.length === 0) return false;
-  
-      // Handle subscriptions with null expiry (never expires)
+      if (activeSubscriptions.length === 0) return 'none';
+
       const neverExpiringSubscriptions = activeSubscriptions.filter(
         sub => sub.expiry === null,
       );
-      if (neverExpiringSubscriptions.length > 0) return true;
-  
-      // Validate expiry dates
+      if (neverExpiringSubscriptions.length > 0) return 'active';
+
       const validSubscriptions = activeSubscriptions.filter(sub =>
         sub.expiry
           ? moment(sub.expiry, ACCEPTABLE_DATE_FORMATS, true).isValid()
           : false,
       );
-      if (validSubscriptions.length === 0) return false;
-  
-      // Get the latest subscription
+      if (validSubscriptions.length === 0) return 'none';
+
       const latestSub = validSubscriptions.sort(
         (a, b) =>
           moment(b.expiry, ACCEPTABLE_DATE_FORMATS) -
           moment(a.expiry, ACCEPTABLE_DATE_FORMATS),
       )[0];
-  
-      // Ensure the latest subscription is still active
+
       const expiryDate = moment(latestSub?.expiry, ACCEPTABLE_DATE_FORMATS);
-      const today = moment();
-  
-      return expiryDate.isAfter(today);
+      const daysLeft = expiryDate.diff(moment(), 'days');
+
+      if (daysLeft < 0) return 'expired';
+      if (daysLeft <= 7) return 'renew';
+      return 'active';
     };
-    const isActive = hasActiveSubscription(
-      modelName,
-      subscriptionData?.subscriptions,
-    );
+    const status = getSubscriptionStatus();
+    const isActive = status === 'active' || status === 'renew';
 
 
   useEffect(() => {
@@ -283,7 +299,7 @@ const MPCardBespoke = ({
   }, [pricingOptions]);
   return (
     <View>
-      <GradientView
+      <LinearGradient
         colors={['#fff', '#fff', '#fff']}
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
@@ -301,7 +317,7 @@ const MPCardBespoke = ({
           <LinePattern />
         </View>
  {discount > 0 && (
-    <GradientView
+    <LinearGradient
       colors={[stepCompletedColor, stepCompletedColor]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
@@ -331,7 +347,7 @@ const MPCardBespoke = ({
       >
         Save {discount}%
       </Text>
-    </GradientView>
+    </LinearGradient>
   )}
 
 
@@ -481,18 +497,20 @@ const MPCardBespoke = ({
             <Text style={styles.buttonText}>View More</Text>
           </TouchableOpacity>
 
-          {isActive ? (
-            <TouchableOpacity onPress={InvestNow} style={[styles.investButton, { backgroundColor: mainColor }]}>
-              <ArrowRight size={10} color={'white'} />
-              <Text style={styles.investButtonText}>Renew Now</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={InvestNow} style={[styles.investButton, { backgroundColor: mainColor }]}>
-              <Text style={styles.investButtonText}>Subscribe Now</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity onPress={InvestNow} style={[styles.investButton, { backgroundColor: status === 'renew' ? '#E8976B' : mainColor }]}>
+            {(status === 'renew' || status === 'expired') && <ArrowRight size={10} color={'white'} />}
+            <Text style={styles.investButtonText}>
+              {status === 'active'
+                ? 'Subscribed'
+                : status === 'renew'
+                ? 'Renew Now'
+                : status === 'expired'
+                ? 'Resubscribe'
+                : 'Subscribe Now'}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </GradientView>
+      </LinearGradient>
 
       {/* {isExpanded && (
                 <Animated.View style={[styles.animatedSection, { height: animatedHeight }]}>

@@ -721,7 +721,9 @@ const getUnreadCount = () => {
                               }
 
                               // Safe property access with fallbacks
-                              const action = stock.action || '';
+                              // Backend sends "type" field (e.g., "Buy"/"Sell"), normalize to uppercase
+                              const rawAction = stock.action || stock.type || '';
+                              const action = rawAction.toUpperCase();
                               const orderType = stock.orderType || '';
                               const limitPrice = stock.limitPrice ? Number(stock.limitPrice) : 0;
                               const advisedRangeLower = stock.advisedRangeLower ? String(stock.advisedRangeLower) : '';

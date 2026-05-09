@@ -247,6 +247,10 @@ const SignupScreen = () => {
                 logoComponent: LogoComponent,
                 configLoading,
                 whiteLabelText: Config?.REACT_APP_WHITE_LABEL_TEXT,
+                // Variant-facing tagline overrides — alphanomy reads these
+                // to swap its built-in tenant copy. See
+                // src/context/ConfigContext.js § TENANT TAGLINES for the shape.
+                taglines: config?.taglines?.signup || null,
             }}
             actions={{
                 onEmailChange: setEmail,

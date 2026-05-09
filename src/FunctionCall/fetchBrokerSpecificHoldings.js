@@ -46,10 +46,9 @@ export const fetchBrokerSpecificHoldings = async (
 
   switch (broker) {
     case 'IIFL Securities':
-      if (!clientCode) return null;
-      data = JSON.stringify({clientCode});
-      url = `${server.ccxtServer.baseUrl}iifl/holdings`;
-      break;
+      // IIFL backend endpoints are currently unavailable (404)
+      console.warn('[fetchSpecificHoldings] IIFL Securities integration is temporarily unavailable');
+      return null;
 
     case 'ICICI Direct':
       if (!apiKey || !jwtToken || !secretKey) return null;
@@ -100,10 +99,10 @@ export const fetchBrokerSpecificHoldings = async (
       break;
 
     case 'Kotak':
-      if (!jwtToken || !apiKey || !secretKey || !sid) return null;
+      // Kotak NEO UUID flow (2026-04-22) — no consumer secret.
+      if (!jwtToken || !apiKey || !sid) return null;
       data = JSON.stringify({
         consumerKey: checkValidApiAnSecret(apiKey),
-        consumerSecret: checkValidApiAnSecret(secretKey),
         accessToken: jwtToken,
         viewToken,
         sid,

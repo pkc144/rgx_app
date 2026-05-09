@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Linking, TouchableOpacity, Dimensions } from 'react-native';
 import Config from 'react-native-config';
 import YoutubePlayer from "react-native-youtube-iframe";
+import server from '../../../utils/serverConfig';
+import { getAdvisorSubdomain } from '../../../utils/variantHelper';
+import LinkifiedUrl from './LinkifiedUrl';
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const ICICIHelpContent = ({expanded, onExpandChange }) => {
-  const brokerConnectRedirectURL=Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+  // Web-parity callback URL — server finishes the apisession handshake.
+  const advisorSubdomain =
+    Config.REACT_APP_HEADER_NAME || getAdvisorSubdomain() || '';
+  const iciciCallbackUrl = `${server.ccxtServer.baseUrl}icici/auth-callback/${advisorSubdomain}`;
   useEffect(() => {
     onExpandChange?.(expanded);
   }, [expanded]);
 
   return (
     <View>
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 20 }}>
+    <View style={[styles.container, { paddingBottom: 20 }]}>
       <View style={styles.videoBox}>
         <YoutubePlayer
           height={screenHeight * 0.24}
@@ -25,18 +31,14 @@ const ICICIHelpContent = ({expanded, onExpandChange }) => {
 <View style={styles.content}>
              <Text style={styles.instruction}>
                            1. Visit{" "}
-                           <Text onPress={() => Linking.openURL('https://api.icicidirect.com/apiuser/home')} style={styles.link}>
-                             https://api.icicidirect.com/apiuser/home
-                           </Text>{" "}
+                           <LinkifiedUrl url="https://api.icicidirect.com/apiuser/home" />{" "}
                            and log in using your username and password. Verify your identity with the OTP and submit.
                          </Text>
                          <Text style={styles.instruction}>
-                           2. Click on the "Register an App" tab, then fill in the "App Name" field with "AlphaQuark" or a name of
-                           your choice. Enter the "Redirect URL" as{" "}
-                           <Text onPress={() => Linking.openURL(brokerConnectRedirectURL)} style={styles.link}>
-                             {brokerConnectRedirectURL}
-                           </Text>{" "}
-                           and click "Submit". Please ensure that "redirect URL" is entered correctly as mentioned above.
+                           2. Click on the "Register an App" tab, then fill in the "App Name" field with "{Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}" or a name of
+                           your choice. Paste your dedicated static IP (claimed in the IP-whitelist panel above) into the Breeze "IP Whitelist" field — ICICI rejects every order from a non-whitelisted IP. Enter the "Redirect URL" as{" "}
+                           <LinkifiedUrl url={iciciCallbackUrl} />{" "}
+                           and click "Submit". Please ensure that "Redirect URL" is entered exactly as shown above — if you previously registered a different URL, update it.
                          </Text>
                    
             
@@ -49,7 +51,7 @@ const ICICIHelpContent = ({expanded, onExpandChange }) => {
         </>
       )}
    
-    </ScrollView>
+    </View>
   
     </View>
 

@@ -17,10 +17,14 @@ import { ChevronLeft, Bell } from 'lucide-react-native';
 import Text from '../primitives/Text';
 import Icon from '../primitives/Icon';
 import Spinner from '../primitives/Spinner';
+import useTokens from '../../../src/theme/useTokens';
 
-const logo = require('../../../src/assets/fadedlogo.png');
+// Default-variant faded logo now resolved via `useTokens().assets.logoFadedPng`
+// — see Phase 2 (whitelabel-sync, 2026-05-09) and
+// docs/DESIGN_SYSTEM_ARCHITECTURE.md § Variant assets.
 
 const ChangeAdvisor = ({ viewModel, actions }) => {
+    const tokens = useTokens();
     const {
         currentRAId = '',
         newRAId = '',
@@ -51,7 +55,7 @@ const ChangeAdvisor = ({ viewModel, actions }) => {
                 <StatusBar barStyle="light-content" backgroundColor="#002651" />
 
                 <View style={styles.logoContainer} pointerEvents="none">
-                    <Image source={logo} style={[styles.logo, { tintColor: '#FFFFFF' }]} resizeMode="contain" />
+                    <Image source={tokens.assets.logoFadedPng} style={[styles.logo, { tintColor: '#FFFFFF' }]} resizeMode="contain" />
                 </View>
 
                 <View style={styles.header}>

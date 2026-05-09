@@ -22,9 +22,10 @@ import {
 } from 'lucide-react-native';
 import {WebView} from 'react-native-webview';
 import HelpModal from '../../components/BrokerConnectionModal/HelpModal';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import hdfcIcon from '../../assets/hdfc_securities.png';
 import HDFCHelpContent from './HelpUI/HDFCHelpContent';
+import EgressIpCallout from '../../components/BrokerConnectionModal/EgressIpCallout';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CrossPlatformOverlay from '../../components/CrossPlatformOverlay';
 
@@ -49,6 +50,13 @@ const HDFCConnectUI = ({
   setIsPasswordVisibleup,
   initiateAuth,
   handleWebViewNavigationStateChange,
+  egressUserId,
+  egressUserEmail,
+  egressReady,
+  setEgressReady,
+  unmetAck,
+  setUnmetAck,
+  configData,
 }) => {
   const scrollViewRef = useRef(null);
   const [expanded, setExpanded] = useState(false);
@@ -70,7 +78,7 @@ const HDFCConnectUI = ({
     <CrossPlatformOverlay visible={isVisible} onClose={onClose}>
       <View style={[styles.fullScreen, { paddingTop: insets.top }]}>
         {/* Header */}
-        <GradientView
+        <LinearGradient
           colors={['#0B3D91', '#0056B7']}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
@@ -82,7 +90,7 @@ const HDFCConnectUI = ({
             <Text style={styles.headerTitle}>Connect to HDFC</Text>
           </View>
           <Image source={hdfcIcon} style={styles.headerIcon} />
-        </GradientView>
+        </LinearGradient>
 
         {/* WebView Full Screen */}
         {showWebView ? (
@@ -156,6 +164,19 @@ const HDFCConnectUI = ({
                 </View>
               </TouchableOpacity>
 
+              {/* Egress-IP gate (see EgressIpCallout). HDFC requires a
+                  dedicated static IP whitelisted in InvestRight API app
+                  → Allowed IPs. */}
+              <EgressIpCallout
+                broker="hdfcsec"
+                customerId={egressUserId}
+                customerEmail={egressUserEmail}
+                configData={configData}
+                onAcknowledgeChange={setEgressReady}
+                showUnmetAck={unmetAck}
+                onUnmetAckHandled={() => setUnmetAck && setUnmetAck(false)}
+              />
+
               {/* Input Card */}
               <View style={styles.inputCard}>
                 <View style={styles.connectRow}>
@@ -206,11 +227,13 @@ const HDFCConnectUI = ({
                         styles.proceedButton,
                         {
                           backgroundColor:
-                            apiKey && secretKey ? '#0056B7' : '#d3d3d3',
+                            apiKey && secretKey && egressReady
+                              ? '#0056B7'
+                              : '#d3d3d3',
                         },
                       ]}
                       onPress={initiateAuth}
-                      disabled={!(apiKey && secretKey)}>
+                      disabled={!(apiKey && secretKey && egressReady)}>
                       {loading ? (
                         <ActivityIndicator size={27} color="#fff" />
                       ) : (

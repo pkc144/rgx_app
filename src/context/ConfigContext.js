@@ -46,6 +46,37 @@ export const ConfigProvider = ({ children }) => {
     const [config, setConfig] = useState(initialConfig);
     const [loading, setLoading] = useState(true);
 
+    // 2026-05-07: hydrate the theme/branding from AsyncStorage on
+    // mount BEFORE the API fetch runs. This way if the API call fails
+    // on a relaunch (intermittent network, server slow, DNS hiccup),
+    // the UI still renders with the last-known-good production theme
+    // from cache instead of falling back to the bare static
+    // APP_VARIANTS defaults — those defaults are intentionally
+    // generic (`gradient1/2: '#F0F0F0'`, `placeholderText: '#FFFFFF'`)
+    // and produce a near-blank washed-out home screen for any
+    // production tenant whose theme has been loaded before.
+    //
+    // The fresh API response in fetchConfig below still wins the
+    // moment it lands; this only affects the first-paint window.
+    useEffect(() => {
+        const hydrateFromCache = async () => {
+            try {
+                const cachedJson = await AsyncStorage.getItem('@app:configThemeCache');
+                if (!cachedJson) return;
+                const cached = JSON.parse(cachedJson);
+                // Only adopt cache for the SAME variant to avoid
+                // showing tenant A's theme briefly to tenant B's
+                // build (e.g. dev switching between APP_VARIANTs).
+                if (cached?.selectedVariant && cached.selectedVariant !== validVariant) return;
+                console.log('[ConfigContext] hydrated theme from AsyncStorage cache');
+                setConfig(prev => ({ ...prev, ...cached }));
+            } catch (e) {
+                console.warn('[ConfigContext] hydrateFromCache error:', e?.message);
+            }
+        };
+        hydrateFromCache();
+    }, [validVariant]);
+
     useEffect(() => {
         const fetchConfig = async () => {
             try {
@@ -125,8 +156,17 @@ export const ConfigProvider = ({ children }) => {
 
                         // ============================================================================
                         // AUTHENTICATION
+                        // Backend (apiData) wins over the static Config.js fallback for
+                        // googleWebClientId. Defensive `.trim()` because the backend has been
+                        // observed returning the value with trailing whitespace
+                        // (`'713385591555-…googleusercontent.com '`), which Google Sign-In
+                        // rejects with DEVELOPER_ERROR if passed verbatim.
                         // ============================================================================
-                        googleWebClientId: apiData.googleWebClientId || initialConfig.googleWebClientId,
+                        googleWebClientId:
+                            (typeof apiData.googleWebClientId === 'string'
+                                ? apiData.googleWebClientId.trim()
+                                : apiData.googleWebClientId) ||
+                            initialConfig.googleWebClientId,
 
                         // ============================================================================
                         // DIGIO CONFIGURATION
@@ -257,6 +297,43 @@ export const ConfigProvider = ({ children }) => {
                         // full token catalog.
                         // ============================================================================
                         colorTokens: apiData.colorTokens || {},
+
+                        // ============================================================================
+                        // TENANT TAGLINES (optional advisor override)
+                        // ============================================================================
+                        // Hero copy + trust badges shown on auth screens. The alphanomy
+                        // variant reads these to override its built-in tenant copy
+                        // ("Folios · Research", "Your Alpha, Engineered.", "SEBI Registered",
+                        // etc.) — see designs/alphanomy/screens/LoginScreen.js +
+                        // SignupScreen.js. Falls back to the hardcoded variant copy when
+                        // a field is missing.
+                        //
+                        // Backend shape (`appadvisors.taglines`):
+                        //   {
+                        //     login: {
+                        //       brandSubtag,   // string — sub-tag under brand name
+                        //       heroTitle,     // string — main hero heading (allows \n)
+                        //       heroSubtitle,  // string — supporting copy
+                        //       trustBadges,   // [{ icon: 'check'|'shield'|...,  label: string }]
+                        //     },
+                        //     signup: {
+                        //       brandSubtag,
+                        //       heroTitle,
+                        //       heroSubtitle,    // careful with claims like "50,000+ investors"
+                        //                        // — legal/compliance review per tenant
+                        //     },
+                        //     home: {
+                        //       recommendationsSubtitle,    // string — under "Recommendations" section
+                        //       modelPortfoliosSubtitle,    // string — under "Model Portfolios" section
+                        //       bespokePlansSubtitle,       // string — under "Top Bespoke Plans" section
+                        //     }
+                        //   }
+                        //
+                        // Compliance note: any quantitative claim (investor counts, returns,
+                        // performance numbers) must be tenant-approved before going live.
+                        // Surfacing taglines via backend lets legal vary copy per tenant
+                        // without a code change.
+                        taglines: apiData.taglines || null,
                     };
 
                     console.log('✅ Using newConfig from API for APP_VARIANTS:', {

@@ -45,6 +45,8 @@ import {
 import RebalanceAdvices from '../../components/AdviceScreenComponents/RebalanceAdvices';
 import useHomeScreenTabs from './hooks/useHomeScreenTabs';
 import useHomeScreenModals from './hooks/useHomeScreenModals';
+import useHomeMarketSummary from './hooks/useHomeMarketSummary';
+import useHomePlanSummary from './hooks/useHomePlanSummary';
 import { useComponent } from '../../design/useDesign';
 // styles import retained — allTabData JSX subtrees reference styles from the
 // container's scope (e.g. styles.StockTitle for section headers). The
@@ -122,6 +124,7 @@ const HomeScreen = ({ }) => {
     videos,
     planList,
     configData,
+    userDetails,
   } = useTrade();
   // console.log('configData', configData);
 
@@ -136,6 +139,12 @@ const HomeScreen = ({ }) => {
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;
+  // Resolve a displayable user name (alphanomy variant uses this for the
+  // header greeting). Backend-stored `userDetails.name` is preferred (full
+  // legal name); Firebase `user.displayName` is the fallback (Google /
+  // Apple sign-in surface). Email-derived first-name remains the final
+  // fallback, handled inside the variant presentation.
+  const userName = userDetails?.name || user?.displayName || '';
   const [isLoading, setIsLoading] = useState(true);
   // Phase E prep (2026-05-01): tab + 7-overlay state consolidated behind a
   // single hook with backward-compat boolean shims; modal visibility
@@ -234,23 +243,38 @@ const HomeScreen = ({ }) => {
       //  console.log('sorted',sortedRebalances[0]);
       if (!latest) return null;
 
-      // Find execution for this user AND current broker
-      // A user may execute the same rebalance with multiple brokers,
-      // so we check broker match to allow re-execution with a different broker
-      // Also match DummyBroker executions when broker is not connected
+      // 3-tier execution matching (mirrors RebalanceAdvices.js + tidi
+      // RebalanceStatusService._matchExecution):
+      //   Tier 1: exact (email + current broker)
+      //   Tier 2: DummyBroker fallback
+      //   Tier 3: any email match — entry exists for a different broker.
+      //           If other broker's status is "executed", treat current
+      //           broker as fresh toExecute (different broker = different
+      //           holdings). Otherwise pass through (pending is pending
+      //           regardless of broker tag).
       const userExecutionsFiltered =
         latest?.subscriberExecutions?.filter(
           execution => execution?.user_email === userEmail,
         ) || [];
 
-      const userExecution =
+      let userExecution =
         userExecutionsFiltered.find(
           ex => broker && ex?.user_broker === broker,
         ) ||
         userExecutionsFiltered.find(
           ex => ex?.user_broker === 'DummyBroker',
-        ) ||
-        (!broker ? userExecutionsFiltered[0] : undefined);
+        );
+      if (!userExecution && userExecutionsFiltered.length > 0) {
+        // Tier 3: entry exists for a different broker
+        const anyMatch = userExecutionsFiltered[0];
+        const otherStatus = (anyMatch?.status || '').toLowerCase();
+        if (otherStatus === 'executed') {
+          // Executed on broker A ≠ executed on broker B
+          userExecution = {...anyMatch, status: 'toExecute', user_broker: broker};
+        } else {
+          userExecution = anyMatch;
+        }
+      }
 
       const matchingFailedTrades = modelPortfolioRepairTrades?.find(
         trade =>
@@ -1618,6 +1642,22 @@ const HomeScreen = ({ }) => {
   // against this container's scope, so they keep working unchanged.
   const Presentation = useComponent('screens.HomeScreen');
 
+  // Variant-facing additions (alphanomy reads these; default ignores them).
+  // Tickers: live LTPs from MarketDataContext + previous-close fetch for
+  // change indicators. P&L: aggregated holdings sum from MultiBrokerContext.
+  // See src/screens/Home/hooks/useHomeMarketSummary.js for the resolution.
+  const { tickers, pnlSummary } = useHomeMarketSummary();
+  // Plan summaries: top MP + bespoke plan from the catalogs
+  // (mirrors getAllStrategy / getAllBespoke endpoints used by
+  // src/screens/Drawer/ModelPortfolioScreen.js — same auth headers,
+  // same advisorTag/userEmail dependencies). Returns nulls until the
+  // user is authenticated AND the advisor config has resolved.
+  const { heroPlan, bespokePlan, heroPlanRaw, bespokePlanRaw } = useHomePlanSummary({
+    userEmail,
+    advisorTag: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+    headerName: configData?.config?.REACT_APP_HEADER_NAME,
+  });
+
   const home = {
     seeAllBespoke, setSeeAllBespoke,
     seeAllBespokeplan, setSeeAllBespokeplan,
@@ -1645,6 +1685,37 @@ const HomeScreen = ({ }) => {
     ethicalSearchQuery, setEthicalSearchQuery,
     showUpdateModal, setShowUpdateModal,
     onStateChange, convertToTimeAgo,
+    // Variant-facing market summary (additive — default presentation ignores).
+    tickers, pnlSummary,
+    // Variant-facing plan summaries.
+    heroPlan, bespokePlan,
+    heroPlanRaw, bespokePlanRaw,
+    // Variant-facing user name for the greeting (full name preferred over
+    // email-derived first-name fallback).
+    userName,
+    // Variant-facing active-portfolio sections (alphanomy variant only):
+    //   rebalanceList — sorted MP rebalance items the user is subscribed to,
+    //                   with `latestRebalance` + `userInvestmentAmount`
+    //                   already merged in. Same shape that powers the legacy
+    //                   <RebalanceAdvices> component on the default presentation.
+    //   recommendationList — pending bespoke trade recos for this user. Same
+    //                        array the legacy <StockAdvices type="home"> reads.
+    // Default presentation ignores these — they're additive, not contract-breaking.
+    rebalanceList: filteredAndSortedStrategies,
+    recommendationList: stockRecoNotExecutedfinal,
+    // Variant-facing tenant copy for Home section subtitles. Same
+    // pattern as `taglines.login` / `taglines.signup` (see
+    // `src/context/ConfigContext.js § TENANT TAGLINES` and
+    // `docs/TENANT_TAGLINES.md`). Default presentation ignores;
+    // alphanomy reads `home.taglines.modelPortfoliosSubtitle` etc.
+    // and falls back per-field to its hardcoded copy.
+    taglines: configData?.config?.taglines?.home || null,
+    // Variant-facing knowledge data (blogs / videos / pdf). Default
+    // presentation uses the KnowledgeHub component directly; alphanomy
+    // variant renders its own inline cards from these arrays.
+    blogs,
+    videos,
+    pdf,
   };
 
   return <Presentation home={home} />;

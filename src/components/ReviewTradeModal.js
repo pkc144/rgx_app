@@ -19,7 +19,10 @@ import Icon1 from 'react-native-vector-icons/Feather';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import axios from 'axios';
 
-import {getLastKnownPrice} from './AdviceScreenComponents/DynamicText/websocketPrice';
+// getLastKnownPrice previously used by handleFixSize; dropped 2026-04-17 in
+// favor of reading from useLTPStore (the live Zustand source). Kept this
+// comment as a breadcrumb — if you need a sync price read inside this file,
+// use `useLTPStore.getState().ltps[symbol]`.
 import ReviewTradeText from './AdviceScreenComponents/ReviewTradeText';
 import {useTotalAmount} from './AdviceScreenComponents/DynamicText/websocketPrice';
 import eventEmitter from './EventEmitter';
@@ -32,7 +35,7 @@ import CheckBox from '@react-native-community/checkbox';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Config from 'react-native-config';
 import SliderButton from './SliderButton';
-import GradientView from './GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 const {height: screenHeight} = Dimensions.get('window');
 import { useConfig } from '../context/ConfigContext';
 import useLTPStore from './AdviceScreenComponents/DynamicText/useLtpStore';
@@ -65,8 +68,9 @@ const ReviewTradeModal = ({
   const secondaryColor = config?.secondaryColor || '#F0F0F0';
   const gradient1 = config?.gradient1 || '#F0F0F0';
   const gradient2 = config?.gradient2 || '#F0F0F0';
+  const allowAfterHoursOrders = config?.allowAfterHoursOrders;
+  const marketGateOpen = IsMarketHours() || allowAfterHoursOrders;
 
-  const isMarketHours = IsMarketHours();
   const {width} = useWindowDimensions();
   const [multiplier, setMultiplier] = useState('1');
 
@@ -296,81 +300,49 @@ const ReviewTradeModal = ({
     }
   };
 
-  // Enhanced handleFixSize function
+  // Equal-budget allocation: splits the user-entered amount equally across
+  // stocks and computes each stock's quantity as floor(amountPerStock /
+  // livePrice). Keeps the total within the specified budget — matches the
+  // mobile Note text shown next to the input ("ensuring the total investment
+  // stays within the specified budget").
+  //
+  // Intentionally divergent from web's `ReviewTradeModel.js:266-277` which
+  // treats the input as per-stock (floor(amount/price) for every stock), so
+  // a 2-stock cart at ₹500 + ₹300 with a 2000 input produces a 3800 basket
+  // on web but 1900 on mobile. Mobile's behavior matches the label; web's
+  // does not. See CHANGELOG 2026-04-17 for the divergence rationale.
+  //
+  // Reads live prices from `useLTPStore` (the Zustand store that
+  // `TotalAmountText` also uses). The older `getLastKnownPrice` helper was
+  // reading from a separate `WebSocketManager.lastPrices` Map that the
+  // current socket payload (`ltp_update` event) never populates — that's
+  // why the Update button was a no-op before 2026-04-17.
   const handleFixSize = () => {
-    if (selectedOption === 'fix' && inputFixSizeValue) {
-      const targetAmount = parseFloat(inputFixSizeValue);
+    if (selectedOption !== 'fix' || !inputFixSizeValue) return;
+    const targetAmount = parseFloat(inputFixSizeValue);
+    if (!targetAmount || stockDetails.length === 0) return;
 
-      // Store current quantities as original (before scaling)
-      const original = {};
-      stockDetails.forEach(stock => {
-        original[`${stock.tradingSymbol}-${stock.tradeId}`] = stock.quantity;
-      });
-      setOriginalQuantities(original);
+    // Save current quantities so the "uncheck checkbox" restore works.
+    const original = {};
+    stockDetails.forEach(stock => {
+      original[`${stock.tradingSymbol}-${stock.tradeId}`] = stock.quantity;
+    });
+    setOriginalQuantities(original);
 
-      // Ensure all stocks have at least quantity 1 for calculation
-      const workingStockDetails = stockDetails.map(stock => ({
-        ...stock,
-        quantity: Math.max(stock.quantity, 1), // Ensure minimum 1 for calculation
-      }));
+    const ltps = useLTPStore.getState().ltps;
+    const amountPerStock = targetAmount / stockDetails.length;
 
-      // Calculate total current value with working quantities
-      let totalCurrentValue = 0;
-      const stockValues = [];
-
-      workingStockDetails.forEach(stock => {
-        const currentPrice = getLastKnownPrice(stock.tradingSymbol);
-        if (currentPrice && currentPrice > 0) {
-          const stockValue = currentPrice * stock.quantity;
-          totalCurrentValue += stockValue;
-          stockValues.push({
-            stock,
-            currentPrice,
-            currentValue: stockValue,
-          });
-        }
-      });
-      if (totalCurrentValue === 0) {
-        // Fallback: Equal distribution if no current value
-        const stockCount = workingStockDetails.length;
-        const amountPerStock = targetAmount / stockCount;
-        const updatedStockDetails = workingStockDetails.map(stock => {
-          const currentPrice = getLastKnownPrice(stock.tradingSymbol);
-          if (currentPrice && currentPrice > 0) {
-            const newQuantity = Math.floor(amountPerStock / currentPrice);
-            return {...stock, quantity: Math.max(newQuantity, 1)};
-          }
-          return {...stock, quantity: 1};
-        });
-        setStockDetails(updatedStockDetails);
-        return;
+    const updatedStockDetails = stockDetails.map(stock => {
+      const price = parseFloat(ltps[stock.tradingSymbol]);
+      if (price > 0) {
+        const newQuantity = Math.floor(amountPerStock / price);
+        return {...stock, quantity: Math.max(newQuantity, 1)};
       }
-      // Proportional distribution based on current values
-      const updatedStockDetails = workingStockDetails.map(stock => {
-        const currentPrice = getLastKnownPrice(stock.tradingSymbol);
-        if (currentPrice && currentPrice > 0) {
-          // Calculate proportion based on current stock value
-          const currentStockValue = currentPrice * stock.quantity;
-          const proportion = currentStockValue / totalCurrentValue;
-          // Allocate proportional amount from target budget
-          const allocatedAmount = targetAmount * proportion;
-          // Calculate new quantity
-          const newQuantity = Math.floor(allocatedAmount / currentPrice);
-          return {...stock, quantity: Math.max(newQuantity, 1)};
-        }
+      // No live price yet (WebSocket hasn't delivered one) — leave at 1.
+      return {...stock, quantity: 1};
+    });
 
-        return {...stock, quantity: 1}; // Fallback to 1
-      });
-      // Verify and log total
-      let totalAllocated = 0;
-      updatedStockDetails.forEach(stock => {
-        const currentPrice = getLastKnownPrice(stock.tradingSymbol);
-        if (currentPrice) {
-          totalAllocated += currentPrice * stock.quantity;
-        }
-      });
-      setStockDetails(updatedStockDetails);
-    }
+    setStockDetails(updatedStockDetails);
   };
 
   // Reset function
@@ -705,7 +677,7 @@ const ReviewTradeModal = ({
         animationType="slide">
         <SafeAreaView style={styles.modalOverlay} pointerEvents="box-none">
           <View style={[styles.modalContainer, {width: width * 1}]}>
-            <GradientView
+            <LinearGradient
               colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
               start={{x: 0, y: 0}}
               end={{x: 1, y: 1}}
@@ -730,7 +702,7 @@ const ReviewTradeModal = ({
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <XIcon size={24} color="#fff" />
               </TouchableOpacity>
-            </GradientView>
+            </LinearGradient>
             <View style={styles.tableContainer}>
               <FlatList
                 data={basketData}
@@ -807,17 +779,16 @@ const ReviewTradeModal = ({
                 <TouchableOpacity
                   style={[
                     styles.buttonPlace,
-                    (hasZeroQuantityBasket || !isMarketHours) &&
-                      styles.buttonDisabled, // disabled styling
-                    loading && styles.buttonLoading, // optional: add extra styling when loading
+                    (hasZeroQuantityBasket || !marketGateOpen) && styles.buttonDisabled,
+                    loading && styles.buttonLoading,
                   ]}
-                  disabled={hasZeroQuantityBasket || !isMarketHours || loading} // disable while loading
+                  disabled={hasZeroQuantityBasket || !marketGateOpen || loading}
                   onPress={() => placeOrder(basketData)}>
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
                     <Text style={styles.buttonTextPlace}>
-                      {!isMarketHours ? 'Market is Closed' : 'Place Order'}
+                      {!marketGateOpen ? 'Market is Closed' : 'Place Order'}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -839,7 +810,7 @@ const ReviewTradeModal = ({
         <View style={[styles.modalContainer, {width: width * 1}]}>
           <SafeAreaView style={styles.horizontal} />
           <SafeAreaView>
-            <GradientView
+            <LinearGradient
               colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
               start={{x: 0, y: 0}}
               end={{x: 1, y: 1}}
@@ -854,7 +825,7 @@ const ReviewTradeModal = ({
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <XIcon size={24} color="#fff" />
               </TouchableOpacity>
-            </GradientView>
+            </LinearGradient>
           </SafeAreaView>
 
           <View style={{borderWidth: 1, borderColor: '#E8E8E8'}}></View>
@@ -1079,16 +1050,16 @@ const ReviewTradeModal = ({
             <TouchableOpacity
               style={[
                 styles.buttonPlace,
-                (hasZeroQuantity || !isMarketHours) && styles.buttonDisabled, // disabled styling
-                loading && styles.buttonLoading, // optional: add extra styling when loading
+                (hasZeroQuantity || !marketGateOpen) && styles.buttonDisabled,
+                loading && styles.buttonLoading,
               ]}
-              disabled={hasZeroQuantity || !isMarketHours || loading}
+              disabled={hasZeroQuantity || !marketGateOpen || loading}
               onPress={() => placeOrder(stockDetails)}>
               {loading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <Text style={styles.buttonTextPlace}>
-                  {!isMarketHours ? 'Market is Closed' : 'Place Order'}
+                  {!marketGateOpen ? 'Market is Closed' : 'Place Order'}
                 </Text>
               )}
             </TouchableOpacity>

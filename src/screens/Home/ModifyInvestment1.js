@@ -103,7 +103,7 @@ const ModifyInvestment = ({
       let data2 = JSON.stringify({
         userEmail: userEmail,
         model: strategyDetails?.model_name,
-        advisor: strategyDetails?.advisor,
+        advisor: configData?.config?.REACT_APP_HEADER_NAME,
         model_id: latestRebalance.model_Id,
         userBroker: userBroker ? userBroker : "DummyBroker",
         subscriptionAmountRaw: [

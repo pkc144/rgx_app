@@ -56,6 +56,7 @@ const ManageConnectionsModal = ({
 }) => {
   const [loading, setLoading] = useState(true);
   const [connections, setConnections] = useState([]);
+  const fetchingRef = React.useRef(false);
   const [removing, setRemoving] = useState(null);
   const [switching, setSwitching] = useState(null);
   const [reauthing, setReauthing] = useState(null);
@@ -78,8 +79,8 @@ const ManageConnectionsModal = ({
   const userEmail = user?.email;
 
   const fetchConnections = async () => {
-    if (!userEmail) return;
-
+    if (!userEmail || fetchingRef.current) return;
+    fetchingRef.current = true;
     setLoading(true);
     try {
       // Use main backend (aq_backend_github) which stores broker connections
@@ -121,12 +122,16 @@ const ManageConnectionsModal = ({
       Alert.alert('Error', 'Failed to load connections');
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
   };
 
   useEffect(() => {
     if (visible && userEmail) {
       fetchConnections();
+    }
+    if (!visible) {
+      fetchingRef.current = false;
     }
   }, [visible, userEmail]);
 
