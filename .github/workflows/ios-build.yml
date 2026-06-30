@@ -185,8 +185,18 @@ jobs:
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APP_STORE_CONNECT_API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+          # Exported IPA is named after the app product (white-label forks differ),
+          # not always "AlphaQuark". altool prints "File does not exist" but exits 0,
+          # so a wrong hardcoded name uploads nothing yet shows green. Glob + hard-fail.
+          IPA=$(ls "$RUNNER_TEMP/export/"*.ipa 2>/dev/null | head -1)
+          if [ -z "$IPA" ]; then
+            echo "ERROR: no .ipa found in $RUNNER_TEMP/export"
+            ls -la "$RUNNER_TEMP/export" || true
+            exit 1
+          fi
+          echo "Uploading IPA: $IPA"
           xcrun altool --upload-app \
-            -f "$RUNNER_TEMP/export/AlphaQuark.ipa" \
+            -f "$IPA" \
             -t ios \
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
