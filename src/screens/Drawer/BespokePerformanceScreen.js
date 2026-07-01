@@ -532,6 +532,7 @@ const BespokePerformanceScreen = ({ route }) => {
             }}
             actions={{
                 onGoBack: () => navigation.goBack(),
+                onOpenResearchReports: () => navigation.navigate('ResearchReportScreen'),
                 onTabIndexChange: setIndex,
                 onSelectedPricingChange: setSelectedPricing,
                 onInvestNow: () => setPaymentModal(true),
