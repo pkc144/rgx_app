@@ -175,8 +175,16 @@ const MPCardBespoke = ({
     if (isValidPrice(data?.pricingWithoutGst?.["half-yearly"])) {
       options.push({ period: "half-yearly", label: "6 Months", value: data.pricingWithoutGst["half-yearly"] });
     }
-    if (isValidPrice(data?.pricing?.yearly)) {
-      options.push({ period: "yearly", label: "Yearly", value: data.pricing.yearly });
+    // Use the pre-GST base like the other frequencies above — data.pricing.yearly
+    // is GST-INCLUSIVE, so reading it here + appending the "+ GST" label
+    // double-counted GST (showed 23600 for a 20000 plan). Fall back to
+    // pricing.yearly only for legacy plans that lack pricingWithoutGst.
+    if (isValidPrice(data?.pricingWithoutGst?.yearly ?? data?.pricing?.yearly)) {
+      options.push({
+        period: "yearly",
+        label: "Yearly",
+        value: data?.pricingWithoutGst?.yearly ?? data.pricing.yearly,
+      });
     }
 
     return options;

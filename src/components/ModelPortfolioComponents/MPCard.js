@@ -115,8 +115,15 @@ const MPCard = ({
     if (isValidPrice(ele?.pricingWithoutGst?.['half-yearly'])) {
       options.push({ period: 'half-yearly', label: '6 Months', value: ele.pricingWithoutGst['half-yearly'] });
     }
-    if (isValidPrice(ele?.pricing?.yearly)) {
-      options.push({ period: 'yearly', label: 'Yearly', value: ele.pricing.yearly });
+    // Pre-GST base like the other frequencies — ele.pricing.yearly is
+    // GST-INCLUSIVE, so reading it here + the "+ GST" label double-counts GST.
+    // Fall back to pricing.yearly only for legacy plans without pricingWithoutGst.
+    if (isValidPrice(ele?.pricingWithoutGst?.yearly ?? ele?.pricing?.yearly)) {
+      options.push({
+        period: 'yearly',
+        label: 'Yearly',
+        value: ele?.pricingWithoutGst?.yearly ?? ele.pricing.yearly,
+      });
     }
 
     return options;
