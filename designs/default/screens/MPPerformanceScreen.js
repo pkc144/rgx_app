@@ -81,6 +81,7 @@ import {
   Modal,
 } from 'react-native';
 import WebView from 'react-native-webview';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TabView, SceneMap } from 'react-native-tab-view';
 import {
   ChevronLeft,
@@ -151,6 +152,8 @@ const MPPerformanceScreen = ({ viewModel, actions, slots }) => {
     FyersTpinSlot = null,
     OtherBrokerSlot = null,
   } = slots || {};
+
+  const insets = useSafeAreaInsets();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -339,7 +342,7 @@ const MPPerformanceScreen = ({ viewModel, actions, slots }) => {
         </View>
       </View>
 
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, {paddingBottom: Math.max(insets.bottom, 8)}]}>
         {isSubscribed ? (
           <TouchableOpacity disabled style={styles.investButtonDisable}>
             <Text style={styles.investButtonTextDisable}>Subscribed</Text>

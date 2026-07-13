@@ -4,6 +4,50 @@ All notable changes to the RGX Research Mobile App (EquityPro) are documented he
 
 ---
 
+## [unreleased] - 2026-07-13 — sync(upstream): port session fixes from Alphab2bapp
+
+Content-ported this session's Alphab2bapp mobile fixes into the EquityPro fork
+(exact-context anchored edits; tenant branding/roster left untouched).
+
+**New files (verbatim):**
+- `src/utils/emailValidation.js` — shared email validator (blocks `x@gmailcom`
+  / no-TLD-dot addresses that break the Telegram-removal cron).
+- `src/utils/gttSupport.js` — shared GTT native-broker gate (`isGttNativeBroker`
+  / `isGttOcoLeg`, GTT_ARCHITECTURE §4).
+- `src/FunctionCall/services/PortfolioSummaryService.js` — 3 GET endpoints for
+  the Client Performance Summary.
+- `designs/default/composites/PortfolioSummaryCard.js` — fund-wise portfolio
+  summary + value history + realised P&L card (gated, default-ON).
+- `docs/GTT_MOBILE_CERT_CHECKLIST.md`.
+
+**Edited:**
+- `src/context/ConfigContext.js` — `performanceSummaryEnabled` (default-ON) +
+  `kycBlockingEnabled` (default-OFF) flags (adapted to this fork's `featureFlags`
+  idiom; fork has no upstream `parityFlags` mechanism).
+- `designs/default/screens/LoginScreen.js` — `RemoteLogoImage` bundled-logo
+  fallback on 403, config-loading shows bundled logo, "Its"→"It" copy fix
+  (LinearGradient tenant colors untouched).
+- `src/components/CustomToolbar.js` — safe-area header padding, logo onError
+  fallback, blank-circle removal (tenant color lines untouched).
+- `designs/default/screens/{MPPerformanceScreen,BespokePerformanceScreen}.js` —
+  invest-now bottom safe-area padding.
+- `src/components/ModelPortfolioComponents/MPCardBespoke.js` — bespoke→MP
+  gradient card (now config-driven `[gradient1, gradient2]`).
+- `src/components/AdviceScreenComponents/StockAdvices.js` — GTT reconcile:
+  `isGttNativeBroker` gate + Groww/Dhan/Angel One/ICICI Direct GTT payload cases.
+  (Zerodha log hunk skipped — fork routes Zerodha via Kite Publisher WebView
+  before the GTT split, so Zerodha customer-GTT is already OFF.)
+- `src/screens/Authentication/SignupScreen.js` — `validateEmail` gate +
+  normalized-email submit.
+- `src/components/ModelPortfolioComponents/MPInvestNowModal.js` —
+  `runKycBlockingGate` (default-OFF) before leaving the PAN/DoB step.
+- `designs/default/screens/PortfolioScreen.js` — mount `<PortfolioSummaryCard />`
+  as the Model Portfolios list header.
+
+Ported from Alphab2bapp commits d663083 / b198035 / 1199403.
+
+---
+
 ## [unreleased] - 2026-07-03 — fix(bespoke): yearly plan card double-counted GST
 
 **Bug:** MP/bespoke cards (`MPCardBespoke.js`, `MPCard.js`) showed the

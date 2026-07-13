@@ -203,6 +203,17 @@ export const ConfigProvider = ({ children }) => {
                             ? apiData.featureFlags.allowAfterHoursOrders
                             : (apiData.allowAfterHoursOrders !== undefined ? apiData.allowAfterHoursOrders : true),
 
+                        // Client Performance Summary (fund-wise portfolio summary + value
+                        // history + realised P&L). DEFAULT-ON, mirroring web's `!== false`
+                        // gate in Routes/Admin/loginRoutes.js /frontend-config.
+                        performanceSummaryEnabled: apiData.featureFlags?.performanceSummaryEnabled !== undefined
+                            ? apiData.featureFlags.performanceSummaryEnabled
+                            : (apiData.performanceSummaryEnabled !== false),
+                        // Checkout-time blocking KYC gate (PAN+DoB → KRA verify BEFORE
+                        // payment/Digio). DEFAULT-OFF, mirrors web's `=== true` gate.
+                        kycBlockingEnabled: apiData.featureFlags?.kycBlockingEnabled === true
+                            || apiData.kycBlockingEnabled === true,
+
                         // ============================================================================
                         // PAYMENT CONFIGURATION
                         // Supported platforms: 'razorpay', 'cashfree', 'payu'

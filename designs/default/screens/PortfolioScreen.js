@@ -45,6 +45,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import PortfolioCard from '../../../src/screens/PortfolioScreen/PortFolioCard';
 import RenderEmptyMessage from '../../../src/screens/PortfolioScreen/EmptyMessageCard';
 import HoldingScoreModal from '../../../src/screens/PortfolioScreen/HoldingScoreModal';
+import PortfolioSummaryCard from '../composites/PortfolioSummaryCard';
 import formatCurrency from '../../../src/utils/formatCurrency';
 import styles from '../../../src/screens/PortfolioScreen/PortfolioScreen.styles';
 
@@ -392,6 +393,7 @@ const PortfolioScreenPresentation = ({ portfolio }) => {
                                     style={styles.list}
                                     renderItem={renderModalPFCard}
                                     keyExtractor={(item, index) => `${item?.modelName || index}_${index}`}
+                                    ListHeaderComponent={<PortfolioSummaryCard />}
                                     ListEmptyComponent={<RenderEmptyMessage value="modelPortfolio" />}
                                     scrollEventThrottle={16}
                                 />

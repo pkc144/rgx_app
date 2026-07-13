@@ -53,6 +53,7 @@ import {
     FlatList,
     SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TabView, SceneMap } from 'react-native-tab-view';
 import {
     ChevronLeft,
@@ -162,6 +163,7 @@ const Distribution = ({
 
 /* ---------- Main Presentation ---------- */
 const BespokePerformanceScreen = ({ viewModel, actions }) => {
+    const insets = useSafeAreaInsets();
     const vm = viewModel || {};
     const act = actions || {};
 
@@ -487,7 +489,7 @@ const BespokePerformanceScreen = ({ viewModel, actions }) => {
                 </View>
             </ScrollView>
 
-            <View style={{ alignContent: 'center', alignItems: 'center', alignSelf: 'center', elevation: 20, shadowColor: 'grey' }}>
+            <View style={{ alignContent: 'center', alignItems: 'center', alignSelf: 'center', elevation: 20, shadowColor: 'grey', paddingBottom: Math.max(insets.bottom, 8) }}>
                 {subscribed === true ? (
                     <TouchableOpacity disabled={subscribed} style={[styles.investButtondisable, { width: screenWidth * 0.9 }]}>
                         <Text style={styles.investButtonTextdisable}>Subscribed</Text>
