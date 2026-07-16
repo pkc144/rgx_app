@@ -73,6 +73,7 @@ import RebalanceTimeLineModal from '../../../src/components/ModelPortfolioCompon
 import CustomTabBarMPPerformance from '../../../src/screens/Drawer/CustomTabbarMPPerformance';
 import ConsentPopup from '../../../src/components/ModelPortfolioComponents/ConsentPopUp';
 import { withGst, gstLabel } from '../../../src/utils/gstHelpers';
+import { resolveImageUrl } from '../../../src/utils/resolveImageUrl';
 
 const Alpha100 = require('../../../src/assets/alpha-100.png');
 
@@ -288,7 +289,7 @@ const BespokePerformanceScreen = ({ viewModel, actions }) => {
                                                 <Image
                                                     source={
                                                         strategyDetails?.image
-                                                            ? { uri: `${serverBaseUrl}${strategyDetails?.image}` }
+                                                            ? { uri: resolveImageUrl(strategyDetails?.image, serverBaseUrl) }
                                                             : Alpha100
                                                     }
                                                     style={styles.icon}

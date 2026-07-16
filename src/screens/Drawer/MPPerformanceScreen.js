@@ -30,6 +30,7 @@ import Config from 'react-native-config';
 import { useComponent } from '../../design/useDesign';
 
 import server from '../../utils/serverConfig';
+import {resolveImageUrl} from '../../utils/resolveImageUrl';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import IsMarketHours from '../../utils/isMarketHours';
 import {fetchFunds} from '../../FunctionCall/fetchFunds';
@@ -474,9 +475,7 @@ const MPPerformanceScreen = ({route}) => {
   };
 
   // Image
-  const imageUri = strategyDetails?.image
-    ? `${server.server.baseUrl}${strategyDetails.image}`
-    : null;
+  const imageUri = resolveImageUrl(strategyDetails?.image, server.server.baseUrl) || null;
 
   // Consent handlers
   const handleConsentAccept = () => { setGlobalConsent(true); setIsConsentPopupOpen(false); };

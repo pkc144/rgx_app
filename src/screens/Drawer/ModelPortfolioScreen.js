@@ -27,6 +27,7 @@ import {useNavigation, useRoute} from '@react-navigation/native';
 import MPCard from '../../components/ModelPortfolioComponents/MPCard';
 import {getAuth} from '@react-native-firebase/auth';
 import server from '../../utils/serverConfig';
+import {resolveImageUrl} from '../../utils/resolveImageUrl';
 import {GitForkIcon} from 'lucide-react-native';
 import Config from 'react-native-config';
 import {generateToken} from '../../utils/SecurityTokenManager';
@@ -408,7 +409,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const renderItembespoke = ({item}) => (
     <MPCardBespoke
       modelName={item?.name}
-      image={item?.image ? `${server.server.baseUrl}${item?.image}` : ''}
+      image={resolveImageUrl(item?.image, server.server.baseUrl)}
       overview={item.overView}
       minInvestment={item.minInvestment}
       retentionRate={item.retentionRate}
@@ -433,7 +434,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const renderItem = ({item}) => (
     <MPCard
       modelName={item.name}
-      image={item?.image ? `${server.server.baseUrl}${item?.image}` : ''}
+      image={resolveImageUrl(item?.image, server.server.baseUrl)}
       overview={item.description}
       setSelectedCard={setSelectedCard}
       minInvestment={item.minInvestment}

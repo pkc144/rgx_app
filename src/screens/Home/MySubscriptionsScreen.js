@@ -20,6 +20,7 @@ import moment from 'moment';
 import Config from 'react-native-config';
 
 import server from '../../utils/serverConfig';
+import {resolveImageUrl} from '../../utils/resolveImageUrl';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
@@ -258,7 +259,7 @@ const MySubscriptionsScreen = () => {
               <Image
                 source={
                   plan?.image
-                    ? {uri: `${server.server.baseUrl}${plan.image}`}
+                    ? {uri: resolveImageUrl(plan.image, server.server.baseUrl)}
                     : Alpha100
                 }
                 style={styles.cardImage}
