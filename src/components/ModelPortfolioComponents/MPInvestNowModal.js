@@ -3021,6 +3021,23 @@ const MPInvestNowModal = ({
         },
       );
 
+      // Backend guard refusals (e.g. the CVL pre-payment KYC gate added to
+      // aq_backend SubscriptionRouter POST /one-time-payment/subscription on
+      // 2026-07-16) come back as HTTP 200 with `{status: false, message}` via
+      // _RS.apiNew. Without this check, `response.data.data` is undefined,
+      // the property read below throws, and the catch shows only a GENERIC
+      // error — discarding the customer-relevant gate message.
+      if (response?.data?.status === false) {
+        console.error('[OneTime Razorpay] Order create refused:', response?.data?.message);
+        Alert.alert(
+          'Payment could not be started',
+          response?.data?.message || 'Please try again in a moment.',
+        );
+        setLoading(false);
+        setLoadingmp(false);
+        return;
+      }
+
       const paymentData = response.data.data;
 
       if (paymentData.razorpay_order_id) {
