@@ -750,13 +750,47 @@ const MPInvestNowModal = ({
     }
   };
 
+  // Refs mirroring the latest config-loading/kycBlockingEnabled state, kept in
+  // sync via the effect below. Needed because `resolveKycBlockingEnabled` is an
+  // async function that may await across several ticks (polling for a slow
+  // config load) — a plain closed-over `config` value is frozen at call time
+  // and would never observe the load actually finishing, so the wait would
+  // just spin uselessly for the full timeout. Refs mutate in place and are
+  // always read fresh. Mirrors web's resolveKycBlockingEnabled hardening
+  // (prod-alphaquark-github PricingPage.js) and markup_app's parallel fix.
+  const configLoadingRef = useRef(config?.configLoading);
+  const kycBlockingEnabledRef = useRef(config?.kycBlockingEnabled === true);
+  useEffect(() => {
+    configLoadingRef.current = config?.configLoading;
+    kycBlockingEnabledRef.current = config?.kycBlockingEnabled === true;
+  }, [config?.configLoading, config?.kycBlockingEnabled]);
+
+  // Waits out a still-in-flight config load (up to 6s, matching the provider's
+  // own frontend-config fetch timeout) before trusting `kycBlockingEnabled`.
+  // Without this, a user who reaches step 1 before ConfigContext's initial
+  // fetch resolves would read the pre-fetch default (false) and silently skip
+  // the gate. If config is still loading after the wait, treat the gate as OFF
+  // (not a verification failure — most advisors default off anyway, so
+  // "unknown" reasonably means "assume default").
+  const resolveKycBlockingEnabled = async () => {
+    if (!configLoadingRef.current) return kycBlockingEnabledRef.current === true;
+    const start = Date.now();
+    while (configLoadingRef.current && Date.now() - start < 6000) {
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return kycBlockingEnabledRef.current === true;
+  };
+
   // Checkout-time blocking KYC gate — verify PAN+DoB against the KRA BEFORE
   // moving past the KYC step to payment/Digio. Gated by `kycBlockingEnabled`
-  // (default OFF). Block ONLY on an active KRA mismatch; verified / not-found /
-  // transient / our-infra-outage all PROCEED (never block a paying customer on
-  // OUR verification infra). Mirrors web PricingPage.runKycBlockingGate.
+  // (default OFF). Blocks on an active KRA mismatch AND on a genuine call
+  // failure (network/timeout/malformed response — no verification signal at
+  // all). A clean backend `unavailable`/`not_found` classification (e.g. CVL
+  // WEBERR-001, a known/tracked access gap) still proceeds. Mirrors web
+  // PricingPage.runKycBlockingGate.
   const runKycBlockingGate = async () => {
-    if (config?.kycBlockingEnabled !== true) return true;
+    const gateOn = await resolveKycBlockingEnabled();
+    if (!gateOn) return true;
 
     const pan = (panNumber || '').trim().toUpperCase();
     if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) {
@@ -809,13 +843,31 @@ const MPInvestNowModal = ({
         );
         return false;
       }
-      // verified | not_found | unavailable → allow.
+      if (res?.data?.kycOutcome === 'unavailable') {
+        // Fail-CLOSED (product decision 2026-07-16, parity with web
+        // PricingPage): if the KRA couldn't verify the PAN — a transient KRA
+        // outage OR a persistent access error like CVL WEBERR-001 "Access
+        // Privilege Not Set" — we cannot confirm the customer, so do NOT
+        // onboard. Customer can retry; a persistent failure means the advisor's
+        // KRA access needs fixing. Generic message — never surface raw WEBERR.
+        Alert.alert(
+          'Unable to verify PAN',
+          "We're unable to verify your PAN right now. Please try again in a moment — if this keeps happening, contact support.",
+        );
+        return false;
+      }
+      // verified | not_found → allow.
       return true;
     } catch (e) {
-      // Fail-open — never block a paying customer on OUR verification outage.
-      // Server-side post-payment KYC still records any discrepancy.
-      console.error('[MPInvestNow] KYC gate error (allowing through):', e?.message);
-      return true;
+      // Fail-CLOSED (product decision 2026-07-16): a network/exception failure
+      // means we have NO verification signal — proceeding would let "skipped"
+      // read as "passed", defeating a SEBI KYC gate. Block; the user can retry.
+      console.error('[MPInvestNow] KYC gate error (blocking, no verification signal):', e?.message);
+      Alert.alert(
+        'Unable to verify PAN',
+        "We're unable to verify your PAN right now. Please try again in a moment — if this keeps happening, contact support.",
+      );
+      return false;
     }
   };
 
