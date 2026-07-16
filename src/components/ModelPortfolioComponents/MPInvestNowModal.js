@@ -861,10 +861,25 @@ const MPInvestNowModal = ({
         );
         return false;
       }
-      // unavailable (our own KRA-access gap, e.g. CVL WEBERR-001, or no CVL
-      // credentials configured at all — a known, tracked issue, not the
-      // customer's problem) | verified → allow. Never block a paying customer
-      // on OUR infra/access being incomplete.
+      if (res?.data?.kycOutcome === 'service_error') {
+        // BLOCK + surface (product decision 2026-07-16): the KRA/CVL returned a
+        // DEFINITE config/access error (e.g. CVL WEBERR-001 "Access Privilege
+        // Not Set", WEBERR-029 "Invalid IP Address"). The advisor's verification
+        // path is MISCONFIGURED — the customer's PAN may be valid but we can't
+        // confirm it. Unlike a transient outage (fails open below), a config
+        // error is persistent and must not silently pass customers, so we halt
+        // and show it's a verification-SERVICE problem (not their PAN). The raw
+        // WEBERR is in the response + ccxt logs for the advisor to act on.
+        Alert.alert(
+          'Verification unavailable',
+          'PAN verification is currently unavailable due to a verification-service configuration issue on our side. Please contact support so we can enable this for you — we can\'t complete your subscription until it\'s resolved.',
+        );
+        return false;
+      }
+      // unavailable (a GENUINE transient KRA outage/timeout, or no CVL
+      // credentials configured at all) | verified → allow. Never halt a paying
+      // customer on a temporary verification blip; a persistent CVL misconfig
+      // is 'service_error' above, not this.
       return true;
     } catch (e) {
       // Fail-CLOSED (product decision 2026-07-16): a network/exception failure
