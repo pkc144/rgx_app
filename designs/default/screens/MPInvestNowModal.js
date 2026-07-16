@@ -133,7 +133,7 @@
  * See docs/DESIGN_SYSTEM_ARCHITECTURE.md § Registry for resolution rules.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -456,6 +456,25 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
     onPayUSuccess = () => {},
     onPayUFailure = () => {},
   } = actions || {};
+
+  // ---- Surface-local UI state: consent-checkbox nudge ----
+  // "Complete Investment" silently did nothing when the disclaimer checkbox
+  // wasn't ticked — a disabled TouchableOpacity swallows the tap with zero
+  // feedback, so the user had no way to tell why nothing happened (markup,
+  // 2026-07-16). This is presentation-local UI feedback only (no app data,
+  // no network) — allowed under the container/presentation split's local
+  // UI-state carve-out (see docs/DESIGN_SYSTEM_ARCHITECTURE.md).
+  const [showConsentNudge, setShowConsentNudge] = useState(false);
+  useEffect(() => {
+    if (consentChecked) setShowConsentNudge(false);
+  }, [consentChecked]);
+  const handleCompleteInvestmentPress = () => {
+    if (!consentChecked) {
+      setShowConsentNudge(true);
+      return;
+    }
+    onDigioPayment();
+  };
 
   // ---- Step 0: Personal Info ----
   const renderStep0 = () => (
@@ -969,6 +988,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
                   borderColor:
                     currentAppVariant?.paymentModal?.checkboxActiveColor,
                 },
+                showConsentNudge && !consentChecked && styles.enhancedCheckboxNudge,
               ]}>
               {consentChecked && <Check size={12} color="#fff" />}
             </View>
@@ -985,6 +1005,11 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
               </Text>
             </Text>
           </TouchableOpacity>
+          {showConsentNudge && !consentChecked && (
+            <Text style={styles.consentNudgeText}>
+              Please tick the checkbox above to accept the disclaimer before continuing.
+            </Text>
+          )}
         </View>
 
         {/* GST Breakdown */}
@@ -1018,8 +1043,8 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
         </View>
 
         <TouchableOpacity
-          onPress={onDigioPayment}
-          disabled={!selectedCard || loading || !consentChecked}
+          onPress={handleCompleteInvestmentPress}
+          disabled={!selectedCard || loading}
           style={[
             styles.stepButton,
             styles.stepButtonGreen,
@@ -1571,6 +1596,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
     marginTop: 2,
   },
+  enhancedCheckboxNudge: {
+    borderColor: '#EF4444',
+    borderWidth: 2,
+  },
 
   consentText: {
     flex: 1,
@@ -1578,6 +1607,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Satoshi-Regular',
     color: '#374151',
     lineHeight: 20,
+  },
+  consentNudgeText: {
+    fontSize: 12,
+    fontFamily: 'Satoshi-Regular',
+    color: '#EF4444',
+    marginTop: 4,
+    marginLeft: 28,
   },
   linkText: {
     fontFamily: 'Satoshi-Bold',
