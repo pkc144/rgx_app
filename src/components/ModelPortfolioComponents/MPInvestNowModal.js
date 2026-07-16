@@ -2690,6 +2690,23 @@ const MPInvestNowModal = ({
 
       console.log('responseee:', response.data);
 
+      // Backend guard refusals (e.g. the CVL pre-payment KYC gate added to
+      // aq_backend SubscriptionRouter POST / on 2026-07-16) come back as
+      // HTTP 200 with `{status: false, message}` via _RS.apiNew. Without
+      // this check, `response.data.data` is undefined, the property read
+      // below throws, and the catch shows only a GENERIC error — discarding
+      // the customer-relevant gate message.
+      if (response?.data?.status === false) {
+        console.error('[Recurring] Subscription create refused:', response?.data?.message);
+        Alert.alert(
+          'Payment could not be started',
+          response?.data?.message || 'Please try again in a moment.',
+        );
+        setLoading(false);
+        setLoadingmp(false);
+        return;
+      }
+
       const subscriptionData = response.data.data;
       console.log('Subs data res:', subscriptionData);
 
