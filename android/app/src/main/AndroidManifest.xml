@@ -63,5 +63,24 @@
                     android:pathPrefix="/callback" />
             </intent-filter>
         </activity>
+
+        <!-- Override the Razorpay SDK's DeeplinkActivity intent-filters. The SDK
+             ships an https://pg-router.dev.razorpay.in (dev-only) host that Play
+             Console tries and fails to verify as an App Link ("Failed domain
+             checks", 2026-07-16), plus the package id declared as a host. Keep
+             ONLY the razorpay:// custom-scheme callback the checkout flow needs. -->
+        <activity
+            android:name="com.razorpay.DeeplinkActivity"
+            android:exported="true"
+            android:theme="@style/CheckoutTheme"
+            tools:node="merge">
+            <intent-filter tools:node="removeAll" />
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:host="${applicationId}" android:scheme="razorpay" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
