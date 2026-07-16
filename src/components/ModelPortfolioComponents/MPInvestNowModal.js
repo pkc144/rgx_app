@@ -843,20 +843,28 @@ const MPInvestNowModal = ({
         );
         return false;
       }
-      if (res?.data?.kycOutcome === 'unavailable') {
-        // Fail-CLOSED (product decision 2026-07-16, parity with web
-        // PricingPage): if the KRA couldn't verify the PAN — a transient KRA
-        // outage OR a persistent access error like CVL WEBERR-001 "Access
-        // Privilege Not Set" — we cannot confirm the customer, so do NOT
-        // onboard. Customer can retry; a persistent failure means the advisor's
-        // KRA access needs fixing. Generic message — never surface raw WEBERR.
+      if (res?.data?.kycOutcome === 'not_found') {
+        // BLOCK (product decision 2026-07-16): the KRA has no record of this
+        // PAN at all — most likely a fake/random PAN (the exact case that
+        // motivated this gate). Standing trade-off, made deliberately: this
+        // also blocks a genuine customer who simply hasn't completed KRA-KYC
+        // yet. Accepted for now; revisit once CVL PAN Inquiry is live and we
+        // have real-world false-positive data on this advisor's traffic.
+        // NOTE: "prod" (this app's default/AlphaQuark advisor) has no CVL
+        // credentials configured at all, so its verify-pan calls never reach
+        // a real not_found/mismatch — they always resolve unavailable, which
+        // fails open below. This gate is effectively a no-op for that
+        // advisor until CVL access exists; known limitation, not a bug.
         Alert.alert(
-          'Unable to verify PAN',
-          "We're unable to verify your PAN right now. Please try again in a moment — if this keeps happening, contact support.",
+          'PAN not found',
+          "We couldn't find this PAN registered with any KYC Registration Agency. Please check the PAN and try again, or contact support if you believe this is an error.",
         );
         return false;
       }
-      // verified | not_found → allow.
+      // unavailable (our own KRA-access gap, e.g. CVL WEBERR-001, or no CVL
+      // credentials configured at all — a known, tracked issue, not the
+      // customer's problem) | verified → allow. Never block a paying customer
+      // on OUR infra/access being incomplete.
       return true;
     } catch (e) {
       // Fail-CLOSED (product decision 2026-07-16): a network/exception failure
