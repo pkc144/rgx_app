@@ -702,6 +702,11 @@ const HomeScreen = ({ }) => {
     fetchVideos();
     getModelPortfolioStrategyDetails();
     getAllBestPerformers();
+    // useHomePlanSummary fetches once on mount and doesn't depend on any
+    // value pull-to-refresh changes, so a plan deleted/unpublished on the
+    // admin dashboard after that initial fetch kept showing on Home
+    // indefinitely, even across refresh (2026-07-16). Force it explicitly.
+    refetchPlanSummary();
     // Emit the refresh event
 
     //eventEmitter.emit('refreshEvent', { userEmail });
@@ -1656,7 +1661,7 @@ const HomeScreen = ({ }) => {
   // src/screens/Drawer/ModelPortfolioScreen.js — same auth headers,
   // same advisorTag/userEmail dependencies). Returns nulls until the
   // user is authenticated AND the advisor config has resolved.
-  const { heroPlan, bespokePlan, heroPlanRaw, bespokePlanRaw } = useHomePlanSummary({
+  const { heroPlan, bespokePlan, heroPlanRaw, bespokePlanRaw, refetch: refetchPlanSummary } = useHomePlanSummary({
     userEmail,
     advisorTag: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
     headerName: configData?.config?.REACT_APP_HEADER_NAME,
