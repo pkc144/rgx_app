@@ -73,6 +73,7 @@ import {
   WebViewBrokerAuthFlow,
 } from '@alphaquark/mobile-sdk';
 import {useTrade} from '../../screens/TradeContext';
+import {useConfig} from '../../context/ConfigContext';
 import EgressIpCallout from './EgressIpCallout';
 import Phase3BrokerHelp from './Phase3BrokerHelp';
 import server from '../../utils/serverConfig';
@@ -318,7 +319,7 @@ const buildOauthReauthExtras = (brokerName, stored, configData) => {
  * Axis Securities) — no fields to override; SDK uses the default
  * empty-fields schema.
  */
-const buildSchemaOverride = (brokerName, userDetails) => {
+const buildSchemaOverride = (brokerName, userDetails, useSharedAngelOneKey) => {
   if (!userDetails) return null;
   const stored = getStoredBrokerCreds(userDetails, brokerName);
 
@@ -438,7 +439,13 @@ const buildSchemaOverride = (brokerName, userDetails) => {
 
   if (brokerName === 'Angel One') {
     const sharedKey = Config?.REACT_APP_ANGEL_ONE_API_KEY;
-    if (sharedKey) {
+    // SHARED mode (default): empty-fields → platform-shared OAuth via the
+    // env key. PER-CUSTOMER mode (advisor `useSharedAngelOneKey === false`)
+    // ALWAYS shows the apiKey/secretKey/clientCode form even when the env
+    // shared key is present — the customer registers their OWN SmartAPI app
+    // + whitelists their per-customer egress IP. Passing the flag !== false
+    // keeps shared advisors byte-identical (undefined/true → shared).
+    if (useSharedAngelOneKey !== false && sharedKey) {
       return { fields: [], prerequisites: [], intro: null };
     }
     return {
@@ -508,6 +515,7 @@ const Phase3SdkBrokerModal = ({
   fetchBrokerStatusModal,
 }) => {
   const {configData, userEmail: emailFromCtx} = useTrade();
+  const runtimeConfig = useConfig();
   const [oauthExtraBody, setOauthExtraBody] = useState(null);
   // errorInfo is a structured shape `{title, body, technical}` produced by
   // `humanizeSdkError`. Previously this was a flat string built from the
@@ -522,6 +530,15 @@ const Phase3SdkBrokerModal = ({
     () => visibleModalToBrokerName(brokerNameProp || ''),
     [brokerNameProp],
   );
+  // Angel One per-customer mode adds the egress-IP whitelist gate that
+  // shared mode never had. `showEgressCallout` is IP_WHITELIST_BROKERS
+  // PLUS per-customer Angel One — used everywhere the static set was so
+  // shared-key advisors (the default) are byte-identical.
+  const angelOnePerCustomer =
+    brokerName === 'Angel One' &&
+    runtimeConfig?.useSharedAngelOneKey === false;
+  const showEgressCallout =
+    IP_WHITELIST_BROKERS.has(brokerName) || angelOnePerCustomer;
 
   // Smart-prefill: fetch userDetails once on mount; build a per-broker
   // schemaOverride that pre-fills `initialValue` on stable fields. On
@@ -566,7 +583,13 @@ const Phase3SdkBrokerModal = ({
         if (cancelled) return;
         const u = res?.data?.User || null;
         setUserDetails(u);
-        setSchemaOverride(buildSchemaOverride(brokerName, u));
+        setSchemaOverride(
+          buildSchemaOverride(
+            brokerName,
+            u,
+            runtimeConfig?.useSharedAngelOneKey,
+          ),
+        );
         setSchemaOverridePending(false);
       })
       .catch((err) => {
@@ -629,9 +652,7 @@ const Phase3SdkBrokerModal = ({
   // (b) the user has claimed an IP and ticked the acknowledgment.
   // We block the SDK form submit (via IgnorePointer + opacity) until
   // ready. Mirror of legacy modals' egressReady gate.
-  const [egressReady, setEgressReady] = useState(
-    !IP_WHITELIST_BROKERS.has(brokerName),
-  );
+  const [egressReady, setEgressReady] = useState(!showEgressCallout);
 
   // When the user interacts with the still-locked form, flash the
   // EgressIpCallout acknowledgment checkbox (showUnmetAck) and scroll
@@ -818,7 +839,7 @@ const Phase3SdkBrokerModal = ({
             </View>
           ) : null}
 
-          {IP_WHITELIST_BROKERS.has(brokerName) ? (
+          {showEgressCallout ? (
             <View style={styles.calloutWrap}>
               <EgressIpCallout
                 broker={
@@ -837,7 +858,7 @@ const Phase3SdkBrokerModal = ({
             <Phase3BrokerHelp brokerName={brokerName} />
           ) : null}
 
-          {!egressReady && IP_WHITELIST_BROKERS.has(brokerName) ? (
+          {!egressReady && showEgressCallout ? (
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={nudgeEgressAck}
@@ -855,9 +876,7 @@ const Phase3SdkBrokerModal = ({
           <View
             style={[styles.formWrap, !egressReady && styles.formWrapLocked]}
             pointerEvents={
-              !egressReady && IP_WHITELIST_BROKERS.has(brokerName)
-                ? 'none'
-                : 'auto'
+              !egressReady && showEgressCallout ? 'none' : 'auto'
             }>
             <BrokerCredentialForm
               broker={brokerName}

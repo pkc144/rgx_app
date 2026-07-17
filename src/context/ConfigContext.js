@@ -140,6 +140,12 @@ export const ConfigProvider = ({ children }) => {
                             // BEFORE payment/Digio). Default OFF, mirrors web's
                             // `=== true` gate in loginRoutes.js /frontend-config.
                             kycBlockingEnabled:      d.kycBlockingEnabled === true,
+                            // Angel One auth mode. DEFAULT TRUE (legacy shared-platform
+                            // key OAuth). Only an explicit `false` on the advisor's admin
+                            // doc switches to the per-customer SmartAPI credentials form
+                            // (+ per-customer egress IP whitelist). Mirrors web's
+                            // loginRoutes.js /frontend-config + AppConfigContext gate.
+                            useSharedAngelOneKey:    d.useSharedAngelOneKey === false ? false : true,
                         };
                     } catch (e) {
                         console.warn('[ConfigContext] frontend-config flags unavailable, defaulting OFF:', e?.message);
@@ -284,6 +290,10 @@ export const ConfigProvider = ({ children }) => {
                         // Checkout-time blocking KYC gate — DEFAULT-OFF. A failed
                         // frontend-config fetch (parityFlags == {}) leaves it OFF.
                         kycBlockingEnabled:      parityFlags.kycBlockingEnabled ?? false,
+                        // Angel One shared-vs-per-customer — DEFAULT TRUE (shared). A
+                        // failed frontend-config fetch (parityFlags == {}) keeps the
+                        // working legacy shared-key OAuth, never breaks connect.
+                        useSharedAngelOneKey:    parityFlags.useSharedAngelOneKey ?? true,
 
                         // ============================================================================
                         // PAYMENT CONFIGURATION
@@ -544,6 +554,7 @@ export const ConfigProvider = ({ children }) => {
                                     portfolioHealth: newConfig.portfolioHealth,
                                     performanceSummaryEnabled: newConfig.performanceSummaryEnabled,
                                     kycBlockingEnabled: newConfig.kycBlockingEnabled,
+                                    useSharedAngelOneKey: newConfig.useSharedAngelOneKey,
                                 },
                             };
                             await AsyncStorage.setItem('@app:advisorConfig', JSON.stringify(updatedStored));

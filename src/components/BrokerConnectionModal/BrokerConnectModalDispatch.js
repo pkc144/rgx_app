@@ -75,6 +75,7 @@
 
 import React, {useState} from 'react';
 import Config from 'react-native-config';
+import {useConfig} from '../../context/ConfigContext';
 
 // Legacy per-broker modals
 import IIFLModal from '../iiflmodal';
@@ -170,9 +171,21 @@ const BrokerConnectModalDispatch = ({
   reauthConfig,
   ...rest
 }) => {
+  // Hook must run unconditionally (before the isVisible early-return).
+  const runtimeConfig = useConfig();
   if (!isVisible) return null;
 
   const key = normalizeBrokerKey(brokerName);
+  // Per-customer Angel One (advisor `useSharedAngelOneKey === false`)
+  // MUST use the SDK modal — that's the only path with the
+  // apiKey/secretKey/clientCode form + per-customer egress-IP whitelist.
+  // The legacy AngleOneBookingTrueSheet is the SHARED-key publisher-login
+  // WebView and has no per-customer story. This override is additive:
+  // shared-key Angel One (the default) is completely untouched, so no
+  // existing advisor's connect flow changes. See
+  // prod-alphaquark-github/docs/IPV4_EGRESS_BILLING_DESIGN.md.
+  const angelOnePerCustomer =
+    key === 'Angel One' && runtimeConfig?.useSharedAngelOneKey === false;
   const commonProps = {
     isVisible: true,
     onClose,
@@ -187,7 +200,10 @@ const BrokerConnectModalDispatch = ({
   // pre-connect cautionary-listing warning sheet — fresh connects
   // see it once, re-auth (`reauthConfig` non-null) skips it.
   let modal;
-  if (useSdkBrokerFlow() && !SDK_LEGACY_FALLBACK.has(key)) {
+  if (
+    angelOnePerCustomer ||
+    (useSdkBrokerFlow() && !SDK_LEGACY_FALLBACK.has(key))
+  ) {
     modal = <Phase3SdkBrokerModal {...commonProps} brokerName={key} />;
   } else {
     modal = renderLegacyModal(key, commonProps);
