@@ -13,7 +13,7 @@ module.exports = {
     apiKey: env.AQ_API_KEY,
     apiSecret: env.AQ_API_SECRET,
     testEmail: env.AQ_TEST_EMAIL,
-    subdomain: env.AQ_ADVISOR_SUBDOMAIN || 'rgxresearch',
+    subdomain: env.AQ_ADVISOR_SUBDOMAIN || 'alphaquark',
   },
 
   testSafety: {

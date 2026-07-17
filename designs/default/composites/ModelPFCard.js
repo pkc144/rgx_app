@@ -13,6 +13,9 @@
  *     repair,              // boolean — show repair badge
  *     totalInvested,       // number — computed invested value
  *     net_portfolio_updated, // object | null — latest portfolio snapshot (for PortfolioPercentage)
+ *     cardColor,           // string | null — optional per-index accent color
+ *                           //   (moneyman_app variant cycles 3 colors by row index;
+ *                           //   default variant leaves this null → no visual change)
  *   }
  *   actions = {
  *     onCardPress,         // () => void — navigate to AfterSubscriptionScreen
@@ -34,12 +37,13 @@ const ModelPFCard = ({ viewModel, actions, slots }) => {
     fallbackImage,
     repair = false,
     totalInvested = 0,
+    cardColor = null,
   } = viewModel || {};
   const { onCardPress = () => {} } = actions || {};
   const { PortfolioPercentageSlot = null } = slots || {};
 
   return (
-    <View style={styles.cardContainer}>
+    <View style={[styles.cardContainer, cardColor && { borderLeftWidth: 4, borderLeftColor: cardColor }]}>
       <View style={styles.mobileView} onTouchEnd={onCardPress}>
         <View style={styles.mobileInfoContainer}>
           <Image
@@ -47,7 +51,12 @@ const ModelPFCard = ({ viewModel, actions, slots }) => {
             style={styles.mobileImage}
           />
           <View style={[styles.mobileTextContainer, { flex: 1 }]}>
-            <Text style={styles.mobileModelName} numberOfLines={2}>{modelName}</Text>
+            <Text
+              style={[styles.mobileModelName, cardColor && { color: cardColor }]}
+              numberOfLines={2}
+            >
+              {modelName}
+            </Text>
             {repair && (
               <View style={styles.repairBadge}>
                 <Text style={styles.repairText}>Repair</Text>

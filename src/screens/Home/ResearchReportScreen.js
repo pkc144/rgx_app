@@ -8,7 +8,7 @@ import server from '../../utils/serverConfig';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import { getAuth } from '@react-native-firebase/auth';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import { useTrade } from '../TradeContext';
 import { useConfig } from '../../context/ConfigContext';
 
@@ -286,7 +286,7 @@ const ResearchReportScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <GradientView   colors={[gradient1, gradient2]}
+      <LinearGradient   colors={[gradient1, gradient2]}
         start={{ x: 0, y: 0 }}
   end={{ x: 1, y: 1 }}
    style={styles.headerGradient}>
@@ -296,7 +296,7 @@ const ResearchReportScreen = () => {
     </TouchableOpacity>
           <Text style={styles.headerTitle}>Research Report</Text>
         </View>
-      </GradientView>
+      </LinearGradient>
 
       {/* Search & Date Bar */}
       <View style={styles.searchRow}>

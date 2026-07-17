@@ -60,6 +60,7 @@ import Config from 'react-native-config';
 import notifee, { EventType } from '@notifee/react-native';
 
 import { generateToken } from '../../utils/SecurityTokenManager';
+import { isZerodhaSellAuthorized } from '../../utils/zerodhaDdpiGate';
 import { isGttNativeBroker, isGttOcoLeg } from '../../utils/gttSupport';
 import { getAdvisorSubdomain } from '../utils/variantHelper';
 import useSdkClient from '../../sdk/useSdkClient';
@@ -575,14 +576,46 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       return;
     }
 
-    // Zerodha: MUST use Kite Publisher WebView for order placement
-    if (broker === 'Zerodha') {
+    // Zerodha: MUST use Kite Publisher WebView for order placement —
+    // EXCEPT when the basket contains GTT orders. Kite Publisher's HTML
+    // form (`POST kite.zerodha.com/connect/basket`) does NOT support GTT
+    // semantics — it only accepts regular variety orders. If we routed
+    // GTT orders through the publisher, the GTT config (trigger price,
+    // stop-loss, target) would silently degrade to plain MARKET/LIMIT
+    // and the user's intent would be lost without any visible error.
+    // The REST path below (L624-632 split) correctly routes GTT orders
+    // through ccxt-india's `/{broker}/process-trades` GTT endpoint, so
+    // when GTT is present we fall through to REST for the whole basket.
+    // Trade-off: mixed GTT+regular baskets lose the Kite Publisher UX,
+    // but order correctness is preserved.
+    const hasGttOrders = stockDetails.some(s => s.gttCheck === true);
+    if (broker === 'Zerodha' && !hasGttOrders) {
       setLoading(false);
       setOpenReviewTrade(false);
-      setZerodhaStockDetails(stockDetails);
-      await handleZerodhaRedirect(stockDetails);
+      // Tag `variant` on every per-trade object BEFORE handing off to the
+      // publisher path. The REST path tags at L628 inside getOrderPayload,
+      // but the Zerodha branch returns earlier so variant would otherwise
+      // be lost. Tagging here propagates the field into:
+      //   1. setZerodhaStockDetails state (consumed by checkZerodhaStatus
+      //      → record-orders payload at L1329)
+      //   2. handleZerodhaRedirect (basket build + update-trade-reco call)
+      //   3. ZerodhaReviewModal's AsyncStorage write at
+      //      ReviewZerodhaTradeModal.js:420 (rehydrated post-WebView)
+      // Variant is display-only per docs/APP_ARCHITECTURE.md § 4.5.2.
+      const zerodhaVariant = computeTradeVariant(allowAfterHoursOrders);
+      const zerodhaTrades = stockDetails.map(s => ({ ...s, variant: zerodhaVariant }));
+      setZerodhaStockDetails(zerodhaTrades);
+      await handleZerodhaRedirect(zerodhaTrades);
       setOpenZerodhaModel(true);
       return;
+    }
+    if (broker === 'Zerodha' && hasGttOrders) {
+      // Zerodha customer-GTT is OFF (Kite Publisher can't place GTT — see
+      // gttSupport.js). `isGttNativeBroker('Zerodha')` is false, so these
+      // gttCheck orders fall through to regularOrders and place as REGULAR via
+      // REST — matching web. The advisor-side synthetic price-alert rail carries
+      // the GTT intent for Zerodha customers. Log only.
+      console.log('[StockAdvices] Zerodha basket contains GTT-flagged orders — Zerodha customer-GTT is OFF; placing as REGULAR orders via REST (advisor price-alert rail covers the trigger intent).');
     }
 
     // Pre-order EDIS check — equity delivery (CNC) sells only.
@@ -1243,7 +1276,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       Toast.show({
         type: 'error',
         text1: 'Order blocked — missing exchange',
-        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        text2: `Missing exchange for: ${missingList}. Please contact your manager.`,
         visibilityTime: 8000,
       });
       setOpenReviewTrade(false);
@@ -1787,8 +1820,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       if (allBuy) {
         setOpenReviewTrade(true);
       } else if ((tradeType?.allSell || tradeType?.isMixed) && tradeHasEquityDeliverySells) {
-        const canSell = userDetails?.is_authorized_for_sell ||
-          ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+        const canSell = isZerodhaSellAuthorized(userDetails);
         if (canSell) {
           setShowDdpiModal(false);
           setOpenReviewTrade(true);
@@ -1880,8 +1912,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
 
     if (broker === 'Zerodha') {
       if ((allSell || isMixed) && basketHasEquityDeliverySells) {
-        const canSellZerodha = userDetails?.is_authorized_for_sell ||
-          ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+        const canSellZerodha = isZerodhaSellAuthorized(userDetails);
         if (!canSellZerodha) {
           setShowDdpiModal(true);
           return;
@@ -2630,8 +2661,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
           if (isBuyOrder) {
             openReviewForSingle();
           } else if (isSellOrder && !isDerivative) {
-            const canSellSingle = userDetails?.is_authorized_for_sell ||
-              ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+            const canSellSingle = isZerodhaSellAuthorized(userDetails);
             if (canSellSingle) {
               setShowDdpiModal(false);
               openReviewForSingle();
@@ -2655,8 +2685,7 @@ const StockAdvices = React.memo(({ userEmail, orderscreen, type }) => {
       if (broker === 'Zerodha') {
         const isDerivativeSingle = ['NFO', 'BFO', 'MCX'].includes((newStock.exchange || '').toUpperCase())
           || ['MIS', 'NRML', 'CARRYFORWARD'].includes((newStock.productType || 'CNC').toUpperCase());
-        const canSellBatch = userDetails?.is_authorized_for_sell ||
-          ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+        const canSellBatch = isZerodhaSellAuthorized(userDetails);
         if (isSellOrder && !isDerivativeSingle && !canSellBatch) {
           setShowDdpiModal(true);
         } else {

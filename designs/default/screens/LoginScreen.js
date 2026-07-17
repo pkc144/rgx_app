@@ -124,7 +124,7 @@ const LoginScreen = ({ viewModel, actions }) => {
         >
             <TouchableWithoutFeedback onPress={dismissKeyboard}>
                 <LinearGradient
-                    colors={['rgba(0, 38, 81, 1)', 'rgba(0, 86, 183, 1)']}
+                    colors={[tokens.colors.brand.gradientStart, tokens.colors.brand.gradientEnd]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.container}

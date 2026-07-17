@@ -34,6 +34,7 @@ import formatCurrency from '../utils/formatCurrency';
 import BrokerSelectionModal from './BrokerSelectionModal';
 import IIFLReviewTradeModal from './IIFLReviewTradeModal';
 import {useConfig} from '../context/ConfigContext';
+import useTokens from '../theme/useTokens';
 import moment from 'moment';
 
 import ICICIUPModal from './BrokerConnectionModal/icicimodal';
@@ -75,9 +76,12 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
   const toolbarLogo =
     !remoteLogoFailed && remoteToolbarLogo ? remoteToolbarLogo : bundledToolbarLogo;
 
-  // Get dynamic gradient colors from config
-  const gradient1 = config?.gradient1 || fallbackConfig.gradient1 || 'rgba(0, 86, 183, 1)';
-  const gradient2 = config?.gradient2 || fallbackConfig.gradient2 || 'rgba(0, 38, 81, 1)';
+  // Header gradient — pulled through useTokens so the active design variant
+  // (moneyman_app green, etc.) supplies the fallback when neither the tenant
+  // nor the APP_VARIANT static config sets gradient1/gradient2.
+  const tokens = useTokens();
+  const gradient1 = config?.gradient1 || fallbackConfig.gradient1 || tokens.colors.brand.gradientStart;
+  const gradient2 = config?.gradient2 || fallbackConfig.gradient2 || tokens.colors.brand.gradientEnd;
 
   const {
     userDetails,
@@ -94,7 +98,6 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
   const auth = getAuth();
   const user = auth.currentUser;
   const userEmail = user?.email;
-
   const insets = useSafeAreaInsets();
 
   // Use Firebase displayName as fallback if userDetails not loaded yet

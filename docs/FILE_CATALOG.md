@@ -1,5 +1,13 @@
 # AlphaPro App - Complete File Catalog
 
+## Architecture Entry Points
+
+- `docs/OVERALL_SYSTEM_TEST_ARCHITECTURE.md` — canonical cross-cutting system-test architecture, branch deltas, backend boundaries, and race conditions
+- `docs/APP_ARCHITECTURE.md` — full app/backend architecture overview
+- `docs/BROKER_CONNECTION.md` — broker auth and session model
+- `docs/MODEL_PORTFOLIO_ARCHITECTURE.md` — subscription, rebalance, and repair flow
+- `docs/SELL_AUTH_ARCHITECTURE.md` — DDPI / TPIN / EDIS behavior
+
 ## 📁 Files Organized by Screen/Feature
 
 This document catalogs all files in the AlphaPro app organized by their functionality and screen.
@@ -75,6 +83,13 @@ This document catalogs all files in the AlphaPro app organized by their function
 | `Checkbox.js` | 775 B | Custom checkbox component |
 | `websocketPriceMP.js` | 6.0 KB | WebSocket for real-time prices |
 | `ref.js` | 4.2 KB | Reference utilities |
+
+### UI Components for Rebalance
+**Location:** `/src/UIComponents/RebalanceAdvicesUI/`
+
+| File Name | Description |
+|-----------|-------------|
+| `RebalanceCard.js` | Rebalance action card — execution status guards, button state derivation, broker-match logic |
 
 ### Dynamic Price Updates
 **Location:** `/src/components/AdviceScreenComponents/DynamicText/`
@@ -408,6 +423,30 @@ This document catalogs all files in the AlphaPro app organized by their function
 
 ---
 
+## 🧰 UTILITY FILES
+
+**Location:** `/src/utils/`
+
+| File Name | Description |
+|-----------|-------------|
+| `basketUtils.js` | FnO basket utilities: `parseExpiryFromSymbol`, `isBasketExpired`, `netBasketTrades` (ported from web) |
+| `brokerAuth.js` | OAuth state generation, nonce management, callback registration |
+| `brokerPublisher.js` | Publisher SDK utilities (Kite, Fyers) |
+| `brokerSessionUtils.js` | Broker session validation, token freshness checks |
+| `brokerSupport.js` | Per-broker feature matrix (order types, GTT, OCO) |
+| `ProcessTrades.js` | Centralized order placement pipeline |
+| `rebalanceHelpers.js` | Rebalance error detection, broker payload builder, decryption |
+| `orderStatusUtils.js` | Order status normalization across brokers |
+| `portfolioEvents.js` | Structured event emitter for portfolio lifecycle |
+| `tradeUtils.js` | Trade data standardization |
+| `SecurityTokenManager.js` | JWT token generation |
+| `storageUtils.js` | AsyncStorage wrapper with retry logic |
+| `serverConfig.js` | Server endpoints configuration |
+| `Config.js` | App variant configuration |
+| `isMarketHours.js` | Market hours check (9:15 AM - 3:30 PM IST) |
+
+---
+
 ## 📊 FILE STATISTICS
 
 ### By Feature Area
@@ -481,6 +520,6 @@ src/
 
 ---
 
-**Last Updated:** November 2024  
+**Last Updated:** April 2026  
 **Total Files Cataloged:** 150+  
 **Total Code Size:** ~2+ MB

@@ -19,6 +19,7 @@ import WebSocketManager from '../../components/AdviceScreenComponents/DynamicTex
 import PortfolioPositionText from '../../components/AdviceScreenComponents/DynamicText/PortfolioPositionText';
 import HoldingDynamicText from '../../components/AdviceScreenComponents/DynamicText/HoldingDynamicText';
 import {useConfig} from '../../context/ConfigContext';
+import useTokens from '../../theme/useTokens';
 import {useNavigation} from '@react-navigation/native';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
 import {fetchFunds} from '../../FunctionCall/fetchFunds';
@@ -38,11 +39,11 @@ const PortfolioScreen = () => {
     allHoldingsData,
     getAllHoldings,
     configData,
+    modelPortfolioRepairTrades,
   } = useTrade();
 
-  // Get dynamic colors from config
   const config = useConfig();
-  const mainColor = config?.mainColor || '#1264D4';
+  const mainColor = useTokens().colors.brand.primary;
 
   const [tabIndex, setTabIndex] = useState(2);
   const tabIndexRef = useRef(tabIndex);
@@ -100,37 +101,10 @@ const PortfolioScreen = () => {
     }
   };
 
+  // modelPortfolioRepairTrades now comes from TradeContext (auto-fetched
+  // alongside getModelPortfolioStrategyDetails). Local fetch removed
+  // 2026-05-11 — see docs/MODEL_PORTFOLIO_ARCHITECTURE.md § 6g.
   const modelNames = modelPortfolioStrategy.map(item => item.model_name);
-  const [modelPortfolioRepairTrades, setModelPortfolioRepairTrades] = useState(
-    [],
-  );
-
-  const getRebalanceRepair = () => {
-    const repairData = JSON.stringify({
-      modelName: modelNames,
-      advisor: configData?.config?.REACT_APP_HEADER_NAME,
-      userEmail: userEmail,
-    });
-    const config2 = {
-      method: 'post',
-      url: `${server.ccxtServer.baseUrl}rebalance/get-repair`,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-        'aq-encrypted-key': generateToken(
-          Config.REACT_APP_AQ_KEYS,
-          Config.REACT_APP_AQ_SECRET,
-        ),
-      },
-      data: repairData,
-    };
-    axios
-      .request(config2)
-      .then(response => {
-        setModelPortfolioRepairTrades(response.data.models);
-      })
-      .catch(error => {});
-  };
 
   const [HoldingsData, setHoldingsData] = useState([]);
   const [PositionsData, setpositionsData] = useState([]);
@@ -895,11 +869,8 @@ const PortfolioScreen = () => {
     }
   }, [userDetails, brokerStatus]);
 
-  useEffect(() => {
-    if (modelPortfolioStrategy.length !== 0) {
-      getRebalanceRepair();
-    }
-  }, [modelPortfolioStrategy]);
+  // Repair fetch now lives in TradeContext (fires automatically on
+  // getModelPortfolioStrategyDetails). Removed local trigger on 2026-05-11.
 
   useEffect(() => {
     getUserDeatils();
@@ -1449,6 +1420,7 @@ const PortfolioScreen = () => {
       specificPlan={item.latest}
       modelName={item.modelName}
       repair={item.repair ? 'repair' : null}
+      index={index}
     />
   );
 

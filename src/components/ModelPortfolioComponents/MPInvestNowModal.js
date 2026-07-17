@@ -38,6 +38,7 @@ import APP_VARIANTS from '../../utils/Config';
 import RNFS from 'react-native-fs';
 import { useTrade } from '../../screens/TradeContext';
 import { useConfig } from '../../context/ConfigContext';
+import useTokens from '../../theme/useTokens';
 import { useGstConfig } from '../../context/GstConfigContext';
 import { withGst, gstLabel } from '../../utils/gstHelpers';
 import FormatDateTime, { FormatDate } from '../../utils/formatDateTime';
@@ -53,6 +54,11 @@ import {
   CFSubscriptionCheckoutPayment,
   CFSubscriptionSession,
 } from 'cashfree-pg-api-contract';
+import {
+  getCashfreeEnvironment,
+  isInstallSourceError,
+  friendlyPaymentError,
+} from '../../utils/cashfreeEnv';
 import {
   CashFreeOneTimePayment,
   CashFreeRecurringPayment,
@@ -139,10 +145,12 @@ const MPInvestNowModal = ({
 
   const { configData } = useTrade();
 
-  // Get dynamic colors from config - use gradient2 as the primary accent color
+  // Brand colors via useTokens — variant supplies the fallback, backend
+  // config.gradient1 / gradient2 still override through legacy branding.
   const config = useConfig();
-  const gradient1 = config?.gradient1 || '#002651';
-  const gradient2 = config?.gradient2 || '#0076FB';
+  const tokens = useTokens();
+  const gradient1 = tokens.colors.brand.gradientStart;
+  const gradient2 = tokens.colors.brand.gradientEnd;
   const mainColor = gradient2;
   const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
 
@@ -1126,9 +1134,25 @@ const MPInvestNowModal = ({
                 console.error('[Digio] Failed to update digio_verification:', err);
               }
 
-              // Download signed doc (best-effort, doesn't block success flow)
-              try {
-                await axios.get(
+              // Show the success modal IMMEDIATELY after verification +
+              // digio-mark, BEFORE the signed-doc download. The download is
+              // best-effort but was previously `await`ed here, leaving the
+              // plan-selection sheet visible for the download's full duration
+              // (user-reported "flash back to the plans screen after Digio
+              // confirm", 2026-06-12). Showing the success modal first closes
+              // that gap; the download runs in the background below.
+              setDigioSuccessModal(true);
+              setLoading(false);
+              console.log('this get true----');
+
+              // Clear pending Digio on successful completion
+              await clearPendingDigio();
+              console.log('[Digio] Cleared pending Digio after successful signature');
+
+              // Download signed doc — fire-and-forget (best-effort, MUST NOT
+              // delay the success modal). Errors are swallowed/logged.
+              axios
+                .get(
                   `${server.ccxtServer.baseUrl}misc/digio/download/signed-doc/${storeDigioData?.id}/${advisorTag}`,
                   {
                     headers: {
@@ -1142,20 +1166,11 @@ const MPInvestNowModal = ({
                     },
                     responseType: 'blob',
                   },
+                )
+                .then(() => console.log('[Digio] Signed doc downloaded successfully'))
+                .catch(error =>
+                  console.error('[Digio] Error downloading signed PDF (non-blocking):', error),
                 );
-                console.log('[Digio] Signed doc downloaded successfully');
-              } catch (error) {
-                console.error('[Digio] Error downloading signed PDF (non-blocking):', error);
-              }
-
-              // Show success modal with anti-drop-off mechanism instead of direct payment
-              setDigioSuccessModal(true);
-              setLoading(false);
-              console.log('this get true----');
-
-              // Clear pending Digio on successful completion
-              await clearPendingDigio();
-              console.log('[Digio] Cleared pending Digio after successful signature');
             } else {
               setDigioUnsuccessModal(true);
               setRazorpayLoader(false);
@@ -1443,6 +1458,27 @@ const MPInvestNowModal = ({
 
       setCurrentPaymentId(paymentId);
 
+      // Remote diagnostics: record the attempt + the resolved Cashfree env to
+      // the backend payment log (api/log-payment → Logs/payments/<IST-date>.log
+      // on tidi) so a RELEASE / Play-Store build's payment failures are visible
+      // server-side WITHOUT adb logcat. cfEnvLabel is also referenced by the
+      // onError / sdkError / poll-FAILED logs below to spot a SANDBOX-SDK vs
+      // PRODUCTION-order mismatch. See docs/MODEL_PORTFOLIO_ARCHITECTURE.md § 4c.
+      const cfEnvLabel = String(
+        Config.REACT_APP_CASHFREE_ENV || Config.REACT_APP_ENV || 'unknown',
+      );
+      logPayment('CASHFREE_ONETIME_START', {
+        orderId: paymentId,
+        amount: onetimeamount,
+        cashfreeEnv: cfEnvLabel,
+        platform: Platform.OS,
+        osVersion: String(Platform.Version),
+        userEmail,
+        mobileNumber,
+        advisor: advisorTag,
+        planId: plandata?._id,
+      }, configData);
+
       // Save pending payment for recovery in case app closes during payment
       const pendingPaymentData = createPendingPaymentData({
         orderId: paymentId,
@@ -1502,6 +1538,24 @@ const MPInvestNowModal = ({
 
           console.error('[OneTime] Payment Error:', error, 'Order:', orderId);
 
+          // Push the SDK error to the backend log so release-build GPay/UPI
+          // failures are diagnosable server-side (Logs/payments/<date>.log).
+          logPayment('CASHFREE_ONETIME_ERROR', {
+            orderId,
+            paymentId,
+            code: error?.code,
+            type: error?.type,
+            status: error?.status,
+            message: error?.message,
+            isInstallSourceError: isInstallSourceError(error),
+            cashfreeEnv: cfEnvLabel,
+            platform: Platform.OS,
+            osVersion: String(Platform.Version),
+            userEmail,
+            mobileNumber,
+            advisor: advisorTag,
+          }, configData);
+
           // Check if this is a user cancellation or actual failure
           const isCancellation = error?.code === 'CANCELLED' ||
             error?.code === 'USER_CANCELLED' ||
@@ -1527,10 +1581,11 @@ const MPInvestNowModal = ({
         },
       });
 
-      // Use environment based on .env configuration
-      const cfEnvironment = Config.REACT_APP_ENV === 'production'
-        ? CFEnvironment.PRODUCTION
-        : CFEnvironment.SANDBOX;
+      // Single source of truth for env selection (utils/cashfreeEnv.js):
+      // honours REACT_APP_CASHFREE_ENV override, SANDBOX in Metro debug,
+      // else REACT_APP_ENV. Keeps MP in lockstep with CoursePurchaseSheet /
+      // BuyWebinarTicketSheet so the install-source rule is applied uniformly.
+      const cfEnvironment = getCashfreeEnvironment();
 
       const session = new CFSession(
         paymentSessionId,
@@ -1604,6 +1659,14 @@ const MPInvestNowModal = ({
         } else if (pollResult.status === PaymentStatus.FAILED) {
           console.log('[OneTime] Payment failed via polling');
           pollingShouldStopRef.current = true;
+          logPayment('CASHFREE_ONETIME_POLL_FAILED', {
+            orderId: paymentId,
+            cashfreeEnv: cfEnvLabel,
+            platform: Platform.OS,
+            userEmail,
+            mobileNumber,
+            advisor: advisorTag,
+          }, configData);
           await clearPendingPayment();
           setPaymentPollingMessage('');
           setShowPaymentFail(true);
@@ -1632,12 +1695,34 @@ const MPInvestNowModal = ({
         // Start polling in background after initiating payment
         startBackgroundPolling();
       } catch (sdkError) {
+        // doPayment throws synchronously when CashFree's native AAR blocks the
+        // build (PRODUCTION install-source check fails on sideloaded APKs —
+        // adb install / manual tap via com.google.android.packageinstaller).
+        // Stop the background poll (no order was ever opened) and show the
+        // actionable "install from Play Store" message instead of leaving the
+        // spinner running for the full ~5-min poll. See utils/cashfreeEnv.js.
         pollingShouldStopRef.current = true;
         console.error('[OneTime] SDK doPayment error:', sdkError);
+        logPayment('CASHFREE_ONETIME_SDK_ERROR', {
+          orderId: paymentId,
+          message: sdkError?.message,
+          code: sdkError?.code,
+          isInstallSourceError: isInstallSourceError(sdkError),
+          cashfreeEnv: cfEnvLabel,
+          platform: Platform.OS,
+          osVersion: String(Platform.Version),
+          userEmail,
+          mobileNumber,
+          advisor: advisorTag,
+        }, configData);
+        setPaymentPollingMessage('');
         setLoading(false);
         setShowPaymentFail(true);
         CFPaymentGatewayService.removeCallback();
         CFPaymentGatewayService.removeEventSubscriber();
+        if (isInstallSourceError(sdkError)) {
+          Alert.alert('Payment unavailable', friendlyPaymentError(sdkError));
+        }
       }
     } catch (err) {
       setLoading(false);
@@ -1752,9 +1837,16 @@ const MPInvestNowModal = ({
       );
       setLoadingmp(false);
 
-      let subsSessionId = response?.data?.data?.subscription_session_id;
-      if (typeof subsSessionId === 'string')
-        subsSessionId = subsSessionId.replace(/(payment){1,2}$/, '');
+      // Pass the subscription_session_id RAW — do NOT strip anything.
+      // A previous build stripped a trailing "payment" token
+      // (.replace(/(payment){1,2}$/, '')), but that suffix is PART of the
+      // ID Cashfree issues: the working web (PricingPage.js
+      // initiateCashfreeRecurringPayment) passes it untouched to
+      // cashfree.subscriptionsCheckout. The strip corrupted the session →
+      // Cashfree's hosted checkout rendered its raw error page
+      // ("payload: <no value> / errorMessage: no referrer…") instead of
+      // the payment UI (alphanomy, 2026-06-12).
+      const subsSessionId = response?.data?.data?.subscription_session_id;
       const orderId = response?.data?.data?.order_id;
       const redirectTarget = '_self';
       console.log('response of CF---', response);
@@ -1810,6 +1902,22 @@ const MPInvestNowModal = ({
         },
         onError: async (error, subscriptionId) => {
           console.error('[CF Recurring] Payment error:', error);
+          logPayment('CASHFREE_RECURRING_ERROR', {
+            subscriptionId,
+            orderId,
+            code: error?.code,
+            type: error?.type,
+            message: error?.message,
+            isInstallSourceError: isInstallSourceError(error),
+            cashfreeEnv: String(
+              Config.REACT_APP_CASHFREE_ENV || Config.REACT_APP_ENV || 'unknown',
+            ),
+            platform: Platform.OS,
+            osVersion: String(Platform.Version),
+            userEmail,
+            mobileNumber,
+            advisor: advisorTag,
+          }, configData);
           pollingShouldStopRef.current = true;
 
           const isCancellation = error?.code === 'CANCELLED' ||
@@ -1838,21 +1946,23 @@ const MPInvestNowModal = ({
       const session = new CFSubscriptionSession(
         subsSessionId,
         subscriptionId,
-        CFEnvironment.PRODUCTION,
+        getCashfreeEnvironment(),
       );
 
       CFPaymentGatewayService.doSubscriptionPayment(session);
     } catch (err) {
+      // doSubscriptionPayment throws synchronously on the same native
+      // install-source block as the one-time path. Surface the actionable
+      // Play-Store message rather than a generic "Failed to initialize".
       setLoadingmp(false);
+      const message = isInstallSourceError(err)
+        ? friendlyPaymentError(err)
+        : err?.message || 'Failed to initialize payment. Please try again.';
       Alert.alert(
-        'Error',
-        err?.message || 'Failed to initialize payment. Please try again.',
+        isInstallSourceError(err) ? 'Payment unavailable' : 'Error',
+        message,
       );
-      console.error(
-        'Error',
-        err?.message || 'Failed to initialize payment. Please try again.',
-      );
-      console.error('Payment failed to initialize:', err.response);
+      console.error('[CF Recurring] Payment failed to initialize:', err?.message, err.response);
     }
   };
 
@@ -2201,6 +2311,48 @@ const MPInvestNowModal = ({
     }
   };
 
+  // Authoritative Digio-completion check — mirrors the web app
+  // (prod-alphaquark-github PricingPage.js handleOk → checkUserDigioVerification
+  // / checkPlanDigioStatus). The app previously trusted the locally-cached
+  // advisorSpecificUserDetails.digio_verification flag, which is fetched ONCE
+  // on mount via getUser and is (a) undefined during the fetch race, and
+  // (b) blind to the per-plan / 10-day-validity / MITC re-sign policies the
+  // backend enforces. Result: already-signed users (e.g. pratik@alphaquark.in,
+  // 2026-06-18) were re-prompted for Digio in the app even though web correctly
+  // SKIPPED — and because they'd already signed, Digio short-circuited after
+  // the first OTP ("signature done", no agreement view, no Aadhaar OTP).
+  // GET check-digio-status/{email}/{planId} encodes all three policies
+  // server-side; needsDigio === false  =>  skip Digio. The planId is appended
+  // when available so the per_plan "active subscription for this plan" rule
+  // is honoured. See docs/MODEL_PORTFOLIO_ARCHITECTURE.md § Digio skip check.
+  const isDigioAlreadyCompleted = async planId => {
+    if (!userEmail) return false;
+    try {
+      const url = planId
+        ? `${server.server.baseUrl}api/digio/check-digio-status/${userEmail}/${planId}`
+        : `${server.server.baseUrl}api/digio/check-digio-status/${userEmail}`;
+      const response = await axios.get(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+          'aq-encrypted-key': generateToken(
+            Config.REACT_APP_AQ_KEYS,
+            Config.REACT_APP_AQ_SECRET,
+          ),
+        },
+      });
+      return response?.data?.needsDigio === false;
+    } catch (err) {
+      // Fallback to the cached flag (old behaviour) so a transient status-API
+      // outage doesn't force a genuinely-verified user back through Digio.
+      console.error(
+        '[Digio] check-digio-status failed, falling back to cached flag:',
+        err?.message,
+      );
+      return advisorSpecificUserDetails?.digio_verification === true;
+    }
+  };
+
   const handleDigioPayment = async () => {
     await updateLeadUser();
 
@@ -2210,7 +2362,12 @@ const MPInvestNowModal = ({
       return;
     }
 
-    if (advisorSpecificUserDetails?.digio_verification === true) {
+    // Authoritative server-side check (matches web). Replaces the stale cached
+    // advisorSpecificUserDetails?.digio_verification guard that re-prompted
+    // already-signed users.
+    const alreadyCompleted = await isDigioAlreadyCompleted(specificPlan?._id);
+    if (alreadyCompleted) {
+      console.log('[Digio] Already completed (server check) — skipping Digio');
       handlePaymentType();
       return;
     }

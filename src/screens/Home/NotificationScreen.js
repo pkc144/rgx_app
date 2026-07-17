@@ -4,12 +4,12 @@ import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { CandlestickChartIcon,X,Check,Bike } from 'lucide-react-native';
 import Svg, { Circle } from 'react-native-svg';
 import Icon from 'react-native-vector-icons/Feather';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 
 const NotificationScreen = () => {
   const circumference = 2 * Math.PI * 35;
   return (
-    <GradientView colors={['#062a56', '#002a5c', '#ffffff']} style={styles.linearGradient}>
+    <LinearGradient colors={['#062a56', '#002a5c', '#ffffff']} style={styles.linearGradient}>
       <View style={styles.MainContainer}>
       <View style={styles.topIconContainer}>
           <View >
@@ -57,16 +57,20 @@ const NotificationScreen = () => {
       
 
     
-      </GradientView>
+      </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   MainContainer:{
     marginBottom:120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
     elevation:5,
     justifyContent: 'center', // Vertically center the content
-    alignItems: 'center',  
+    alignItems: 'center',
   },
   container: {
     flex: 1,

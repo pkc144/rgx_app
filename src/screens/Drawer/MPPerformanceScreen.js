@@ -38,8 +38,10 @@ import {convertResponse} from '../../utils/tradeUtils';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
+import useTokens from '../../theme/useTokens';
 import {useGstConfig} from '../../context/GstConfigContext';
 import {withGst, gstLabel} from '../../utils/gstHelpers';
+import {getSubscriptionStatusString} from '../../utils/subscriptionStatus';
 
 import PaymentSuccessModal from '../../components/ModelPortfolioComponents/PaymentSuccessModal';
 import MPInvestNowModal from '../../components/ModelPortfolioComponents/MPInvestNowModal';
@@ -78,9 +80,10 @@ const MPPerformanceScreen = ({route}) => {
   const Presentation = useComponent('screens.MPPerformanceScreen');
 
   const appConfig = useConfig();
-  const gradient1 = appConfig?.gradient1 || '#002651';
-  const gradient2 = appConfig?.gradient2 || '#0076fb';
-  const mainColor = appConfig?.mainColor || '#0056B7';
+  const tokens = useTokens();
+  const gradient1 = tokens.colors.brand.gradientStart;
+  const gradient2 = tokens.colors.brand.gradientEnd;
+  const mainColor = tokens.colors.brand.primary;
 
   const auth = getAuth();
   const user = auth.currentUser;
@@ -113,9 +116,11 @@ const MPPerformanceScreen = ({route}) => {
   const [showPaymentFail, setShowPaymentFail] = useState(false);
   const [researchWebViewUrl, setResearchWebViewUrl] = useState(null);
 
+  // Overview first (index 0) so "View More" lands on Overview, not the
+  // subscriber-locked Portfolio tab.
   const [routes] = useState([
-    {key: 'portfolio', title: 'Portfolio'},
     {key: 'overview', title: 'OverView'},
+    {key: 'portfolio', title: 'Portfolio'},
     {key: 'research', title: 'Research'},
   ]);
 
@@ -352,38 +357,13 @@ const MPPerformanceScreen = ({route}) => {
   };
   useEffect(() => { getAllSubscriptionData(); }, []);
 
-  // Subscription status
-  const ACCEPTABLE_DATE_FORMATS = ['D MMM YYYY, HH:mm:ss', 'YYYY-MM-DDTHH:mm:ss.SSSZ'];
-  const getSubscriptionStatus = (planName, subscriptions) => {
-    const normalizeGroupName = name => {
-      if (!name) return '';
-      return name.toLowerCase().replace(/%20/g, ' ').replace(/\s+/g, '_').trim();
-    };
-    if (!subscriptions || subscriptions.length === 0) return 'none';
-    const matchingPlanSubs = subscriptions.filter(sub => {
-      const nSub = normalizeGroupName(sub?.plan);
-      const nPlan = normalizeGroupName(planName);
-      return nSub === nPlan || nSub.includes(nPlan) || nPlan.includes(nSub);
-    });
-    if (matchingPlanSubs.length === 0) return 'none';
-    const activeSubscriptions = matchingPlanSubs.filter(sub => sub?.status !== 'deleted');
-    if (activeSubscriptions.length === 0) return 'none';
-    const neverExpiring = activeSubscriptions.filter(sub => sub.expiry === null);
-    if (neverExpiring.length > 0) return 'active';
-    const validSubs = activeSubscriptions.filter(sub =>
-      sub.expiry ? moment(sub.expiry, ACCEPTABLE_DATE_FORMATS, true).isValid() : false,
-    );
-    if (validSubs.length === 0) return 'none';
-    const latestSub = validSubs.sort(
-      (a, b) => moment(b.expiry, ACCEPTABLE_DATE_FORMATS) - moment(a.expiry, ACCEPTABLE_DATE_FORMATS),
-    )[0];
-    const daysLeft = moment(latestSub?.expiry, ACCEPTABLE_DATE_FORMATS).diff(moment(), 'days');
-    if (daysLeft < 0) return 'expired';
-    if (daysLeft <= 7) return 'renew';
-    return 'active';
-  };
-
-  const subscriptionStatus = getSubscriptionStatus(modelName, subscriptionData?.subscriptions);
+  // Shared util — consults subscriptionData.groups before subscriptions
+  // (web parity, prod-alphaquark-github/src/Home/PricingSection/IPOCard.js
+  // hasActiveSubscription). Pass the FULL subscriptionData object so the
+  // groups branch can fire; the previous inline copy only looked at
+  // `.subscriptions` and produced false-positives for plans the user
+  // never subscribed to.
+  const subscriptionStatus = getSubscriptionStatusString(modelName, subscriptionData);
   const isActive = subscriptionStatus === 'active' || subscriptionStatus === 'renew';
   // Defend against backend variants that return `subscribed_by` as something
   // other than an array (alphanomy tenant has surfaced it as an object on
@@ -602,18 +582,12 @@ const MPPerformanceScreen = ({route}) => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40}}
       >
-        {!globalConsent ? (
-          <PerformanceDisclaimer onAccept={handleConsentAccept} accentColor={mainColor} />
-        ) : (
-          <PerformanceChart
-            modelName={singleStrategyDetails?.model_name || modelName}
-            advisor={singleStrategyDetails?.advisor}
-          />
-        )}
+        {/* Overview (methodology) shown FIRST; performance + its consent
+            disclaimer moved to the bottom of this tab (see below). */}
         {(singleStrategyDetails?.definingUniverse ||
           singleStrategyDetails?.researchOverView ||
           singleStrategyDetails?.constituentScreening) && (
-          <View style={{marginTop: 24, backgroundColor: '#fafafa', borderRadius: 12, padding: 16}}>
+          <View style={{backgroundColor: '#fafafa', borderRadius: 12, padding: 16}}>
             <Text style={{fontFamily: 'Poppins-SemiBold', fontSize: 14, color: '#1a1a1a', marginBottom: 12}}>
               Methodology
             </Text>
@@ -655,6 +629,22 @@ const MPPerformanceScreen = ({route}) => {
             ) : null}
           </View>
         )}
+
+        {/* Performance section at the END of Overview — consent gate preserved:
+            the (now shorter) disclaimer must be accepted before the chart shows. */}
+        <View style={{marginTop: 24}}>
+          <Text style={{fontFamily: 'Poppins-SemiBold', fontSize: 14, color: '#1a1a1a', marginBottom: 12}}>
+            Performance
+          </Text>
+          {!globalConsent ? (
+            <PerformanceDisclaimer onAccept={handleConsentAccept} accentColor={mainColor} />
+          ) : (
+            <PerformanceChart
+              modelName={singleStrategyDetails?.model_name || modelName}
+              advisor={singleStrategyDetails?.advisor}
+            />
+          )}
+        </View>
       </ScrollView>
     </View>
   );

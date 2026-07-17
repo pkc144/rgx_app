@@ -6,6 +6,9 @@ module.exports = {
       moduleName: '@env',
       path: '.env',
     }],
-    'react-native-worklets/plugin',
+    // reanimated 3.19.5 plugin (NOT react-native-worklets/plugin, which is for
+    // reanimated 4 + the New Architecture). Paired with iOS Paper config to
+    // avoid the Bridgeless RCTEventEmitter.receiveEvent startup-race crash.
+    'react-native-reanimated/plugin',
   ],
 };

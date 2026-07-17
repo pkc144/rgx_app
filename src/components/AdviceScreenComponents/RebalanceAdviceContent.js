@@ -127,7 +127,7 @@ const RebalanceAdviceContent = React.memo(
       useState(null);
 
     const defaultRationale =
-      "This recommendation is based on a comprehensive analysis of the company's growth potential and value metrics. This recommendation also accounts for potential future risks, ensuring a balanced approach to maximizing returns while mitigating uncertainties. Please contact your advisor for any queries.";
+      "This recommendation is based on a comprehensive analysis of the company's growth potential and value metrics. This recommendation also accounts for potential future risks, ensuring a balanced approach to maximizing returns while mitigating uncertainties. Please contact your manager for any queries.";
 
     const [storedTradeType, setStoredTradeType] = useState({
       allSell: false,

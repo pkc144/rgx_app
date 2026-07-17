@@ -30,12 +30,14 @@ import server from '../../utils/serverConfig';
 import {resolveImageUrl} from '../../utils/resolveImageUrl';
 import {GitForkIcon} from 'lucide-react-native';
 import Config from 'react-native-config';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import MPCardBespoke from '../../components/ModelPortfolioComponents/MPCardBespoke';
 import RecommendationSuccessModal from '../../components/ModelPortfolioComponents/RecommendationSuccessModal';
 import {useTrade} from '../TradeContext';
 import CustomTabBar from './CustomTabbar';
 import {useConfig} from '../../context/ConfigContext';
+import useTokens from '../../theme/useTokens';
 import { useComponent } from '../../design/useDesign';
 import useHomeMarketSummary from '../Home/hooks/useHomeMarketSummary';
 import { shapeMpPlan, shapeBespokePlan } from '../../utils/alphanomyPlanShape';
@@ -46,9 +48,10 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const {userDetails, broker, getUserDeatils, configData} = useTrade();
 
   const config = useConfig();
-  const gradient1 = config?.gradient1 || 'rgba(0, 86, 183, 1)';
-  const gradient2 = config?.gradient2 || 'rgba(0, 38, 81, 1)';
-  const mainColor = config?.mainColor || '#2563EB';
+  const tokens = useTokens();
+  const gradient1 = tokens.colors.brand.gradientStart;
+  const gradient2 = tokens.colors.brand.gradientEnd;
+  const mainColor = tokens.colors.brand.primary;
 
   const Presentation = useComponent('screens.ModelPortfolioScreen');
 
@@ -97,19 +100,58 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
 
   const [index, setIndex] = useState(0);
 
+  // Time-cycle plans are model-portfolio plans flagged `timeCyclePlan: true`
+  // (Plan.js). They ride in `allStrategy`; we split them into their own tab.
+  const timeCyclePlans = React.useMemo(
+    () => (allStrategy || []).filter(p => p?.timeCyclePlan === true),
+    [allStrategy],
+  );
+  const hasTimeCycle =
+    config?.enableTimeCyclePlan !== false && timeCyclePlans.length > 0;
+
   const routes = React.useMemo(() => {
     const availableRoutes = [];
-    if (config?.bespokePlansEnabled !== false) {
-      availableRoutes.push({key: 'bespoke', title: 'Bespoke Plan'});
-    }
+    // Model Portfolio FIRST so the screen lands here by default (index 0),
+    // not on Bespoke.
     if (config?.modelPortfolioEnabled !== false) {
       availableRoutes.push({key: 'modelportfolio', title: 'Model Portfolio'});
     }
+    // Time Cycle tab: only when the catalog actually has active time-cycle
+    // plans (and not admin-disabled). No time-cycle plans → no dead tab.
+    if (hasTimeCycle) {
+      availableRoutes.push({
+        key: 'timecycle',
+        title: config?.timeCyclePlanLabel || 'Time Cycle',
+      });
+    }
+    // Bespoke tab: shown only when the admin flag allows it AND the catalog
+    // has at least one REAL bespoke plan. `priorRecommendationPlan` is a
+    // backend-injected system offering (not an advisor-created bespoke plan),
+    // so it must NOT, on its own, light up a "Bespoke Plan" tab — that's why
+    // tenants with zero real bespoke plans were still seeing the tab.
+    const realBespokeCount = (allBespoke || []).filter(
+      p => p?.name !== 'priorRecommendationPlan',
+    ).length;
+    if (config?.bespokePlansEnabled !== false && realBespokeCount > 0) {
+      availableRoutes.push({
+        key: 'bespoke',
+        title: config?.bespokePlanLabel || 'Bespoke Plan',
+      });
+    }
     return availableRoutes;
-  }, [config]);
+  }, [config, allBespoke, hasTimeCycle]);
+
+  // Keep the selected tab index valid when `routes` shrinks (e.g. the bespoke
+  // tab drops out because its catalog came back empty) — a stale index past
+  // the end of `routes` crashes react-native-tab-view.
+  React.useEffect(() => {
+    if (index > routes.length - 1) {
+      setIndex(Math.max(0, routes.length - 1));
+    }
+  }, [routes.length, index]);
 
   const [selectedPlanType, setSelectedPlanType] = useState(null);
-  const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
+  const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || Config.REACT_APP_ADVISOR_SPECIFIC_TAG || getAdvisorSubdomain();
   const [openSuccessModal, setOpenSucessModal] = useState(false);
   const [paymentModal, setPaymentModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -133,7 +175,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -141,7 +183,9 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
           },
         },
       );
-      setAllBespoke(response.data.data);
+      // Hide draft (unpublished) plans — matches web parity.
+      const published = (response.data.data || []).filter(plan => !plan?.draft);
+      setAllBespoke(published);
     } catch (error) {
       console.error('Error fetching bespoke:', error);
     } finally {
@@ -157,7 +201,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -165,7 +209,9 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
           },
         },
       );
-      setAllStrategy(response.data.data);
+      // Hide draft (unpublished) plans — matches web parity.
+      const published = (response.data.data || []).filter(plan => !plan?.draft);
+      setAllStrategy(published);
     } catch (error) {
       console.error('Error fetching strategy:', error);
     } finally {
@@ -181,7 +227,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         {
           headers: {
             'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
             'aq-encrypted-key': generateToken(
               Config.REACT_APP_AQ_KEYS,
               Config.REACT_APP_AQ_SECRET,
@@ -214,7 +260,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
           {
             headers: {
               'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
               'aq-encrypted-key': generateToken(
                 Config.REACT_APP_AQ_KEYS,
                 Config.REACT_APP_AQ_SECRET,
@@ -382,7 +428,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       url: `${server.server.baseUrl}api/all-clients/user/${userEmail}`,
       headers: {
         'Content-Type': 'application/json',
-        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
+        'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME || configData?.subdomain || getAdvisorSubdomain(),
         'aq-encrypted-key': generateToken(
           Config.REACT_APP_AQ_KEYS,
           Config.REACT_APP_AQ_SECRET,
@@ -431,7 +477,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     />
   );
 
-  const renderItem = ({item}) => (
+  const renderItem = ({item, index}) => (
     <MPCard
       modelName={item.name}
       image={resolveImageUrl(item?.image, server.server.baseUrl)}
@@ -445,6 +491,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       handleCardClick={() => handleCardClick(item)}
       handleSubscribe={() => handlePricingCardClick(item)}
       description={item.description}
+      index={index}
     />
   );
 
@@ -454,9 +501,15 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
     return bSubscribed - aSubscribed;
   });
 
-  const renderMPList = () => (
+  // In the tabbed Plans view, time-cycle plans get their own tab, so split
+  // them out of the Model Portfolio list. Horizontal/home lists keep showing
+  // the full set (default arg below).
+  const mpTabStrategy = sortedStrategy.filter(p => !p?.timeCyclePlan);
+  const tcTabStrategy = sortedStrategy.filter(p => p?.timeCyclePlan === true);
+
+  const renderMPList = (data = sortedStrategy) => (
     <FlatList
-      data={sortedStrategy}
+      data={data}
       renderItem={renderItem}
       keyExtractor={(item, idx) =>
         item._id || item.id || item.model_name?.toString() || idx.toString()
@@ -475,7 +528,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
           <View style={localStyles.textWrapper}>
             <Text style={localStyles.emptyTitle}>No Model Portfolio Available</Text>
             <Text style={localStyles.emptySubtitle}>
-              When your advisor creates a strategy, it will appear here.
+              When your manager creates a strategy, it will appear here.
             </Text>
           </View>
         </View>
@@ -534,10 +587,10 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
             </View>
             <View style={localStyles.textWrapper}>
               <Text style={localStyles.emptyTitle}>
-                No Bespoke Plan Is Available Now
+                No {config?.bespokePlanLabel || 'Bespoke Plan'} Is Available Now
               </Text>
               <Text style={localStyles.emptySubtitle}>
-                When your advisor creates any strategy, it will appear here
+                When your manager creates any strategy, it will appear here
               </Text>
             </View>
           </View>
@@ -676,7 +729,12 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
         TabBarSlot: (props) => <CustomTabBar {...props} />,
         MPListSlot: isSingleListType
           ? (isMP ? renderMPList : null)
-          : renderMPList,
+          // Only carve time-cycle plans out of MP when the Time Cycle tab is
+          // actually shown — otherwise they'd vanish with nowhere to appear.
+          : () => renderMPList(hasTimeCycle ? mpTabStrategy : sortedStrategy),
+        TimeCycleListSlot: isSingleListType
+          ? null
+          : () => renderMPList(tcTabStrategy),
         BespokeListSlot: isSingleListType
           ? (!isMP ? renderBespokeList : null)
           : renderBespokeList,

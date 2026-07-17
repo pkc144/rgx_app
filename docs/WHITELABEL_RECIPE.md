@@ -73,7 +73,7 @@ variant's `import` + map entry). The trade-off is real but small.
   defaults.
 - All `src/`-side feature code: contexts, services, hooks, screens'
   containers, navigators, SDK integration. Upstream is the source of truth.
-- The SDK package boundary (`../alphaquark-mobile-sdk/`). Forks don't touch
+- The SDK package boundary (`../../alphaquark-mobile-sdk/`). Forks don't touch
   the SDK package.
 - All architecture docs (`docs/*.md`).
 - Native shell of the AlphaQuark / default-variant build (Android `app/`,
@@ -112,7 +112,7 @@ variant's `import` + map entry). The trade-off is real but small.
   `SYNC.md` only.
 - A duplicated `designs/default/` folder. The fork inherits `default` from
   upstream automatically — that's the registry-fallback contract.
-- Direct edits to the SDK package (`../alphaquark-mobile-sdk/`). Forks
+- Direct edits to the SDK package (`../../alphaquark-mobile-sdk/`). Forks
   consume the published SDK like any other dep.
 - A divergent branch of any backend code. Backend lives in
   `aq_backend_github` and `ccxt-india`; backend overrides happen via

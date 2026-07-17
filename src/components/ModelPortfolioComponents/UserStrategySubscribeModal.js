@@ -44,10 +44,12 @@ import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import {useTrade} from '../../screens/TradeContext';
 import {convertResponse} from '../../utils/tradeUtils';
 import {useConfig} from '../../context/ConfigContext';
+import useTokens from '../../theme/useTokens';
 import { computeTradeVariant } from '../../utils/tradeVariant';
 import moment from 'moment';
 import { isOrderSuccess, isOrderRejected } from '../../utils/orderStatusUtils';
 import { validateBrokerSession } from '../../utils/brokerSessionUtils';
+import { isZerodhaSellAuthorized } from '../../utils/zerodhaDdpiGate';
 import useModalStore from '../../GlobalUIModals/modalStore';
 import useSdkClient from '../../sdk/useSdkClient';
 
@@ -89,7 +91,7 @@ const UserStrategySubscribeModal = ({
   const allowAfterHoursOrders = appConfig?.allowAfterHoursOrders;
   const sdkClient = useSdkClient();
   const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
-  const mainColor = appConfig?.mainColor || '#000';
+  const mainColor = useTokens().colors.brand.primary;
   const [loading, setLoading] = useState(false);
   const [confirmOrder, setConfirmOrder] = useState(false);
 
@@ -274,8 +276,7 @@ const UserStrategySubscribeModal = ({
           // Zerodha: DDPI persisted by `ddpi_status` ∈ {physical, ddpi}
           // (live check via `/zerodha/save-ddpi-status` populates this);
           // OR session-TPIN flag. Either ⇒ proceed.
-          const canSellZerodha = userDetails?.is_authorized_for_sell ||
-            ['physical', 'ddpi'].includes(userDetails?.ddpi_status);
+          const canSellZerodha = isZerodhaSellAuthorized(userDetails);
           if (!canSellZerodha) {
             needsEdisAuth = true;
             edisMessage = 'Please authorize DDPI in Kite Web before placing sell orders.';
@@ -966,9 +967,17 @@ const UserStrategySubscribeModal = ({
   };
   const zerodhaApiKey = configData?.config?.REACT_APP_ZERODHA_API_KEY;
   const handleZerodhaRedirect = async () => {
-    console.log('THos caalled', stockDetails);
+    // Tag `variant` once at the top of the function. Used for the
+    // `update-reco-with-zerodha-model-pf` call below AND injected into the
+    // `filteredStockDetails` shape written to AsyncStorage — without this
+    // tag, the field is dropped by the explicit field-by-field mapping at
+    // the .then() handler. See docs/APP_ARCHITECTURE.md § 4.5.2 Trade
+    // variant field.
+    const zerodhaVariant = computeTradeVariant(allowAfterHoursOrders);
+    const zerodhaTrades = (stockDetails || []).map(s => ({ ...s, variant: zerodhaVariant }));
+    console.log('THos caalled', zerodhaTrades);
     try {
-      console.log('This is called', stockDetails);
+      console.log('This is called', zerodhaTrades);
       await AsyncStorage.removeItem('stockDetailsZerodhaOrder');
       await AsyncStorage.removeItem('zerodhaAdditionalPayload');
       AsyncStorage.setItem(
@@ -1047,7 +1056,7 @@ const UserStrategySubscribeModal = ({
             },
           },
           {
-            stockDetails: stockDetails,
+            stockDetails: zerodhaTrades,
             leaving_datetime: currentISTDateTime,
             email: userEmail,
             trade_given_by: configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG || 'AlphaQuark',
@@ -1069,6 +1078,11 @@ const UserStrategySubscribeModal = ({
             priority: detail.Priority,
             tradeId: detail.tradeId,
             user_broker: 'Zerodha', // Manually adding this field
+            // Preserve variant through the field-by-field mapping. The
+            // backend may or may not echo it on the response (depending on
+            // whether `update-reco-with-zerodha-model-pf` persists it); if
+            // it doesn't, fall back to the submit-time computation.
+            variant: detail.variant || zerodhaVariant,
           }));
 
           setLoading(false);

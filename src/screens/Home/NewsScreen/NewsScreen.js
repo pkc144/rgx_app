@@ -10,7 +10,7 @@ import {
   Dimensions,
   ScrollView,Image,ActivityIndicator
 } from "react-native";
-import GradientView from '../../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import LinkOpeningWeb from "./LinkOpeningWeb";
 import WebView from "react-native-webview";
 import AwesomeAlert from 'react-native-awesome-alerts';
@@ -575,7 +575,7 @@ const renderNewsItem = ({ item }) => (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
 
-            <GradientView 
+            <LinearGradient 
             colors={[mainColor,secondaryColor]} // Adjust gradient colors
             start={{ x: 1, y: 1 }}
             end={{ x: 1, y: 0 }}
@@ -588,14 +588,14 @@ const renderNewsItem = ({ item }) => (
             >
               <View>
               <View style={{ flexDirection: 'row',justifyContent:'center',marginHorizontal:0 }}>
-               <GradientView
+               <LinearGradient
                  colors={['#262626','#262626']} // Border gradient colors
                  start={{ x: 0, y: 0 }}
                  end={{ x: 1, y: 1 }}
                  style={styles.borderGradient} // Border gradient container
                >
                  {/* Inner Container */}
-                 <GradientView
+                 <LinearGradient
                    colors={['#262626','#262626']}
                    start={{ x: 0, y: 0 }}
                    end={{ x: 1, y: 1 }}
@@ -619,8 +619,8 @@ const renderNewsItem = ({ item }) => (
   </TouchableOpacity>
                 <Icon1 name='search' size={12} color={'#fff'}/>
               </TouchableOpacity>
-               </GradientView>
-               </GradientView>
+               </LinearGradient>
+               </LinearGradient>
              
       
 
@@ -654,7 +654,7 @@ const renderNewsItem = ({ item }) => (
 
 </View>
               </View>
-            </GradientView>
+            </LinearGradient>
         <View style={{borderBottomWidth:1,borderBottomColor:'#eee',paddingBottom:10,}}>
           <View style={{flexDirection:'row',justifyContent:'space-between',  }}>
           </View>

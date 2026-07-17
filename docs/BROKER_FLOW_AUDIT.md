@@ -151,7 +151,7 @@ if (brokerName === 'Zerodha') {
 ### Gap fix plan
 
 **Gap 1: Android 302-redirect loss on SDK path**
-- **File:line to fix:** `../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow.tsx`. Real fix is OUT-OF-BAND: register a non-redirecting redirect URL on Kite developer portal (e.g., `app-links.alphaquark.in/zerodha-callback`). Then update `REDIRECT_URL` (line 91 of Phase3SdkBrokerModal.js) OR the SDK widget's hardcoded default to use the non-redirecting URL.
+- **File:line to fix:** `../../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow.tsx`. Real fix is OUT-OF-BAND: register a non-redirecting redirect URL on Kite developer portal (e.g., `app-links.alphaquark.in/zerodha-callback`). Then update `REDIRECT_URL` (line 91 of Phase3SdkBrokerModal.js) OR the SDK widget's hardcoded default to use the non-redirecting URL.
 - **Dependencies:** Kite dev-portal registration (out-of-band), possibly SDK package version bump.
 
 **Gap 2: Single-use token protection missing in SDK path**
@@ -2471,7 +2471,7 @@ The legacy modals for **Upstox, ICICI Direct, HDFC Securities, Motilal Oswal, Fy
 
 Mitigation today: `BrokerConnectModalDispatch` short-circuits ALL re-auth flows to legacy via `isReauthFlow = !!modalPayload?.reauthConfig`. So this gap doesn't cause regressions, but it does mean every credential broker stays partly legacy until the SDK widget gains reauth pre-fill.
 
-**Fix path:** Add optional `reauthConfig` prop to `BrokerCredentialForm` (in `../alphaquark-mobile-sdk/packages/rn/src/components/`). On mount, if present + valid, set internal state to "oauth phase" with pre-filled fields and emit `onContinueToOauth(extras)` immediately.
+**Fix path:** Add optional `reauthConfig` prop to `BrokerCredentialForm` (in `../../alphaquark-mobile-sdk/packages/rn/src/components/`). On mount, if present + valid, set internal state to "oauth phase" with pre-filled fields and emit `onContinueToOauth(extras)` immediately.
 
 ### 2. `IP_WHITELIST_BROKERS` set in `Phase3SdkBrokerModal` is incomplete
 

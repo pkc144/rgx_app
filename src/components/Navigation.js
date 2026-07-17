@@ -51,6 +51,9 @@ import {
   AlignEndHorizontal,
   Clipboard,
   User,
+  Video,
+  BookOpen,
+  MessageSquare,
 } from 'lucide-react-native';
 import HomeScreen from '../screens/Home/HomeScreen';
 import PhoneNumberScreen from '../screens/Authentication/PhoneNumberScreen';
@@ -73,6 +76,8 @@ import OrderScreen from '../screens/Home/OrderScreen';
 import WatchlistScreen from '../screens/Home/WatchlistScreen';
 import WishSearch from '../screens/Home/WishSearch';
 import CustomToolbar from './CustomToolbar';
+import NatificationServiceNav from './NatificationServiceNav';
+import {useConfig} from '../context/ConfigContext';
 import HistoryScreen from '../screens/Home/HistoryScreen';
 import AdviceScreen from '../screens/Home/HomeScreen';
 import PaymentHistoryScreen from '../screens/Drawer/PaymentHistoryScreen';
@@ -96,6 +101,7 @@ import {useModal} from '../components/ModalContext';
 import ModelPortfolioScreen from '../screens/Drawer/ModelPortfolioScreen';
 import MPPerformanceScreen from '../screens/Drawer/MPPerformanceScreen';
 import ResearchReportScreen from '../screens/Home/ResearchReportScreen';
+import RecommendationMessagesScreen from '../screens/Home/RecommendationMessagesScreen';
 import PushNotificationScreen from '../screens/Home/PushNotificationScreen';
 import TradePnLScreen from '../screens/Home/TradePnLScreen';
 
@@ -122,6 +128,10 @@ import AccountSettingsScreen from '../screens/Home/AccountSettingsScreen';
 import KnowledgeHub from './HomeScreenComponents/KnowledgeHub';
 import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen';
 import ChangeAdvisor from '../screens/AccountSettingScreen/ChangeAdvisor';
+import WebinarsListScreen from '../screens/Courses/WebinarsListScreen';
+import WebinarDetailScreen from '../screens/Courses/WebinarDetailScreen';
+import MyCoursesScreen from '../screens/Courses/MyCoursesScreen';
+import CourseDetailScreen from '../screens/Courses/CourseDetailScreen';
 import BrokerSelectionScreen from '../screens/Broker/BrokerSelectionScreen';
 import BrokerAuthScreen from '../screens/Broker/BrokerAuthScreen';
 import BrokerCredentialScreen from '../screens/Broker/BrokerCredentialScreen';
@@ -361,10 +371,12 @@ const currentName = currentTabRoute?.name || "";
   // avatar + ticker strip) wraps every tab screen in the default variant.
   // Variants that ship their own in-screen header (e.g. alphanomy's _AppHeader
   // helper used by HomeScreen / OrderScreen / ModelPortfolioScreen) suppress
-  // it to avoid the duplicate-header look. Tenants who want the legacy
-  // chrome simply leave DESIGN_VARIANT unset (or set it to "default").
+  // it to avoid the duplicate-header look. Variants that only theme the
+  // legacy chrome (moneyman_app — green paint, no bespoke header) opt into
+  // showing it. Default keeps showing it.
+  const HEADER_VARIANTS = new Set(['default', 'moneyman_app']);
   const showLegacyToolbar =
-    !Config?.DESIGN_VARIANT || Config.DESIGN_VARIANT === 'default';
+    !Config?.DESIGN_VARIANT || HEADER_VARIANTS.has(Config.DESIGN_VARIANT);
 
   return (
     <SafeAreaView style={{flex: 1}}>
@@ -480,12 +492,19 @@ const currentName = currentTabRoute?.name || "";
 
 const CustomDrawerContent = props => {
   const {configData} = useTrade();
+  const appConfig = useConfig();
+  const coursesEnabled = !!appConfig?.coursesEnabled;
+  const webinarsEnabled = !!appConfig?.webinarsEnabled;
   const navigation = useNavigation();
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
   const isDrawerOpen = useDrawerStatus(); // Use hook to determine drawer status
+  const wasEverOpenedRef = useRef(false);
+  if (isDrawerOpen === 'open') {
+    wasEverOpenedRef.current = true;
+  }
   useEffect(() => {
     if (auth.currentUser) {
       setUserEmail(auth.currentUser.email);
@@ -632,6 +651,15 @@ const CustomDrawerContent = props => {
       </TouchableOpacity>
     );
   };
+
+  // Defer rendering the drawer body until the drawer has actually been
+  // opened at least once. React Navigation v7's drawer panel is mounted
+  // even while "closed" and on iOS the off-screen translate can take one
+  // frame to settle — without this guard, the menu flashes visibly on
+  // top of the home tab right after login (`navigation.replace('Home')`).
+  if (!wasEverOpenedRef.current && isDrawerOpen !== 'open') {
+    return null;
+  }
 
   return (
     <LinearGradient
@@ -874,6 +902,49 @@ const CustomDrawerContent = props => {
             )}
           />
 
+          <CustomDrawerItem
+            label="Recommendation Messages"
+            isSelected={
+              props.state.routeNames[props.state.index] ===
+              'RecommendationMessages'
+            }
+            onPress={() => handleDrawerItemPress('RecommendationMessages')}
+            IconComponent={({color, style}) => (
+              <MessageSquare color={color} style={style} />
+            )}
+          />
+
+          {/* Courses (2026-05-24) — viewer-only catalog. Gated per-advisor
+              by AppConfigContext.coursesEnabled (mirrors web's
+              AppConfigContext default-false → AdvisorConfig.courses_enabled).
+              Routes resolve to the root Stack.Screen registered in Phase
+              2e; entries hide entirely when the flag is off. */}
+          {coursesEnabled && (
+            <CustomDrawerItem
+              label="Courses"
+              isSelected={
+                props.state.routeNames[props.state.index] === 'MyCourses'
+              }
+              onPress={() => handleDrawerItemPress('MyCourses')}
+              IconComponent={({color, style}) => (
+                <BookOpen color={color} style={style} />
+              )}
+            />
+          )}
+
+          {webinarsEnabled && (
+            <CustomDrawerItem
+              label="Webinars"
+              isSelected={
+                props.state.routeNames[props.state.index] === 'WebinarsList'
+              }
+              onPress={() => handleDrawerItemPress('WebinarsList')}
+              IconComponent={({color, style}) => (
+                <Video color={color} style={style} />
+              )}
+            />
+          )}
+
           {false && (
             <CustomDrawerItem
               label="Ignored Trades"
@@ -994,16 +1065,25 @@ screenOptions={{
 }
 
 const DrawerNavigator = () => {
+  const {width: windowWidth, height: windowHeight} = Dimensions.get('window');
   return (
     <Drawer.Navigator
       drawerContent={props => <CustomDrawerContent {...props} />}
+      defaultStatus="closed"
       screenOptions={{
-        swipeEnabled: false,
+        // D17 (web-parity): the right drawer was unreachable (swipeEnabled:false + no
+        // openDrawer() caller), so parity surfaces dropped into it (PaymentHistory /
+        // MPPerformance) couldn't be found. Re-enabled via right-edge swipe. Watch for
+        // gesture conflicts with horizontal scroll/tab views (the likely original reason
+        // it was off); the HomeScreen NBA card (P3) remains the primary discovery path.
+        // See docs/WEB_PARITY_MIGRATION_2026-06.md §5.1 (D17).
+        swipeEnabled: true,
+        swipeEdgeWidth: 40,
         drawerPosition: 'right',
         drawerStyle: {
-          backgroundColor: 'red',
-          width: '100%',
-          height: '100%',
+          backgroundColor: 'transparent',
+          width: windowWidth,
+          height: windowHeight,
         },
         drawerLabelStyle: {
           fontSize: 18,
@@ -1072,7 +1152,15 @@ const Navigation = ({userEmail, isAuthenticated}) => {
     String(Config?.REACT_APP_SDK_BROKER_TEST_FIRST || '').toLowerCase() === 'true';
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={(nav) => {
+        // Expose the imperative navigator to index.js so notification-tap
+        // handlers (FCM background + cold-start + notifee tap events) can
+        // deep-link. Without this hookup, NatificationServiceNav.navigate
+        // silently no-ops with "Navigator is not defined yet."
+        if (nav) NatificationServiceNav.setTopLevelNavigator(nav);
+      }}
+    >
       <Stack.Navigator
         initialRouteName={sdkBrokerTestFirst ? 'SdkBrokerTest' : 'Splash'}
         screenOptions={{headerShown: false, animation: 'none'}}>
@@ -1171,6 +1259,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           options={{headerShown: false}}
         />
         <Stack.Screen
+          name="RecommendationMessages"
+          component={RecommendationMessagesScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
           name="ResearchReportScreen"
           component={ResearchReportScreen}
           options={{headerShown: false}}
@@ -1209,6 +1302,26 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           name="HomeS"
           component={DrawerNavigator}
           options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="WebinarsList"
+          component={WebinarsListScreen}
+          options={{headerShown: true, title: 'Live Webinars'}}
+        />
+        <Stack.Screen
+          name="WebinarDetail"
+          component={WebinarDetailScreen}
+          options={{headerShown: true, title: 'Webinar'}}
+        />
+        <Stack.Screen
+          name="MyCourses"
+          component={MyCoursesScreen}
+          options={{headerShown: true, title: 'Courses'}}
+        />
+        <Stack.Screen
+          name="CourseDetail"
+          component={CourseDetailScreen}
+          options={{headerShown: true, title: 'Course'}}
         />
         <Stack.Screen
           name="Broker Setting"

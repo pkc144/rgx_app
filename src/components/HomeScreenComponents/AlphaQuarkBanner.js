@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import {useTrade} from '../../screens/TradeContext';
 import ProfileModal from '../ProfileModal';
-import GradientView from '../GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import Config from 'react-native-config';
 
 const AlphaQuarkBanner = () => {
@@ -38,7 +38,7 @@ const AlphaQuarkBanner = () => {
     <View style={styles.container}>
       {/* Banner */}
       <View style={styles.bannerContainer}>
-        <GradientView
+        <LinearGradient
           colors={['#1A358C', '#2D5CF2']}
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
@@ -64,7 +64,7 @@ const AlphaQuarkBanner = () => {
               <Text style={styles.profileButtonText}>Profile</Text>
             </TouchableOpacity>
           </View>
-        </GradientView>
+        </LinearGradient>
       </View>
 
       {/* Profile Modal */}

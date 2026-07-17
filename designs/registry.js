@@ -33,6 +33,8 @@ export const VARIANTS = {
     // Add custom variants here:
     // acme: require('./acme').default,
     // zamzamcapital: require('./zamzamcapital').default,
+    // NOTE: moneyman_app dropped — that variant dir doesn't exist in this
+    // fork; upstream (Alphab2bapp) ships it, this repo doesn't.
 };
 
 export default VARIANTS;

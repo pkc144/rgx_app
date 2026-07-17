@@ -31,7 +31,7 @@ For each broker, the row captures:
 
 | Broker | visibleModal key | SDK BrokerName | Legacy modal | Verdict (today) |
 |--------|------------------|----------------|--------------|-----------------|
-| Zerodha | `Zerodha` | `Zerodha` | `ZerodhaConnectModal.js` (thin wrapper around `ZerodhaConnectUI`) | **Incomplete-audit** — Android intercept logic in UI component not yet read. Treat as SDK-broken. |
+| Zerodha | `Zerodha` | `Zerodha` | `ZerodhaConnectModal.js` (thin wrapper around `ZerodhaConnectUI`) | **Incomplete-audit** — Android intercept logic in UI component not yet read. Treat as SDK-broken. (User-reported Play Store hang 2026-05-26 — under live emulator investigation; see § Zerodha for live hypotheses.) |
 | Angel One | `Angel One` | `Angel One` | `AngleoneBookingModal.js` | **SDK-broken — added to `SDK_LEGACY_FALLBACK` 2026-04-30 (regression fix).** Two open gaps: (1) SDK schema always renders the per-customer `apiKey+secretKey+clientCode` form (Phase3SdkBrokerModal.js:264-268 "Tracked as Known Gap"); shared-mode advisors (default) need an empty-fields publisher-OAuth schema like Zerodha. (2) Backend `/sdk/v1/connections/Angel One/exchange-token` doesn't yet handle `auth_token` callback for shared mode. While both gaps are open the consumer routes to legacy `AngleOneBookingTrueSheet` so Connect Angel One works for every advisor today. Removal criterion: schema gap (1) + backend gap (2) both close — tracked in § Angel One open gaps below. |
 | Upstox | `Upstox` | `Upstox` | `upstoxModal.js` | **SDK-clean** (PROMOTED 2026-04-28) — IP_WHITELIST_BROKERS + backend /exchange-token dispatch + SDK_ELIGIBLE_MODALS. Reauth still routes to legacy via `isReauthFlow` short-circuit. |
 | ICICI Direct | `ICICI` | `ICICI Direct` | `icicimodal.js` | **SDK-clean** (PROMOTED 2026-04-28) — backend `/exchange-token` ICICI dispatch already existed (connections.js:1180-1205, exchanges `apisession`→`session_token`); IP_WHITELIST_BROKERS already included; just needed allowlist promotion. |
@@ -49,7 +49,7 @@ For each broker, the row captures:
 ```
 {HDFC, Upstox, ICICI, Motilal, Dhan, Kotak, AliceBlue, Fyers, Axis Securities, Groww, DummyBroker}
 ```
-11 of 14 brokers SDK-clean. 2 in `SDK_LEGACY_FALLBACK` (Angel One, Zerodha). 1 unlisted (IIFL Securities).
+11 of 14 brokers promoted. 2 stay legacy via fallback (Angel One shared-mode, IIFL schema-mismatch). 1 unlisted (IIFL Securities).
 
 ---
 
@@ -66,6 +66,17 @@ For each broker, the row captures:
   - **Real fix is out-of-band**: register a non-redirecting redirect URL on Kite developer portal (e.g. `app-links.alphaquark.in/zerodha-callback`).
 - **Verdict:** **Incomplete-audit** — treat as SDK-broken. Until ZerodhaConnectUI is read AND the Kite dev-portal redirect is migrated, Zerodha stays legacy. In `SDK_LEGACY_FALLBACK` today.
 - **Last verified:** 2026-04-28, commit `4aca2d4`. Wrapper-level audit only.
+
+### Zerodha — 2026-05-26 live investigation (does NOT update verdict — see § PHASE3_PROGRESS 2026-05-26)
+
+User-reported on Play Store APK: SDK Zerodha "keeps loading and does not go forward." Static read this session (`ZerodhaConnectUI.js` end-to-end, `Phase3SdkBrokerModal.js`, SDK `WebViewBrokerAuthFlow.tsx`, backend `connections.js` Zerodha branches) found NO obvious bug in routing. Specifically: `extras.apiKey` is correctly seeded from `REACT_APP_ZERODHA_API_KEY`; SDK `WebViewBrokerAuthFlow` has four belt-and-suspenders intercept paths (injectedJavaScript + onShouldStartLoadWithRequest + onLoadStart + onNavigationStateChange); `request_token` is in `_kOauthCallbackParamNames`; backend `/login-url` and `/exchange-token` both dispatch to the right ccxt endpoints. Also confirmed: the prior audit claim that legacy `ZerodhaConnectUI` has "custom `onShouldStartLoadWithRequest` + URL-pattern fallback" is aspirational — legacy uses ONLY `onNavigationStateChange` (line 410-426), so the SDK already has MORE intercept coverage than legacy. There is no "Android logic to port."
+
+Three live hang-cause hypotheses, ranked:
+1. **Backend `userEmail` resolution failure (MOST LIKELY)**: `connections.js:1601` passes `userEmail` from `req.sdkSession` to ccxt `/zerodha/gen-access-token`. Firebase phone-only signin = null `user_email` = ccxt can't resolve platform `apiSecret` = 502 after 20s timeout → looks like "stuck loading" to a user who doesn't wait the full 20s.
+2. **Android 302 race**: `prod.alphaquark.in/stock-recommendation?request_token=…` 302s to `/login` when AQ session cookie is absent. Android may resolve the chain server-side before the SDK's `onLoadStart` fires on the intermediate URL — `WebViewBrokerAuthFlow.tsx:533` acknowledges this on some Android WebView builds.
+3. **ccxt `/zerodha/login-url` upstream timeout** (15s, `connections.js:1198`) — least likely.
+
+Live investigation in progress on emulator + adb logcat to pin the hang phase before code changes. Verdict will be updated post-reproduction.
 
 ---
 
@@ -300,6 +311,7 @@ Backend already accepts the corrected mapping: `aq_backend_github/Routes/Broker/
 - **Broker-specific quirks:**
   - **HARDCODED `prod.alphaquark.in` origin** (line 40) — DO NOT read from `REACT_APP_BROKER_CONNECT_REDIRECT_URL`. AliceBlue's partner appcode is allow-listed against `prod.alphaquark.in` only. Production incident 2026-04-26: when origin was `app-links.alphaquark.in/broker-callback`, AliceBlue's portal silently bounced users after OTP because redirect URL failed appcode-whitelist check (long comment at lines 24–38).
   - SDK dual-write uses `sdkExchangeBrokerToken` (not `sdkConnectBroker`) because AliceBlue's callback yields `access_token + client_id` not `jwtToken + clientCode`.
+  - **iOS blank WebView — firebase-messaging bootstrap abort (discovered 2026-06-11, root-caused same day after a first UA-only fix proved insufficient):** AliceBlue's portal Vue bundle runs firebase-messaging at module top level before `mount("#app")` — `navigator.serviceWorker.addEventListener(…)` unguarded + UA-gated `Notification.requestPermission()`. iOS WKWebView has **neither API**, so their own bootstrap throws, never mounts, and the page is blank; Android WebView has both → works. Fix: AliceBlue-gated document-start script stubs both APIs (+ Safari-style iPhone UA as the supporting fix for the UA-gated branch) — applied to the SDK `WebViewBrokerAuthFlow` (RN + Flutter) AND the legacy `AliceBlueConnectUI.js` (same latent bug, every code path fixed in one cycle). See PHASE3_ARCHITECTURE.md § WebViewBrokerAuthFlow → "AliceBlue-only WebView overrides".
 - **Success handling:** Close WebView → PUT connect-broker → optional model-portfolio refresh → refreshEvent + toast.
 - **Error handling:** "Connection Error" / "Connection Issue" wording (lines 260–275).
 - **Gap vs SDK widget:**
@@ -309,7 +321,7 @@ Backend already accepts the corrected mapping: `aq_backend_github/Routes/Broker/
   4. EgressIpCallout — Phase3SdkBrokerModal includes it for AliceBlue (in `IP_WHITELIST_BROKERS`) but legacy AliceBlueConnect doesn't gate on IP. The Phase 3 wrapper's IP gate may be UNNECESSARY for AliceBlue. Verify before removing.
   5. Backend `/sdk/v1/connections/AliceBlue/login-url` must call ccxt `aliceblue/login` with the hardcoded `origin=https://prod.alphaquark.in&returnPath=stock-recommendation` query, not the tenant's redirect URL.
 - **Verdict:** **SDK-with-gap.** Two SDK-side fixes (schema → empty-fields OAuth; redirectUrl override hardcoded) + one backend fix (login-url proxy with hardcoded origin) + one Phase3SdkBrokerModal change (remove from `IP_WHITELIST_BROKERS` if legacy doesn't gate).
-- **Last verified:** 2026-04-28, code-read audit. User-reported regression: "should have opened the partner based oauth, that also it did not do properly, asked api etc which is not needed".
+- **Last verified:** 2026-06-11 — **iOS device-verified working** after the WKWebView shim fix (SDK `c0d53d5`): dev rebuilt iOS with the new SDK and AliceBlue connect worked end-to-end. Android verified working by user same day. Prior: 2026-04-28 code-read audit (user-reported regression: "should have opened the partner based oauth, that also it did not do properly, asked api etc which is not needed").
 
 ---
 

@@ -3,6 +3,17 @@
 > **Per-surface inventory + verdict matrix for the design-system migration.** Companion to `DESIGN_SYSTEM_ARCHITECTURE.md` (the design source of truth) and `DESIGN_MIGRATION_PROGRESS.md` (the chronological work log). Mirrors `PHASE3_BROKER_AUDIT.md` in spirit.
 >
 > **The migration order is derived from this table, not the other way around.** A row only moves to "in-flight" or "done" after its verdict is locked here. Don't migrate without a row.
+>
+> **Scope: this audit covers upstream `designs/default/` only.** As of Phase 3 of the whitelabel-sync work (2026-05-09), variant folders for non-default tenants live in per-tenant fork repos (Alphanomy, Zamzam, RGX, etc.), not upstream — so their per-surface verdict tables live in the fork repo's own audit doc, if any. Upstream's job is to ensure the **container-side viewModel + actions contract** is rich enough that any variant override can render the screen it needs. If a fork's variant override needs data the upstream container doesn't currently expose, that's an upstream change first (typically a row's verdict moves from `clean-extract` → `needs-logic-extraction` to widen the viewModel), then the fork's override consumes it. See `WHITELABEL_RECIPE.md`.
+
+> **Cross-tracked composites (Courses/Webinars).** `composites.LiveRoom` and
+> `composites.GumletPlayer` (`designs/default/composites/`) were added by the
+> courses/webinars port and are audited primarily in
+> `COURSES_WEBINARS_MOBILE_PORTING.md` (§4.2 / §4.5), not in the table below.
+> 2026-06-19: `composites.LiveRoom` active-room presentation hardened to a
+> full-screen RN `Modal` (parity with the web full-viewport webinar fix) — see
+> `DESIGN_MIGRATION_PROGRESS.md` 2026-06-19 + `CHANGELOG.md`. `GumletPlayer`
+> is already fluid (`width:100%, aspectRatio 16/9`) — no change.
 
 ## How to read this doc
 
@@ -231,7 +242,7 @@ ViewModel sketches captured in the audit-task pass (2026-05-01). The `viewModel`
 | MPPerformanceScreen | `src/screens/Drawer/MPPerformanceScreen.js` | `needs-logic-extraction` | I | Performance data + chart fetching in container. |
 | CustomTabbarMPPerformance | `src/screens/Drawer/CustomTabbarMPPerformance.js` | `needs-logic-extraction` | I | Tab navigation + per-tab data dispatch. |
 | EmptyStateMP | `src/screens/Drawer/EmptyStateMP.js` | `clean-extract` | I | Static empty-state UI; only consumes config theme. |
-| ModelPFCard | `src/screens/PortfolioScreen/ModelPFCard.js` | `needs-logic-extraction` | I | MP card on Portfolio screen; calls `ModelPortfolioService`. |
+| ModelPFCard | `src/screens/PortfolioScreen/ModelPFCard.js` | `needs-logic-extraction` | I | MP card on Portfolio screen; calls `ModelPortfolioService`. **2026-07-11:** container now also reads `useTokens().colors.mpCardColorCycle` + row `index` → passes a resolved `cardColor` into `viewModel.cardColor`. Default variant leaves the cycle `null` (no change); `moneyman_app` cycles green/blue/purple by row. Presentation applies `cardColor` as left-border accent + model-name tint. |
 
 **Reminder**: if the SDK MP plan firms up before Phase I starts, these flip back to `SDK-pending` and Phase I is dropped instead. The risk is acknowledged; see `DESIGN_SYSTEM_ARCHITECTURE.md § Note on MP and the SDK`.
 
@@ -395,6 +406,33 @@ Most modals are independent surfaces. Modal-shell consolidation is **deferred to
 **Net for ModelPortfolioComponents:** 9 `clean-extract`, 11 `needs-logic-extraction`. Zero frozen.
 
 If the SDK MP plan firms up before Phase I starts (or mid-flight), affected rows flip to `SDK-pending` and the migration unwinds for those surfaces.
+
+---
+
+## Section 7c — Asset tokens (Phase 2 — whitelabel sync, 2026-05-09)
+
+Variant-overridable static images. Implementation at `src/theme/assets.js`; registry surface at `designs/default/tokens/index.js`; consumed via `useTokens().assets.<key>`.
+
+| Slot | Default value | Status | Consumers (designs/-side) |
+|---|---|---|---|
+| `logoPng` | `src/assets/logo.png` (AlphaQuark) | live (Phase 2) | LoginScreen, SignupScreen, ResetPassword |
+| `logoFadedPng` | `src/assets/fadedlogo.png` | live (Phase 2) | ChangeAdvisor, BasketCard |
+| (future) `splashPng` | TBD | not yet shipped | SplashScreen — out of Phase 2 scope |
+| (future) `appIconPreviewPng` | TBD | not yet shipped | — |
+
+`src/`-side direct imports of the same files (`src/components/SplashScreen.js`, `src/components/HomeScreenComponents/PlanCard.js`, `src/UIComponents/RebalanceAdvicesUI/RebalanceCard.js`, `src/utils/Config.js`, `src/context/ConfigContext.js`) intentionally NOT migrated in Phase 2 — those sit either outside the variant-resolution path (SplashScreen renders pre-providers) or already theme via `configData.logo` from ConfigContext. They migrate in a later pass if/when split into container + presentation.
+
+---
+
+## Section 7b — `src/components/Navigation.js` (out-of-scope plumbing)
+
+`Navigation.js` is the React Navigation root (Stack + Drawer + Tab). It is NOT a UI surface in the design-system sense — variants don't override the navigator structure, they override the screens *behind* it.
+
+| File | Verdict | Notes |
+|---|---|---|
+| `src/components/Navigation.js` | **`out-of-scope-plumbing`** (not in `designs/`) | Render-stable Tab.Screen `component` prop convention applies. Inline render-prop children are forbidden — they remount the nested screen tree on every parent render and would manifest as state-loss in variant presentations. See `DESIGN_SYSTEM_ARCHITECTURE.md § Navigator convention`. The `PlansTabWrapper` hoist (2026-05-09) was the first enforcement of this rule. |
+
+Adding a new tab/screen to `Navigation.js` does NOT require a design-audit row — but the navigator-convention check above is mandatory at code-review time.
 
 ---
 

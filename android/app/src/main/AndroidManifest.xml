@@ -10,6 +10,17 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
+    <!-- The Daily/WebRTC voice library (used AUDIO-ONLY here) transitively
+         declares FOREGROUND_SERVICE_MEDIA_PROJECTION + a MediaProjectionService
+         for screen-sharing, which this app never does. Strip both so the merged
+         manifest carries no media-projection capability and Play Console does
+         not require the FOREGROUND_SERVICE_MEDIA_PROJECTION declaration. Safe:
+         the MediaProjectionService is only started on screen-share, never on
+         audio calls. -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        tools:node="remove" />
+
     <application
         android:name=".MainApplication"
         android:label="@string/app_name"
@@ -25,9 +36,14 @@
             android:value="true"
             tools:replace="android:value" />
 
-        <meta-data 
-            android:name="com.dieam.reactnativepushnotification.notification_foreground" 
+        <meta-data
+            android:name="com.dieam.reactnativepushnotification.notification_foreground"
             android:value="true" />
+
+        <!-- Remove the WebRTC screen-share foreground service (audio-only app). -->
+        <service
+            android:name="com.oney.WebRTCModule.MediaProjectionService"
+            tools:node="remove" />
 
         <activity
             android:name=".MainActivity"
@@ -61,6 +77,46 @@
                     android:scheme="rgxapp"
                     android:host="zerodha"
                     android:pathPrefix="/callback" />
+            </intent-filter>
+
+            <!--
+                Android App Links intent-filter for broker OAuth callbacks.
+
+                When `autoVerify="true"` is set, Android fetches
+                https://app-links.alphaquark.in/.well-known/assetlinks.json
+                at install time and verifies this app's signing SHA-256 is
+                listed. If verified, every https link to
+                https://app-links.alphaquark.in/broker-callback is opened
+                directly in this activity WITHOUT the disambiguation chooser
+                — critical because broker OAuth carries secrets in the query
+                string and we can't afford for the user to pick a browser.
+
+                Verification status can be checked on-device with:
+                  adb shell pm get-app-links com.rgx.aq
+                Look for "app-links.alphaquark.in: verified".
+
+                The assetlinks.json is served dynamically by
+                aq_backend_github (Routes/WellKnown/WellKnownRouter.js),
+                aggregating entries from every appadvisors doc with
+                appLinksEnabled=true across all advisor DBs. This app's
+                entry lives in the advisor DB for rgxresearch.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="app-links.alphaquark.in" />
+                <data android:pathPrefix="/broker-callback" />
+                <!--
+                    Campaign smart links (WhatsApp/SMS/email).
+                    https://app-links.alphaquark.in/l/<tenant>?utm_*&dl=
+                    opens directly in the app when installed (verified App
+                    Link, no chooser). The backend SmartLinkRouter only
+                    renders its interstitial / Play-Store fallback when the
+                    app is NOT installed. Parsed in App.js → src/utils/smartLink.js.
+                -->
+                <data android:pathPrefix="/l" />
             </intent-filter>
         </activity>
 

@@ -19,6 +19,8 @@ import {
     Tags,
     LogOut,
     Bookmark,
+    BookOpen,
+    Video,
 } from 'lucide-react-native';
 import { getAuth } from '@react-native-firebase/auth';
 import DeviceInfo from 'react-native-device-info';
@@ -76,7 +78,16 @@ const AccountSettingsScreen = ({ navigation }) => {
                         ?.split(',')
                         .map(code => code.trim().toUpperCase()) || [];
                     const currentCode = Config?.ADVISOR_RA_CODE?.toUpperCase() || '';
-                    const shouldHide = Config?.REACT_APP_HIDE_CHANGE_MANAGER === 'true' ||
+                    // "Change Manager" lets a user switch which advisor/RA they
+                    // sit under — only meaningful on the multi-advisor PARENT app
+                    // (APP_VARIANT 'alphaquark' = AlphaQuark B2B). Whitelabel
+                    // builds (alphanomy, zamzamcapital, rgxresearch, arfs, …) are
+                    // single-tenant, so the option is hidden there by default.
+                    // Still force-overridable via the existing flags.
+                    const appVariant = Config?.APP_VARIANT || 'alphaquark';
+                    const isWhitelabel = appVariant !== 'alphaquark';
+                    const shouldHide = isWhitelabel ||
+                        Config?.REACT_APP_HIDE_CHANGE_MANAGER === 'true' ||
                         hideChangeManagerCodes.includes(currentCode);
                     return !shouldHide;
                 })()
@@ -84,7 +95,7 @@ const AccountSettingsScreen = ({ navigation }) => {
                         {
                             icon: Tags,
                             label: 'Change Manager',
-                            onPress: () => handleMenuPress('Advisor Change'),
+                            onPress: () => handleMenuPress('Manager Change'),
                         },
                     ]
                     : []),
@@ -114,6 +125,32 @@ const AccountSettingsScreen = ({ navigation }) => {
                     label: 'Knowledge Hub',
                     onPress: () => handleMenuPress('KnowledgeHub'),
                 },
+                // Courses + Webinars surfaced here (under Insights) because
+                // the legacy right-drawer (Navigation.js:1040) has
+                // swipeEnabled:false and no openDrawer caller anywhere in
+                // src/, so the drawer entries added in commit bf33977 are
+                // unreachable. Account Settings is the existing
+                // bottom-tab-reachable home for ancillary navigation.
+                // Same coursesEnabled / webinarsEnabled gating as the
+                // drawer rows (Navigation.js:893-917).
+                ...(config?.coursesEnabled
+                    ? [
+                        {
+                            icon: BookOpen,
+                            label: 'Courses',
+                            onPress: () => handleMenuPress('MyCourses'),
+                        },
+                    ]
+                    : []),
+                ...(config?.webinarsEnabled
+                    ? [
+                        {
+                            icon: Video,
+                            label: 'Webinars',
+                            onPress: () => handleMenuPress('WebinarsList'),
+                        },
+                    ]
+                    : []),
             ],
         },
         {

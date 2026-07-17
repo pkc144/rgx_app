@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, ScrollView } from "react-native";
-import GradientView from '../GradientView';
+import LinearGradient from "react-native-linear-gradient";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import Config from "../../utils/safeConfig";
@@ -85,7 +85,7 @@ const ExploreSection = ({
             onPress={() => handleItemPress(item)}
             activeOpacity={0.8}
           >
-            <GradientView
+            <LinearGradient
               colors={item.gradientColors}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -96,7 +96,7 @@ const ExploreSection = ({
               </View>
               <Text style={styles.cardTitle}>{item.name}</Text>
           
-            </GradientView>
+            </LinearGradient>
           </TouchableOpacity>
         ))}
     </View>

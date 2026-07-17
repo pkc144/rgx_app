@@ -19,6 +19,147 @@
 
 ---
 
+## 2026-07-11 — `moneyman_app` variant + variant-aware `buildColors` + `mpCardColorCycle` for Portfolio-tab MP rows
+
+- **Phase**: B (registry / variant plumbing) + I (Model Portfolio surfaces).
+- **Surfaces touched**:
+  - `src/theme/colors.js` — added `mpCardColorCycle: null` slot in `DEFAULT_TOKENS`.
+  - `src/theme/useTokens.js` — reads `design.tokens.buildColors` from `DesignContext`, falls back to local `buildColors`. Mirrors the existing `buildAssets` variant-aware pattern from 2026-06-10.
+  - `src/screens/PortfolioScreen/ModelPFCard.js` (container) — new `index` prop; reads `useTokens().colors.mpCardColorCycle`; computes `cardColor = cycle[index % cycle.length]`; passes into `viewModel.cardColor`.
+  - `src/screens/PortfolioScreen/PortfolioScreen.js` — passes `index` from `FlatList.renderItem` into the container.
+  - `designs/default/composites/ModelPFCard.js` — accepts `viewModel.cardColor`; when non-null, applies a 4px left-border accent + tints the model-name text. Default variant behavior unchanged (cycle is `null`).
+  - `designs/moneyman_app/` (NEW) — `tokens/index.js` with `MONEYMAN_DEFAULTS` (green `#005A00` brand.primary/accent/gradientStart, `#003300` gradientEnd, green nav.tabIconActive, green+dark-green basket, green border.focus, `mpCardColorCycle: ['#005A00', '#00005A', '#5A005A']`) + `applyLegacyBranding` + `merge` for backend overrides; `index.js` variant root with empty `components` (falls back to default).
+  - `designs/registry.js` — registered `moneyman_app`.
+- **Verdict changes**: `ModelPFCard` row in `DESIGN_COMPONENT_AUDIT.md` updated with the new `cardColor` viewModel prop.
+- **What shipped**: enables a portable fork palette for the `moneyman_app` sibling repo. Because `designs/moneyman_app/` lives outside `src/`, copying `src/` from upstream Alphab2bapp into moneyman_app no longer overwrites the fork's brand green. Activation on the fork side is `DESIGN_VARIANT=moneyman_app` in that repo's `.env`. The 3-color cycle (green/blue/purple) appears only on the Portfolio-tab subscribed-MP rows; it cycles by row index and repeats for lists longer than 3.
+- **Regressions / rollbacks**: none expected. Default variant renders identically — `mpCardColorCycle` defaults to `null`, and the presentation's `cardColor && …` gates keep the accent styles behind a truthy check.
+- **Next**: user copies `src/` + `designs/moneyman_app/` into the moneyman_app repo; sets `DESIGN_VARIANT=moneyman_app` in that repo's `.env`; runs the app to confirm green theme + 3-color card cycle. If the fork later needs a custom home hero or MP subscribe card, register it under `designs/moneyman_app/composites/` or `screens/` — the empty `components: {}` map is intentionally the extension point.
+
+### Follow-up in the same session: MP hardcoded-color sweep
+
+Purpose: token-migrated the fallback hex in every MP surface that was doing `const gradient1 = config?.gradient1 || '#hex'`. `useTokens()` already layers backend legacy branding (`config.gradient1 → brand.gradientStart`), so switching the fallback from a literal hex to `tokens.colors.brand.*` gives us: variant default (moneyman green) → tenant admin-UI override → `colorTokens` override — all through one hook. Non-brand semantic colors (P&L greens/reds, status success/danger, gray neutrals) left untouched.
+
+**MP surfaces migrated to `useTokens()` for brand-color fallbacks (all default variant appearance unchanged):**
+
+- `src/components/ModelPortfolioComponents/MPCard.js` — subscription-screen card. `gradient1/2/mainColor` fallbacks now read from `tokens.colors.brand.{gradientStart, gradientEnd, primary}`.
+- `src/components/ModelPortfolioComponents/MPCardBespoke.js` — bespoke subscription-screen card. Same replacement. `#ECF3FE` static-accent bgs in the expanded section (4 spots) left as-is — small, non-primary chrome.
+- `src/components/ModelPortfolioComponents/MPInvestNowModal.js` — invest-flow modal. Same replacement.
+- `src/components/ModelPortfolioComponents/RecommendationSuccessModal.js` — post-recommendation success. Same replacement + inline `#0056B7` and `#2563EB` in the manual-edit and inline-Info flows now read `brandPrimary` / `infoColor` from `tokens.colors.status.info`.
+- `src/components/ModelPortfolioComponents/UserStrategySubscribeModal.js` — subscribe flow. `mainColor` fallback (previously `'#000'`) now reads `brand.primary`.
+- `src/components/ModelPortfolioComponents/DigioModal.js` — Digio auth WebView. `mainColor` + `gradient2` fallbacks now read from tokens. Static `#002651` header bg is dead default (overridden inline by `gradient2`).
+- `src/components/ModelPortfolioComponents/DigioSuccessModal.js` — Digio success. `mainColor` fallback now reads `brand.primary`. Static-sheet `#2563EB` occurrences are dead defaults (overridden inline).
+- `src/components/ModelPortfolioComponents/TelegramCollectionModal.js` — Telegram-ID collector. Same. Static-sheet blues are dead defaults.
+- `src/components/ModelPortfolioComponents/VerificationMethodCheck.js` — auth-method picker. Same. Static-sheet blues are dead defaults.
+- `src/components/ModelPortfolioComponents/PricingCard.js` — plan pricing tile. Same. Static-sheet blues are dead defaults.
+- `src/components/ModelPortfolioComponents/PendingOrdersModal.js` — pending-orders retry modal. Static `#2563EB` on `actionButton` was NOT overridden inline; migrated by capturing `brandPrimary` in the component and overriding via inline style at all 3 call sites.
+- `src/screens/Home/AfterSubscriptionScreen.js` — post-subscription content screen. `gradient1/gradient2/themeColor` fallbacks now read from tokens. The Overview `methodTitleBar`/`methodTitle` overrides moved to inline reads of `themeColor` at that call site. The re-used `MethodSection` helper's static-sheet copy of the same styles left as-is — self-contained tail (only 2 usages, unlikely to be prominent under moneyman).
+- `src/screens/Drawer/MPPerformanceScreen.js` — MP performance. Same 3-color replacement.
+- `src/screens/Drawer/ModelPortfolioScreen.js` — MP subscription list. Same 3-color replacement.
+- `src/screens/PortfolioScreen/PortfolioScreen.js` — Portfolio tab container. `mainColor` fallback now reads `brand.primary`.
+- `src/screens/PortfolioScreen/PortFolioCard.js` — Portfolio-tab hero card. `gradient1/gradient2` fallbacks now read from tokens.
+- `src/screens/PortfolioScreen/EmptyMessageCard.js` — empty state. Same 3-color replacement.
+
+**Left as follow-up (not in this pass):**
+- Static-`StyleSheet.create` `#2563EB` / `#0056B7` occurrences that ARE overridden by inline `mainColor` at every use site — dead defaults; no visual effect. Safe.
+- Small light-blue accents like `#ECF3FE`, `#DBEAFE`, `#EFF6FF` — used for expanded-section bg / badge tints. Small enough to skip; a future pass can add a `surface.brandTint` token.
+- Non-MP surfaces (Home hero, Login/Signup chrome, Drawer, broker connect, Advice, rebalance): out of scope for this sweep per user direction.
+- Phase-3 SDK-bound broker modals (`src/components/BrokerConnectionModal/*`), sell-auth modals (`DdpiModal`, TPIN modals), SDK Phase C surfaces (`RebalanceModal`, `MPReviewTradeModal` — the latter is MP-adjacent but Phase-C-bound so intentionally skipped): not touched per the CLAUDE.md blocking rules.
+
+**Parse verification**: all 17 modified files pass `@babel/parser` (JSX+Flow) parse without errors.
+
+---
+
+## 2026-06-19 — `composites.LiveRoom` renders the live class via WebView bridge (no native LiveKit)
+
+- **Phase**: Courses/Webinars composites (tracked primarily by `COURSES_WEBINARS_MOBILE_PORTING.md` §4.2).
+- **Surfaces touched**: `designs/default/composites/LiveRoom.js` (placeholder `LiveRoomActive` → `LiveRoomWebView`), plus non-design `src/FunctionCall/services/LiveKitService.js` (`getJoinUrl`) and backend `aq_backend_github/Routes/livekit.js` (`/join-url`).
+- **Verdict changes**: `composites.LiveRoom` live render: placeholder (native LiveKit not installed) → **live via full-screen Modal `react-native-webview`** loading the web join URL; browser WebRTC runs the room. Native LiveKit demoted to optional Option A.
+- **What shipped**: closes the last courses/webinar parity gap without native deps. `handleJoin` → `getJoinUrl` → `POST /api/livekit/join-url/:lessonId` → full-screen WebView at `…/webinar/:id?joinToken=…`. Viewers subscribe-only → no media permissions. `react-native-webview` already installed (GumletPlayer).
+- **Regressions / rollbacks**: none; JS-only, babel-parses clean. Needs real-iOS-device WebRTC-in-WKWebView verification.
+- **Next**: device test on iOS; optionally adopt native Option A (§4.2.1) for background-audio/PiP.
+
+## 2026-06-19 — `composites.LiveRoom` gains `joinToken` (magic-link join port)
+
+- **Phase**: Courses/Webinars composites (tracked primarily by `COURSES_WEBINARS_MOBILE_PORTING.md` §4.2/§4.2.1).
+- **Surfaces touched**: `designs/default/composites/LiveRoom.js` (`joinToken` prop → `getViewerToken`), plus non-design `src/FunctionCall/services/LiveKitService.js` + `src/screens/Courses/WebinarDetailScreen.js`.
+- **What shipped**: ported the web 2026-06-06 magic-link join — `getViewerToken(lessonId, courseId, { joinToken })` hits `/token-magic` (no Firebase) when a signed join JWT is present; `LiveRoom` forwards a new `joinToken` prop. Part of the 3-week courses/webinar web-parity audit (see `CHANGELOG.md` + porting §10 matrix). Deep-link source not yet wired.
+- **Regressions / rollbacks**: none; JS-only, babel-parses clean.
+- **Next**: configure the Android App Link / iOS Universal Link that routes `…/webinar/:id?joinToken=` into `WebinarDetailScreen`; install LiveKit native deps per porting §4.2.1.
+
+## 2026-06-19 — `composites.LiveRoom` live-class presents full-screen (parity with web full-viewport webinar fix)
+
+- **Phase**: Courses/Webinars composites (tracked primarily by `COURSES_WEBINARS_MOBILE_PORTING.md §4.2`; logged here because `designs/default/composites/LiveRoom.js` is a design-system surface).
+- **Surfaces touched**: `designs/default/composites/LiveRoom.js` (the `LiveRoomActive` render + activation snippet + styles).
+- **Verdict changes**: `composites.LiveRoom` active-room presentation: inline fixed-height panel (activation snippet was `height: 360`) → **full-screen RN `Modal`** (`presentationStyle="fullScreen"`, slim dark header with title + Close, `flex:1` `roomBody`).
+- **What shipped**: ported the *intent* of the web 2026-06-19 fix (web live webinars moved out of a cramped `max-w-3xl` modal into a `fixed inset-0` overlay). On mobile the actual LiveKit video is still a placeholder (`@livekit/react-native` not installed), and live lessons already route to a dedicated full-screen `WebinarDetailScreen` — so there was no live runtime bug. The change hardens the sizing **contract** so that when LiveKit is activated, the room fills the screen instead of rendering as a small fixed box (the mobile equivalent of the "webinar fits very small / maximize doesn't help" report). VOD `composites.GumletPlayer` was already fluid (`width:100%, aspectRatio 16/9`) — unchanged.
+- **Regressions / rollbacks**: none; behavior is dark (placeholder feature). `LiveRoom.js` babel-parses clean. No native deps added.
+- **Next**: when activating LiveKit, drop `<LiveKitRoom style={{ flex:1 }}>` into the `roomBody` slot per the updated activation snippet — keep the Modal wrapper.
+
+## 2026-06-10 — `useTokens()` asset slot made variant-aware; brand logo extracted from shared src/
+
+- **Phase**: Tokens (closes the deferred "useTokens variant-awareness" follow-up noted on 2026-05-04 and in `SYNC.md`).
+- **Surfaces touched**: `src/theme/useTokens.js`, `src/components/BrandLogo.js`, `src/components/LogoSection.js`, `src/components/SplashScreen.js`; **deleted** `src/components/AlphanomyLogo.js`. (Same edits applied in both this repo and upstream `Alphab2bapp` — these `src/` files are now byte-identical.)
+- **Verdict changes**: `BrandLogo` / `LogoSection` / `SplashScreen`: hardcoded-`'alphanomy'`-branch → token-driven (clean). `AlphanomyLogo`: removed (was a tenant-brand leak in shared src/).
+- **What shipped**: `useTokens()` now resolves the `assets` slot from the active variant's `buildAssets` via `DesignContext` (`design.tokens.buildAssets`, from `resolveDesign`'s token-namespace merge), falling back to the default builder outside a provider. The three brand-logo consumers now read `useTokens().assets.logoPng` instead of branching on `DESIGN_VARIANT === 'alphanomy'`. The alphanomy mark is now the PNG at `designs/alphanomy/assets/logo.png` via `designs/alphanomy/tokens/assets.js`. Default-variant `logoPng` is the same `src/assets/logo.png` as before → no AlphaQuark visual change. Only `assets` was made variant-aware (colors/typography already vary via ConfigContext legacy-branding).
+- **Regressions / rollbacks**: none observed; all changed files babel-parse clean. Visual verification on the alphanomy emulator pending (logo should now render the finalized PNG on splash, login, plan card, and the faded watermark on RebalanceCard/BasketCard).
+- **Next**: optionally make the remaining token families (colors/typography) consume the variant builder via the same `DesignContext` path, for variants that don't fully express their palette through ConfigContext legacy fields.
+
+## 2026-05-09 — Whitelabel Phase 3: variant-overlay model formalized (docs-only)
+
+- **Phase**: meta — codifies the upstream-default + per-tenant fork-repo pattern.
+- **Surfaces touched**:
+  - `docs/WHITELABEL_RECIPE.md` (NEW) — canonical playbook. Covers what stays upstream vs in the fork, the native shell delta, the conventional `designs/registry.js` 2-line merge-conflict strategy (chosen over a `registry.local.js` extension point and over npm-package variants — rationale documented), the step-by-step "add a new whitelabel" procedure, the upstream sync workflow, and a `SYNC.md` template each fork ships.
+  - `docs/DESIGN_SYSTEM_ARCHITECTURE.md` — new "Where variant folders live — upstream-default + per-tenant fork repos" subsection under § Variant selection. Documents the conventional merge-conflict registry strategy with reasons. Asserts: a fork that edits any `src/` file is drift, not customization.
+  - `docs/DESIGN_COMPONENT_AUDIT.md` — added a scope note at the top: this audit covers upstream `designs/default/` only; per-fork audits live in fork repos. Upstream's job is the container-side viewModel + actions contract; widening verdicts (e.g. `clean-extract` → `needs-logic-extraction`) is the upstream side of a fork's override needing more data.
+  - `docs/CHANGELOG.md` — entry 13.
+  - (NOT done in this commit, intentionally) `CLAUDE.md` pointer — the recipe doc is referenced from arch + audit + this log; no need to add it to the top-level blocking-doc list yet because there's no _ongoing_ surface change rule attached to it. If WHITELABEL_RECIPE.md grows surfaces that need same-commit doc updates (similar to Phase 3 / SDK orchestration), revisit then.
+- **Verdict changes**: none — Phase 3 is docs-only.
+- **What shipped**: a written contract for whitelabeling. Anyone bootstrapping a new tenant fork can now follow `WHITELABEL_RECIPE.md` step-by-step. Anyone editing this repo knows what's the upstream's responsibility (the contract, the default variant, the infrastructure) vs the fork's responsibility (the variant folder, the native shell, the `.env`, the registry patch). The Alphanomy fork — which today still carries `src/assets/*` overwrites and lacks a `SYNC.md` — gets cleaned up in a separate session against that repo.
+- **Why a 2-line merge conflict on `designs/registry.js` instead of a `registry.local.js` extension point**: predictable, no infrastructure, no Metro-bundler dependency on conditional-require behavior, no "is the variant in the bundle or not" silent footgun. The conflict resolution is mechanical (keep both upstream's default and the fork's variant lines). The trade-off is real but small.
+- **Backend / ccxt**: no changes.
+- **Behavior change in app**: zero. Docs-only.
+- **Validation**: docs cross-link cleanly (CHANGELOG → arch + audit + recipe; recipe → arch + audit + progress + CLAUDE; arch + audit reference the recipe).
+- **Next**: cleanup pass against the Alphanomy fork repo (separate session): rebase fork onto upstream so it picks up Phase 1 + 2 + 3, revert its `src/assets/*` overwrites, add `designs/alphanomy/tokens/assets.js` pointing at `designs/alphanomy/assets/*` for its own logos, add a `SYNC.md`, and verify `designs/alphanomy/index.js` still resolves cleanly through the inherited registry shape.
+
+---
+
+## 2026-05-09 — Whitelabel Phase 2: logo asset-token slot (default-only)
+
+- **Phase**: A-extension (token bundle gains an `assets` family — same shape as `colors` / `spacing` / `typography` / `radii` / `shadows`)
+- **Surfaces touched**:
+  - `src/theme/assets.js` (NEW) — `DEFAULT_ASSETS = { logoPng, logoFadedPng }` + `buildAssets(config)` (config arg ignored, kept for builder symmetry).
+  - `src/theme/useTokens.js` — `useTokens()` now exposes `.assets`. Memo deps include `config.assetTokens` for future-symmetry (the field doesn't exist on `ConfigContext` today; resolution falls to defaults).
+  - `designs/default/tokens/index.js` — re-exports `DEFAULT_ASSETS` + `buildAssets`.
+  - `designs/default/screens/LoginScreen.js` — module-scope `const AlphaQuarkLogo = require(...)` removed; `renderLogo()` now takes `defaultLogo` as a third arg, fed by `tokens.assets.logoPng`.
+  - `designs/default/screens/SignupScreen.js` — same pattern.
+  - `designs/default/screens/ResetPassword.js` — same pattern.
+  - `designs/default/screens/ChangeAdvisor.js` — module-scope `const logo = require(...)` removed; component reads `tokens.assets.logoFadedPng` directly.
+  - `designs/default/composites/BasketCard.js` — top-level `import logo from ...` removed; component reads `tokens.assets.logoFadedPng` directly.
+- **Verdict changes**: new Section 7c in `DESIGN_COMPONENT_AUDIT.md` enumerates the asset slots and per-consumer status. No screen verdicts flipped.
+- **What shipped**: A variant overlay repo can now ship `designs/<variant>/tokens/assets.js` re-exporting `DEFAULT_ASSETS` with the variant's own logo paths, and the 5 design-side logo consumers above will pick up the variant's logo without any further code change. Closes the Phase 2 leak Alphanomy ran into when it overwrote `src/assets/AppLogo/logo.png`, `src/assets/logo.png`, and `src/assets/fadedlogo.png` directly — both repos can keep their own brand without stomping each other's shared files.
+- **Why these 5 consumers, not all 12 logo callsites**: `src/`-side consumers (SplashScreen, PlanCard, RebalanceCard, Config.js, ConfigContext.js) sit outside the variant-resolution surface. SplashScreen renders before providers; PlanCard and RebalanceCard already theme via `configData.logo` from `ConfigContext` (a parallel theming path that predates the design system). Migrating those without first splitting them into container + presentation would either crash (SplashScreen pre-providers) or redundantly theme (PlanCard / RebalanceCard already config-driven). Out of Phase 2 scope.
+- **Backend / ccxt**: no changes.
+- **Behavior change in app**: zero for default variant. A custom variant overlay gains the ability to swap the two logos without overwriting shared `src/assets/*` files.
+- **Validation**: grep confirms zero remaining direct logo imports in `designs/`. Default variant's `tokens.assets.logoPng` resolves to the same `src/assets/logo.png` that the old module-scope require did — byte-identical render output.
+- **Next**: Phase 3 — formalize the variant-overlay pattern in `docs/WHITELABEL_RECIPE.md`, document the conventional merge-conflict registry strategy in `DESIGN_SYSTEM_ARCHITECTURE.md`, and update audit docs to reflect that variant folders live in overlay repos, not upstream.
+
+---
+
+## 2026-05-09 — Whitelabel Phase 1: Navigation.js Plans-tab wrapper hoist
+
+- **Phase**: G-adjacent (Navigation surface is `clean-extract`-eligible plumbing, not a screen migration)
+- **Surfaces touched**:
+  - `src/components/Navigation.js` — hoisted `PlansTabWrapper` (`() => <ModelPortfolioScreen type="tab" />`) to module scope. The Plans `<Tab.Screen>` now passes `component={PlansTabWrapper}` instead of an inline render-prop child. Pure cleanup.
+- **Verdict changes**: `src/components/Navigation.js` is unaffected by the design-system migration scope (it's a navigator, not a UI surface), but the wrapper hoist is a generic perf cleanup that any variant benefits from.
+- **What shipped**: Inline render functions on `<Tab.Screen>` create a fresh component identity on every parent render → React Navigation remounts the nested screen tree every time. Hoisting to module scope makes the reference stable. Zero behavior change.
+- **Origin**: cherry-picked from the Alphanomy fork's `feature/prince` (commit `f30695a`). The other four pieces of Alphanomy's Phase 1 plumbing changes (HomeScreen viewModel enrichment, useHomePlanSummary raw exports, useHomeMarketSummary debug silencing, ModelPortfolioScreen tab-switch fix) all sit on top of a *prior* hook-extraction refactor (`src/screens/Home/hooks/useHomeMarketSummary.js`, `useHomePlanSummary.js`, `useNotificationFeed.js`) that exists only in Alphanomy. Those changes are deliberately deferred — backporting them without the hook extraction base is meaningless.
+- **Whitelabel context**: This is the first commit of the whitelabel-sync work. The model is: upstream (this repo) ships the `default` variant + design-system infrastructure only; each whitelabel (Alphanomy, future variants) lives in a fork repo containing its own `designs/<variant>/` folder + native shell. The pattern is being formalized in Phase 3 of the sync work; see `docs/WHITELABEL_RECIPE.md` (TBD).
+- **Validation**: change is a 5-line transformation; render-stable Tab.Screen `component` prop is a documented React Navigation idiom.
+- **Behavior change in app**: zero for default variant; eliminates a Plans-tab remount on every MainTabNavigator parent render.
+- **Next**: Phase 2 — logo asset-token slot in `designs/default/tokens/assets.js`. Phase 3 — formalize the variant-overlay pattern in `WHITELABEL_RECIPE.md` and update arch docs.
+
+---
+
 ## 2026-05-02 — Phase I: MPInvestNowModal container/presentation split (5364 LOC)
 
 - **Phase**: I — Model Portfolio (MP subscription + payment modal)

@@ -28,7 +28,7 @@ const HDFCHelpContent = ({expanded, onExpandChange }) => {
                             style={styles.instruction}
                           >
                             1. Go to{" "}
-                            <LinkifiedUrl url="https://developer.hdfcsec.com/" />
+                            <LinkifiedUrl url="https://developer.hdfcsky.com/" />
                           </Text>
                           <Text style={styles.instruction}>
                             2. Log in with your ID, password, and OTP.

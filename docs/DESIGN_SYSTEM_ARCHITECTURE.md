@@ -19,8 +19,8 @@ These three rules are what keep the refactor safe. Every PR that touches `design
 The Phase 3 SDK migration is its own contract (`docs/PHASE3_ARCHITECTURE.md`). The following surfaces stay in `src/` and stay non-swappable:
 
 - `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js` — the SDK modal shell wrapping `BrokerCredentialForm` / `WebViewBrokerAuthFlow`
-- `../alphaquark-mobile-sdk/packages/rn/src/components/BrokerCredentialForm` — owned by the SDK package
-- `../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow` — owned by the SDK package
+- `../../alphaquark-mobile-sdk/packages/rn/src/components/BrokerCredentialForm` — owned by the SDK package
+- `../../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow` — owned by the SDK package
 - Any future SDK-routed widget added under `SDK_ELIGIBLE_MODALS`
 
 A custom design CAN theme the visual chrome around these (the modal backdrop, the header bar, the close button, the page background). It CANNOT replace the form rendering itself. The SDK is sacred because it owns the legal/security/correctness contract with the backend. Skinning the SDK form would re-introduce every Phase 3 regression we just fixed.
@@ -62,6 +62,14 @@ The container is the only place business logic touches the screen tree. Swapping
 | **Containers / hooks** | `TradeContext`, `useMultiBrokerHoldings`, `FunctionCall/*`, `services/*` | **no** | `src/` (unchanged) | Already isolated. Stays. |
 | **SDK-bound surfaces** | `Phase3SdkBrokerModal`, SDK widgets | **no** | `src/components/BrokerConnectionModal/`, SDK package | Stays. Phase 3 owns this. |
 
+> **Courses/Webinars composites note.** `composites.LiveRoom` and
+> `composites.GumletPlayer` (`designs/default/composites/`) were added by the
+> courses/webinars port; their per-surface verdicts live in
+> `COURSES_WEBINARS_MOBILE_PORTING.md`. Sizing contract (2026-06-19): the
+> live class room presents **full-screen** (RN `Modal`, `flex:1` body) so an
+> activated LiveKit room fills the device — parity with the web full-viewport
+> webinar fix. See `DESIGN_MIGRATION_PROGRESS.md` 2026-06-19.
+
 ### Tokens
 
 Tokens live in two layers:
@@ -85,11 +93,34 @@ DEFAULT_RADII = { none: 0, sm: 4, md: 8, lg: 12, xl: 16, pill: 999 }
 
 // src/theme/shadows.js — RN style objects (iOS shadow* keys + Android
 // elevation, both set). Roles: none / card / elevated / modal / floating.
+
+// src/theme/assets.js — Phase 2 (whitelabel-sync, 2026-05-09). Static
+// `require(...)`-resolved RN asset references that variants can swap.
+// Logo-only first pass: { logoPng, logoFadedPng }. Future slots (splash,
+// app-icon-preview, empty-state illustrations) get added here.
 ```
 
 Backend overrides (already supported for colors via `appadvisors.colorTokens`) extend to spacing/typography/radii/shadows in the same shape. Resolution order is unchanged from `COLOR_TOKENS.md`: default → legacy fields → backend tokens (deep merge). The `build*()` functions accept config and look for `spacingTokens` / `typographyTokens` / `radiiTokens` / `shadowTokens` — but `ConfigContext` does NOT yet passthrough these fields, so today they're undefined and resolution falls to defaults. Wiring them through `ConfigContext` is a separate, additive PR (zero behavior change for existing tenants).
 
 Components SHOULD prefer the composite hook `useTokens()` going forward; the existing `useColors()` continues to work unchanged for color-only consumers.
+
+#### Variant assets
+
+Asset tokens are deliberately distinct from the other token families because RN's static `require(...)` resolves at bundle time and cannot be swapped at runtime by a config field. The asset-token slot exists so that a variant overlay repo's `designs/<variant>/tokens/assets.js` can re-export a different `DEFAULT_ASSETS` const pointing at the variant's own image files (typically under `designs/<variant>/assets/`). The variant's bundle then picks up those `require()`d references instead of upstream's defaults.
+
+`buildAssets(config)` accepts a config arg for symmetry with the other token builders but currently ignores it — backend-driven asset overrides require a different mechanism (`<Image source={{ uri }}>` reading from `configData`), which is out of Phase 2 scope. Today the upstream default is the AlphaQuark logos at `src/assets/logo.png` and `src/assets/fadedlogo.png`. A whitelabel overlay repo overrides those via its own `tokens/assets.js`; it does NOT overwrite `src/assets/*` (doing so would also break the default variant's appearance — that anti-pattern was the leak Phase 2 was created to close).
+
+**Consumers MUST go through `useTokens().assets.<key>`** rather than module-level `require(...)` of the same image files. Module-level `require()` is variant-blind by definition. The first round of consumer migrations (Phase 2) covered:
+
+- `designs/default/screens/LoginScreen.js`
+- `designs/default/screens/SignupScreen.js`
+- `designs/default/screens/ResetPassword.js`
+- `designs/default/screens/ChangeAdvisor.js`
+- `designs/default/composites/BasketCard.js`
+
+**2026-06-10 — `useTokens()` is now variant-aware for the `assets` slot.** It reads the active variant's `buildAssets` via `DesignContext` (`design.tokens.buildAssets`, from `resolveDesign`'s token-namespace merge), falling back to the default builder when called outside a `DesignProvider`. This closed the gap where `useTokens().assets.*` returned the default (AlphaQuark) logos even under a non-default `DESIGN_VARIANT`. The brand-logo `src/`-side consumers migrated in the same change: `BrandLogo`, `LogoSection`, and `SplashScreen` now render `useTokens().assets.logoPng` with no hardcoded variant name (`SplashScreen` is a Navigation stack screen, so it IS inside the providers — the earlier "renders before providers" note was inaccurate). The tenant-specific `src/components/AlphanomyLogo.js` was deleted (it was a brand leak in the default repo); each variant now supplies its own mark through `designs/<variant>/tokens/assets.js`. Only the `assets` family is variant-aware via `DesignContext`; colors/typography still resolve per-tenant through `ConfigContext` legacy-branding.
+
+**2026-07-11 — `useTokens()` is now variant-aware for the `colors` slot too.** Same pattern as assets: `useTokens()` reads `design.tokens.buildColors` from `DesignContext` and falls back to the local `buildColors` from `src/theme/colors.js`. This lets a fork variant ship hard-coded brand-color defaults (e.g. `designs/moneyman_app/tokens/index.js` starts from a green palette instead of upstream purple) that survive `src/` copies from Alphab2bapp. The advisor-config legacy-branding + `colorTokens` overrides still layer on top inside the variant's `buildColors`, so per-tenant admin-UI overrides continue to work unchanged. `src/theme/colors.js` also gained an optional `mpCardColorCycle` token slot (array of hex strings, or `null` for feature-off) — consumed by `src/screens/PortfolioScreen/ModelPFCard.js` to cycle a per-index accent color across the Portfolio-tab subscribed-MP rows. Default variant leaves the cycle `null` (no visual change); `moneyman_app` sets it to `['#005A00', '#00005A', '#5A005A']`.
 
 ### Primitives
 
@@ -178,6 +209,38 @@ A name with no matching entry in `designs/registry.js` falls back to `default`. 
 
 Backend per-tenant override (`appadvisors.designVariant`) is reserved for future work and not wired in v1. Tenants who want a custom skin ship a build with `DESIGN_VARIANT` set.
 
+### Where variant folders live — upstream-default + per-tenant fork repos
+
+Phase 3 of the whitelabel-sync work (2026-05-09) formalized this rule:
+**`designs/<variant>/` folders for non-default tenants live in per-tenant fork
+repos, not upstream.** Upstream (this repo) ships only `designs/default/` plus
+the variant-resolution infrastructure. Each whitelabel — Alphanomy, Zamzam,
+RGX, ARFS, future tenants — is its own fork repo whose entire contribution
+on top of upstream is:
+
+1. A `designs/<variant>/` folder (tokens, composites, screens, sdk, assets).
+2. A native shell delta (icons, `applicationId`, signing, splash, build
+   number, display name).
+3. A 2-line patch on `designs/registry.js` adding the variant to the static
+   `VARIANTS` map.
+4. A `.env` setting `DESIGN_VARIANT=<variant>`.
+5. A `SYNC.md` documenting the upstream merge cadence.
+
+Forks merge upstream regularly. **The conventional merge conflict on
+`designs/registry.js`** is the chosen registry-extension mechanism (over a
+`registry.local.js` extension-point pattern, over npm-package variants):
+forks accept that every upstream pull will produce a 2-line conflict on
+`registry.js` to be resolved by re-applying their `import` + map entry. The
+conflict is mechanical and predictable; the alternatives carry indirection
+or contract-version costs we judged worse for the current state of the
+design-system contract.
+
+**A fork that edits any `src/` file is drift, not customization.** Tenant-
+specific behavior must enter upstream as a new variant override mechanism
+first, then the fork uses it. The full contract — what stays here, what
+goes downstream, the sync workflow, the `SYNC.md` template, the step-by-step
+recipe to bootstrap a new whitelabel — is in `docs/WHITELABEL_RECIPE.md`.
+
 ## Container / presentation split — the worked example
 
 Today's `HomeScreen.js`:
@@ -246,7 +309,7 @@ The only surfaces that NEVER migrate to `designs/`:
 - All `src/UIComponents/BrokerConnectionUI/*` (12 broker-specific UIs — same fate)
 - `src/components/CrossPlatformOverlay.js` (used by SDK-bound surfaces only)
 - `src/screens/Drawer/ManageConnectionsModal.js`, `DisconnectBrokerModal.js`, `BrokerConnectionError.js`
-- The SDK package's own widgets (`BrokerCredentialForm`, `WebViewBrokerAuthFlow`) at `../alphaquark-mobile-sdk/packages/rn/src/components/`
+- The SDK package's own widgets (`BrokerCredentialForm`, `WebViewBrokerAuthFlow`) at `../../alphaquark-mobile-sdk/packages/rn/src/components/`
 
 These have their own contract under `docs/PHASE3_*.md`. The design-system migration may theme the visual chrome around them (modal backdrop, header bar) via primitives, but cannot replace the form rendering itself.
 
@@ -309,6 +372,20 @@ Component-level overrides (e.g. "use `MyBrokerCard` for advisor X") are **not** 
 - **Snapshot tests per primitive** in `designs/default/`. A variant ships its own snapshots.
 - **Container-only tests** for screens in `src/` — mock the resolved presentation, assert the container builds the right viewModel.
 - **Visual regression** (Storybook or similar) lives at `designs/default/.storybook/`. Variants get their own. Out of scope for v1 — flag for follow-up.
+
+## Navigator convention — render-stable Tab.Screen components
+
+`src/components/Navigation.js` (and any future navigators) MUST pass screens via `component={ModuleScopedRef}` rather than inline render-prop children. Inline children (e.g. `<Tab.Screen>{() => <Foo />}</Tab.Screen>`) recreate the component identity on every parent render, which forces React Navigation to remount the nested screen tree — a perf cost AND a state-loss hazard for any screen that holds a tab-local view-model.
+
+When a screen needs to be parameterized at the navigator level (e.g. `<ModelPortfolioScreen type="tab" />`), wrap it in a module-scope component:
+
+```js
+const PlansTabWrapper = () => <ModelPortfolioScreen type="tab" />;
+// ...
+<Tab.Screen name="Plans" component={PlansTabWrapper} options={{headerShown: false}} />
+```
+
+This convention exists because variant designs sit *behind* the navigator — a remount-on-render bug at the navigator layer would manifest as state-loss in every variant's `screens.ModelPortfolioScreen` presentation, which is impossible to debug by reading the variant's code.
 
 ## What's NOT in this design
 

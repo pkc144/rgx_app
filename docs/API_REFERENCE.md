@@ -159,6 +159,35 @@ const payload = {
 };
 ```
 
+### 4. Mark Trade as Manually Placed
+
+**Endpoint:** `PUT /api/recommendation`
+
+**Description:** Mark a bespoke trade as manually placed (user placed outside the app). Used by the "Continue without broker" flow in StockAdvices.
+
+**Request:**
+```javascript
+const payload = {
+  uid: "trade_id",           // trade._id or trade.tradeId
+  trade_place_status: "manually_placed"
+};
+
+const response = await axios.put(
+  `${MAIN_SERVER}api/recommendation`,
+  payload,
+  { headers }
+);
+```
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+**Notes:** This is called in a loop for each selected trade when the user confirms manual placement. After all PUTs complete, `getAllTrades()` is called to refresh the recommendation list.
+
 ---
 
 ## Model Portfolio APIs

@@ -128,6 +128,8 @@ File: `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js`
 - `oauthExtraBody` — when non-null, render is in OAuth phase (WebView). Set by `BrokerCredentialForm.onContinueToOauth` callback.
 - `errorInfo` — structured `{title, body, technical}` produced by `humanizeSdkError(sdkError, brokerName)`. Renderer shows title (semibold), body (regular), and a small monospace `technical` breadcrumb caption. Cleared on next successful `onContinueToOauth`. **Replaced the prior flat `errorMessage` string** which was built from the wrong `SdkError` fields (`code` / `httpStatus` — neither exists on `SdkError`, which uses `error` / `detail` / `httpStatus`) and surfaced as the literal `sdk_error: <detail>` for every broker, every error.
 - `egressReady` — IP-whitelist gate for `IP_WHITELIST_BROKERS`. Initialized to `!IP_WHITELIST_BROKERS.has(brokerName)` so non-IP brokers start ready. Set true by `EgressIpCallout.onAcknowledgeChange` when the user ticks the ack.
+- `unmetAck` — drives the `EgressIpCallout` `showUnmetAck` flash. Set true by `nudgeEgressAck()` (called when the user taps the locked-form banner) and cleared via `onUnmetAckHandled`. Surfaces *why* the form is locked instead of leaving the user staring at a dimmed form.
+- `scrollRef` — ref on the form-phase `ScrollView`. `nudgeEgressAck()` scrolls it to `y: 0` so the flashing IP-whitelist checkbox is brought back into view.
 
 **Error envelope contract — humanizeSdkError**
 
@@ -142,7 +144,7 @@ When extending with new SDK error codes, add them to either `SDK_STAGE_COPY` (if
 
 **Phases:**
 
-- **Form phase (`oauthExtraBody === null`)** — Renders `EgressIpCallout` (only for IP brokers) + `BrokerCredentialForm`. Form is wrapped in a pointer-events-blocked View at 0.45 opacity until `egressReady`.
+- **Form phase (`oauthExtraBody === null`)** — Renders `EgressIpCallout` (only for IP brokers) + `BrokerCredentialForm`. Until `egressReady`, the form is **clearly labeled as locked**, not silently dimmed: an amber `lockNotice` banner ("🔒 One step left — tick the … whitelist box above … Tap here to jump back to it") renders directly above the form; the form `View` gets `pointerEvents="none"` + a gentle `formWrapLocked` dim (`opacity: 0.55`). Tapping the banner runs `nudgeEgressAck()` → flashes the `EgressIpCallout` checkbox (`showUnmetAck`) and scrolls back up to it. **Replaced the prior bare `opacity: 0.45` wrap**, which users reported as a mysterious "white transparent layer" with no indication that the IP-whitelist checkbox above was the blocker (Upstox bug-77, 2026-05-28).
 - **OAuth phase (`oauthExtraBody !== null`)** — Renders `WebViewBrokerAuthFlow` with `extraExchangeBody = oauthExtraBody`. WebView's `onClose` drops back to form (preserving collected creds via component state — actually this is a bug, see below); `onSuccess` calls `fetchBrokerStatusModal()` then `onClose()`; `onError` resets `oauthExtraBody = null` and shows the error.
 
 **Layout:**
@@ -150,6 +152,7 @@ When extending with new SDK error codes, add them to either `SDK_STAGE_COPY` (if
 - Modal is a bottom-anchored sheet at `height: 95%`. Earlier `minHeight: 60% / maxHeight: 92%` squeezed the WebView into an unusable strip.
 - Tap-outside-to-dismiss via `Pressable` scrim. Inner `Pressable` panel catches taps via `onPress={() => {}}`.
 - Top-right close `✕` button in `Header` — needed because users can land in error states or stuck WebViews; without the explicit close affordance there is no way out.
+- **Form-phase scroll surface (bug-78 fix, 2026-05-29):** the form-phase `ScrollView` carries `style={styles.formScroll}` (`flex: 1`) and `contentContainerStyle={styles.scrollPad}` (`flexGrow: 1`). This is load-bearing: `formWrap` (which wraps the SDK `BrokerCredentialForm`) is `flex: 1`, and a `flex: 1` child inside a *content-sized* ScrollView collapses to 0 height. For brokers WITH an `EgressIpCallout` + `Phase3BrokerHelp` (Upstox/ICICI/Kotak) the siblings still showed, masking the collapse; but **empty-field brokers with no callout and no help (Dhan, AliceBlue)** had `formWrap` as the only child → the entire body rendered blank ("Connect Dhan" header over a white void — bug-78/bug-79). Giving the ScrollView `flex: 1` (fill the panel below the Header) + the content container `flexGrow: 1` gives `formWrap`'s flex a bounded parent to resolve against: short brokers fill the viewport and render; taller brokers overflow and scroll. Do NOT drop `formScroll`/`flexGrow` without re-testing Dhan + AliceBlue specifically.
 
 **Field encryption:**
 
@@ -162,11 +165,11 @@ When extending with new SDK error codes, add them to either `SDK_STAGE_COPY` (if
 **Known design issues** (tracked in `PHASE3_BROKER_AUDIT.md`):
 
 - `WebViewBrokerAuthFlow.onClose` resets `oauthExtraBody` to null but the form re-mounts losing collected creds (form state is local). For Zerodha this doesn't matter (empty fields); for OAuth brokers with apiKey/secret entry it's a UX regression vs legacy.
-- `EgressIpCallout` only fires `onAcknowledgeChange(true)` when the user explicitly ticks; for brokers in `IP_WHITELIST_BROKERS` this means form stays disabled until interaction. Legacy modals had a smoother "claim + auto-detect" flow.
+- `EgressIpCallout` only fires `onAcknowledgeChange(true)` when the user explicitly ticks; for brokers in `IP_WHITELIST_BROKERS` this means form stays disabled until interaction. Legacy modals had a smoother "claim + auto-detect" flow. **Mitigated 2026-05-28**: the locked form now shows an explicit `lockNotice` banner + flashes the checkbox on tap (`nudgeEgressAck`), so the disabled state is self-explanatory rather than a silent dim.
 
 ## `BrokerCredentialForm` — SDK widget contract
 
-Source: `../alphaquark-mobile-sdk/packages/rn/src/components/BrokerCredentialForm.tsx`. Schema: `brokerFormSchema.ts`.
+Source: `../../alphaquark-mobile-sdk/packages/rn/src/components/BrokerCredentialForm.tsx`. Schema: `brokerFormSchema.ts`.
 
 **Per-broker schema fields (key ones):**
 
@@ -197,9 +200,24 @@ Source: `../alphaquark-mobile-sdk/packages/rn/src/components/BrokerCredentialFor
 
 - `encrypt(fieldName, raw) → Promise<string>` — parent-supplied. Phase3SdkBrokerModal passes the AES-CBC-with-passphrase `'ApiKeySecret'` envelope.
 
+**TOTP-window debounce (`flow === "credentials_totp"`):**
+
+- A 30s in-flight + reuse cooldown gates back-to-back submits for any
+  `credentials_totp` schema (Kotak today). `lastTotpSubmitAtRef` is
+  stamped BEFORE the network call so a user double-tap, an in-flight
+  retry, or a slow upstream response can't burn the same code on the
+  next attempt. Within the window the second submit short-circuits
+  with the inline banner `"TOTP rotates every 30s and cannot be
+  reused. Generate a fresh 6-digit code in your authenticator and try
+  again in ~Xs."` and never reaches the network — preventing the
+  Kotak `Invalid TOTP` surface from masking an already-successful
+  first attempt. Mirror of legacy `KotakModal.js:128-167` (the legacy
+  modal documented the same hazard with the same window). Source:
+  `BrokerCredentialForm.tsx` § `TOTP_REUSE_COOLDOWN_MS`.
+
 ## `WebViewBrokerAuthFlow` — SDK widget contract
 
-Source: `../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow.tsx`.
+Source: `../../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow.tsx`.
 
 **Inputs:**
 
@@ -217,6 +235,15 @@ Source: `../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFl
 
 **Known timing gap (Zerodha):** Android resolves server 302 redirects internally before the JS hooks fire, so when `prod.alphaquark.in/stock-recommendation` 302's an unauthenticated visitor to `/login`, the widget never sees the original `/stock-recommendation?request_token=…` URL. Fix is out-of-band — register a non-redirecting redirect URL on the Kite developer portal (e.g. `app-links.alphaquark.in/zerodha-callback`).
 
+**AliceBlue-only WebView overrides (2026-06-11).** Two props are conditionally set when `broker === "AliceBlue"` (undefined for every other broker — all verified working on platform defaults, and changing a working broker's UA is an unverified fan-out change):
+
+1. **`injectedJavaScriptBeforeContentLoaded` — WKWebView API shims + OTP interceptor. THE PRIMARY iOS blank-page fix.** Root cause (verified by reading AliceBlue's deployed bundle `assets/index-6a09ab85.js`): the portal's Vue entry module runs **firebase-messaging at module top level, BEFORE `mount("#app")`** — its factory calls `navigator.serviceWorker.addEventListener("message", …)` unguarded, and a UA-gated branch calls `Notification.requestPermission()`. **iOS WKWebView has neither API** (Service Workers / Web Push are Safari-only), so AliceBlue's own bootstrap throws a TypeError, aborts before mount, and `<div id="app">` stays empty → **blank page**. Android WebView supports both APIs → works — the exact iOS-blank/Android-fine signature. The injected script stubs `navigator.serviceWorker` (no-op listeners, rejecting `register`) and `window.Notification` (`permission='denied'`), then arms the legacy OTP-validate redirect interceptor (verbatim from `AliceBlueConnectUI.js` / tidi_new `BrokerAuthPage.dart`: patches fetch/XHR, watches `/omk/auth/access/v1/otp/validate`, force-navigates to its `redirectUrl` — covers AliceBlue's historically broken post-OTP redirect, their Keycloak `alice-kb` client allow-lists only localhost origins). Shims are no-ops on Android; interceptor self-deactivates unless an otp/validate response carries `authCode=`.
+2. **`userAgent` (iOS only) — supporting fix.** Safari-style iPhone UA. AliceBlue's bundle UA-gates the `Notification.requestPermission()` call — mobile-looking UAs skip it; desktop-class UAs (e.g. iPad's default desktop UA, no iPhone/iPad token) would call it. The iPhone UA keeps us on the safe branch and matches the legacy modal (`59e8e1f`, 2026-03-02). First shipped 2026-06-11 as the presumed root cause; insufficient alone — the serviceWorker abort happens on every UA.
+
+**Same shim added to the legacy lane** (`src/UIComponents/BrokerConnectionUI/AliceBlueConnectUI.js`, prepended to its `ALICEBLUE_REDIRECT_INTERCEPTOR`) in the same commit — legacy had the identical latent iOS bug; per the repo rule, every code path gets the fix in one cycle. Keep the SDK and legacy copies of the shim in sync.
+
+**Cross-platform parity:** the same shims + UA exist in the Flutter package (`packages/flutter/lib/src/widgets/webview_auth_flow.dart` — `_kAliceBlueIosUserAgent` via `setUserAgent` gated on `defaultTargetPlatform == TargetPlatform.iOS`; shims + interceptor injected on `onPageStarted`/`onPageFinished` for `aliceblueonline.com` pages). **Known Flutter caveat:** webview_flutter has no document-start injection hook, so on iOS the shim races the page's module script — the RN package's `injectedJavaScriptBeforeContentLoaded` (WKUserScript at document start) is the reliable mechanism.
+
 ## `EgressIpCallout` — IP-whitelist gate
 
 File: `src/components/BrokerConnectionModal/EgressIpCallout.js`. Used for brokers whose API server requires the caller IP to be whitelisted in the broker's developer portal:
@@ -230,7 +257,9 @@ Behavior:
 - For non-IP brokers: zero-height widget; `onAcknowledgeChange(true)` fires immediately on mount.
 - For IP brokers: shows the egress IP claim UI + acknowledgment checkbox. `onAcknowledgeChange(true)` fires only when the user ticks ack.
 
-In Phase3SdkBrokerModal, `egressReady` initial state is `!IP_WHITELIST_BROKERS.has(brokerName)`, so non-IP brokers start unblocked. `BrokerCredentialForm` is wrapped in a `pointerEvents={egressReady ? 'auto' : 'none'}` View at 0.45 opacity until acknowledged.
+**Broker-key contract (bug-81, 2026-05-29):** `EgressIpCallout` resolves against its own internal `WHITELIST_BROKERS` set of **lowercase, no-space backend broker_keys** (`upstox`, `fyers`, `kotak`, `groww`, `icicidirect`, `hdfcsec`, `motilaloswal`, `angelone`, `iifl`). It lowercases the `broker` prop and, if the result isn't in that set, **short-circuits to `brokerState="partner"` and renders nothing**. Every legacy `*ConnectUI` caller passes the right key (`broker="icicidirect"`, etc.). Phase3SdkBrokerModal, however, has the **display name** in `brokerName` (`"ICICI Direct"`, `"Hdfc Securities"`, `"Motilal Oswal"`), which lowercases to `"icici direct"` (with a space) — not in the set — so the IP panel silently disappeared for those three brokers while their instructions still referenced the missing "IP-whitelist panel above" (user: "I can't see the IP field for ICICI"). Single-word brokers (Upstox/Fyers/Kotak/Groww) lowercased to the correct key by coincidence, masking the bug. **Fix:** Phase3SdkBrokerModal now maps `brokerName → EGRESS_BROKER_KEY` before passing `broker=` to the callout. Any new IP broker added to the modal MUST have an `EGRESS_BROKER_KEY` entry matching `EgressIpCallout.WHITELIST_BROKERS`.
+
+In Phase3SdkBrokerModal, `egressReady` initial state is `!IP_WHITELIST_BROKERS.has(brokerName)`, so non-IP brokers start unblocked. The form is gated per the Form-phase section above (labeled `lockNotice` + `pointerEvents` + `formWrapLocked` dim until acknowledged).
 
 ## Backend routes — `aq_backend_github/Routes/sdk/v1/connections.js`
 
@@ -289,8 +318,8 @@ Triggered by `ManageConnectionsModal`'s smart-reauth handler when an existing br
 - ModalManager: `src/GlobalUIModals/ModalManager.js`
 - Phase3SdkBrokerModal: `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js`
 - EgressIpCallout: `src/components/BrokerConnectionModal/EgressIpCallout.js`
-- SDK widgets: `../alphaquark-mobile-sdk/packages/rn/src/components/`
-- SDK schema: `../alphaquark-mobile-sdk/packages/rn/src/components/brokerFormSchema.ts`
+- SDK widgets: `../../alphaquark-mobile-sdk/packages/rn/src/components/`
+- SDK schema: `../../alphaquark-mobile-sdk/packages/rn/src/components/brokerFormSchema.ts`
 - Backend SDK routes: `../aq_backend_github/Routes/sdk/v1/connections.js`
 - Mint server: https://github.com/pk1762012/aq-sdk-mint-server
 - Phase 1/2 background: `docs/SDK_MOBILE_FIT_ASSESSMENT.md`

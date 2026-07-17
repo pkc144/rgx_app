@@ -104,7 +104,51 @@ export const ConfigProvider = ({ children }) => {
                     'aq-encrypted-key': headers['aq-encrypted-key'] ? 'SET' : 'MISSING',
                 });
 
+                // D3 (docs/WEB_PARITY_MIGRATION_2026-06.md §4.1): the RIA / NBA /
+                // Portfolio-Health / Transition flags are NOT in /api/app-advisor/get —
+                // they live in advisor_config and are served by /api/admin/frontend-config
+                // (no admin auth; reads the advisor from the X-Advisor-Subdomain header,
+                // which `headers` already carries). Kick it off BEFORE awaiting the main
+                // config so the two fetches run in PARALLEL (no serial cold-start cost).
+                // Never throws — a failure leaves every new flag at its default (false).
+                const parityFlagsPromise = (async () => {
+                    try {
+                        // HARD timeout: this fetch must NEVER block the advisor
+                        // branding/config from applying. If frontend-config is slow or
+                        // hangs, bail fast and leave the parity flags at default-OFF —
+                        // the main app-advisor/get config (theme, logo, gradients) still
+                        // applies. (Without this, a stalled flags call would leave the UI
+                        // on bare defaults: red #ff0000 accent + missing logo.)
+                        const ff = await axios.get(`${baseUrl}api/admin/frontend-config`, {
+                            headers,
+                            timeout: 6000,
+                        });
+                        const d = ff?.data?.data || ff?.data || {};
+                        return {
+                            riaBillingEnabled:       d.riaBillingEnabled === true,
+                            nbaHomeEnabled:          d.nbaHomeEnabled === true,
+                            portfolioHealthEnabled:  d.portfolioHealthEnabled === true,
+                            transitionEngineEnabled: d.transitionEngineEnabled === true,
+                            portfolioHealth:         d.portfolioHealth || undefined,
+                            // In-app support widget (chat + voice), customer side. Default OFF.
+                            voiceSupportUserEnabled: d.voiceSupportUserEnabled === true,
+                            // Client Performance Summary (fund-wise portfolio summary +
+                            // value history + realised P&L). Default-ON, mirroring web's
+                            // `!== false` gate in Routes/Admin/loginRoutes.js /frontend-config.
+                            performanceSummaryEnabled: d.performanceSummaryEnabled !== false,
+                            // Checkout-time blocking KYC gate (PAN+DoB → KRA verify
+                            // BEFORE payment/Digio). Default OFF, mirrors web's
+                            // `=== true` gate in loginRoutes.js /frontend-config.
+                            kycBlockingEnabled:      d.kycBlockingEnabled === true,
+                        };
+                    } catch (e) {
+                        console.warn('[ConfigContext] frontend-config flags unavailable, defaulting OFF:', e?.message);
+                        return {};
+                    }
+                })();
+
                 const response = await axios.get(apiUrl, { headers });
+                const parityFlags = await parityFlagsPromise;
 
                 console.log('API Response:', response.data);
 
@@ -168,6 +212,16 @@ export const ConfigProvider = ({ children }) => {
                                 : apiData.googleWebClientId) ||
                             initialConfig.googleWebClientId,
 
+                        // iOS-only Google Sign-In client ID (per-tenant Firebase
+                        // project). Same backend-over-variant precedence + defensive
+                        // .trim() as googleWebClientId. Consumed by Login/LogOutScreen;
+                        // only applied on iOS (undefined is a harmless no-op elsewhere).
+                        googleIosClientId:
+                            (typeof apiData.googleIosClientId === 'string'
+                                ? apiData.googleIosClientId.trim()
+                                : apiData.googleIosClientId) ||
+                            initialConfig.googleIosClientId,
+
                         // ============================================================================
                         // DIGIO CONFIGURATION
                         // Backend stores in nested digioConfig object, so we extract from there
@@ -203,16 +257,33 @@ export const ConfigProvider = ({ children }) => {
                             ? apiData.featureFlags.allowAfterHoursOrders
                             : (apiData.allowAfterHoursOrders !== undefined ? apiData.allowAfterHoursOrders : true),
 
-                        // Client Performance Summary (fund-wise portfolio summary + value
-                        // history + realised P&L). DEFAULT-ON, mirroring web's `!== false`
-                        // gate in Routes/Admin/loginRoutes.js /frontend-config.
-                        performanceSummaryEnabled: apiData.featureFlags?.performanceSummaryEnabled !== undefined
-                            ? apiData.featureFlags.performanceSummaryEnabled
-                            : (apiData.performanceSummaryEnabled !== false),
-                        // Checkout-time blocking KYC gate (PAN+DoB → KRA verify BEFORE
-                        // payment/Digio). DEFAULT-OFF, mirrors web's `=== true` gate.
-                        kycBlockingEnabled: apiData.featureFlags?.kycBlockingEnabled === true
-                            || apiData.kycBlockingEnabled === true,
+                        // Courses + Webinars per-advisor gates. Source of truth on
+                        // the server is AdvisorConfig.{courses_enabled,webinars_enabled}
+                        // surfaced as camelCase by /api/app-advisor/get's AdvisorConfig
+                        // lookup block (mirrors web's AppConfigContext default-false).
+                        // Drawer entries + webinar screens consume these.
+                        coursesEnabled:  apiData.coursesEnabled  ?? false,
+                        webinarsEnabled: apiData.webinarsEnabled ?? false,
+
+                        // RIA AUM-billing / NBA / Portfolio-Health / Transition per-advisor
+                        // gates (D3). Source of truth: advisor_config.{aum_billing.enabled,
+                        // nba_home_enabled, portfolio_health_enabled, transition_engine_enabled,
+                        // portfolio_health}, served by /api/admin/frontend-config (fetched in
+                        // parallel above → `parityFlags`). Default OFF — nothing renders until
+                        // an advisor opts in from supportAQ (AdvisorConfigPage). Toggles already
+                        // exist there for nba/health/transition.
+                        riaBillingEnabled:       parityFlags.riaBillingEnabled       ?? false,
+                        nbaHomeEnabled:          parityFlags.nbaHomeEnabled          ?? false,
+                        portfolioHealthEnabled:  parityFlags.portfolioHealthEnabled  ?? false,
+                        transitionEngineEnabled: parityFlags.transitionEngineEnabled ?? false,
+                        voiceSupportUserEnabled: parityFlags.voiceSupportUserEnabled ?? false,
+                        portfolioHealth:         parityFlags.portfolioHealth         ?? undefined,
+                        // Client Performance Summary — DEFAULT-ON to match web. A failed
+                        // frontend-config fetch (parityFlags == {}) still enables it.
+                        performanceSummaryEnabled: parityFlags.performanceSummaryEnabled ?? true,
+                        // Checkout-time blocking KYC gate — DEFAULT-OFF. A failed
+                        // frontend-config fetch (parityFlags == {}) leaves it OFF.
+                        kycBlockingEnabled:      parityFlags.kycBlockingEnabled ?? false,
 
                         // ============================================================================
                         // PAYMENT CONFIGURATION
@@ -286,6 +357,41 @@ export const ConfigProvider = ({ children }) => {
                         REACT_APP_BROKER_CONNECT_REDIRECT_URL: apiData.brokerConnectRedirectUrl || Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL || '',
 
                         // ============================================================================
+                        // PER-TENANT CONFIG MIGRATED FROM .env → appadvisors (supportAQ-controlled)
+                        // ----------------------------------------------------------------------------
+                        // Each of these resolves `appadvisors value ?? .env fallback`, so a tenant's
+                        // settings can be changed from supportAQ App Advisors with NO app rebuild.
+                        // The .env value remains the bootstrap/offline fallback (and stays correct
+                        // per build). These are also written into the AsyncStorage `@app:advisorConfig`
+                        // sync block below, so every consumer reading
+                        // `configData.config.REACT_APP_*` (TradeContext) gets the backend value too.
+                        // What deliberately stays in .env: REACT_APP_HEADER_NAME (subdomain — used to
+                        // fetch THIS config), REACT_APP_AQ_KEYS/SECRET (signs the fetch; secret),
+                        // server base URLs, APP_VARIANT (design, read before config loads),
+                        // REACT_APP_FIREBASE_* (native, bound to google-services.json), MARKET_WS_*.
+                        // ============================================================================
+                        REACT_APP_ADVISOR_SPECIFIC_TAG:
+                            apiData.advisorSpecificTag || apiData.apiKeys?.advisorSpecificTag || Config.REACT_APP_ADVISOR_SPECIFIC_TAG || '',
+                        REACT_APP_WHITE_LABEL_TEXT:
+                            apiData.whiteLabelText || apiData.appName || Config.REACT_APP_WHITE_LABEL_TEXT || '',
+                        REACT_APP_ADVISOR_SPECIFIER:
+                            apiData.advisorSpecifier || apiData.apiKeys?.advisorSpecifier || Config.REACT_APP_ADVISOR_SPECIFIER || 'RA',
+                        REACT_APP_RAZORPAY_LIVE_API_KEY:
+                            apiData.apiKeys?.razorpayKeyId || apiData.razorpayKey || Config.REACT_APP_RAZORPAY_LIVE_API_KEY || '',
+                        REACT_APP_DIGIO_CHECK:
+                            apiData.digioConfig?.digioCheck || apiData.digioCheck || Config.REACT_APP_DIGIO_CHECK || 'beforePayment',
+                        REACT_APP_ADVISOR_LOGO:
+                            apiData.advisorLogo || Config.REACT_APP_ADVISOR_LOGO || '',
+                        // Semantic (camelCase) aliases for components that prefer config.* over the
+                        // legacy REACT_APP_* shape.
+                        whiteLabelText:
+                            apiData.whiteLabelText || apiData.appName || Config.REACT_APP_WHITE_LABEL_TEXT || initialConfig.appName,
+                        advisorSpecifier:
+                            apiData.advisorSpecifier || apiData.apiKeys?.advisorSpecifier || Config.REACT_APP_ADVISOR_SPECIFIER || 'RA',
+                        advisorSpecificTag:
+                            apiData.advisorSpecificTag || apiData.apiKeys?.advisorSpecificTag || Config.REACT_APP_ADVISOR_SPECIFIC_TAG || '',
+
+                        // ============================================================================
                         // PAYMENT MODAL UI CUSTOMIZATION
                         // ============================================================================
                         paymentModal: {
@@ -345,6 +451,39 @@ export const ConfigProvider = ({ children }) => {
                         // Surfacing taglines via backend lets legal vary copy per tenant
                         // without a code change.
                         taglines: apiData.taglines || null,
+
+                        // ============================================================================
+                        // APP UPDATE — set this field in MongoDB to trigger the update modal
+                        // db.appadvisors.updateOne({subdomain:'<tenant>'},{$set:{latestAppVersion:'1.0.5'}})
+                        // Consumed by AppUpdateChecker (UpdateAppModal) as the authoritative
+                        // version; falls back to Play Store / App Store scraping when null.
+                        // ============================================================================
+                        latestAppVersion: apiData.latestAppVersion || null,
+                        // Platform-specific force-update floors (Android vs iOS can be on
+                        // different store versions). UpdateAppModal.pickPlatformVersion()
+                        // prefers these over the generic latestAppVersion/minAppVersion.
+                        latestAppVersionAndroid: apiData.latestAppVersionAndroid || null,
+                        latestAppVersionIos: apiData.latestAppVersionIos || null,
+                        minAppVersion: apiData.minAppVersion || null,
+                        minAppVersionAndroid: apiData.minAppVersionAndroid || null,
+                        minAppVersionIos: apiData.minAppVersionIos || null,
+                        forceUpdate: apiData.forceUpdate,
+
+                        // Multi-advisor RA-ID onboarding gate. Only the master
+                        // app (b2b / subdomain "prod") sets this true in
+                        // appadvisors; every white-label defaults false → the
+                        // SignUpRADetails screen self-redirects to Home.
+                        raIdOnboardingEnabled: apiData.raIdOnboardingEnabled === true,
+
+                        // ============================================================================
+                        // iOS APP STORE ID — set this in MongoDB once the iOS build is live on the
+                        // App Store. The "Update Now" button on iOS opens
+                        // `https://apps.apple.com/app/id<iosAppStoreId>`. Apple requires the numeric
+                        // store ID (e.g. 1234567890), NOT the bundle ID.
+                        // db.appadvisors.updateOne({subdomain:'<tenant>'},{$set:{iosAppStoreId:'1234567890'}})
+                        // When null, UpdateAppModal's iOS Update CTA is a no-op (no broken URL).
+                        // ============================================================================
+                        iosAppStoreId: apiData.iosAppStoreId || null,
                     };
 
                     console.log('✅ Using newConfig from API for APP_VARIANTS:', {
@@ -357,6 +496,7 @@ export const ConfigProvider = ({ children }) => {
                         homeScreenLayout: newConfig.homeScreenLayout,
                         // Authentication
                         googleWebClientId: newConfig.googleWebClientId,
+                        googleIosClientId: newConfig.googleIosClientId,
                         // Digio Config
                         digioCheck: newConfig.digioCheck,
                         digioEnabled: newConfig.digioEnabled,
@@ -382,6 +522,28 @@ export const ConfigProvider = ({ children }) => {
                                     REACT_APP_BROKER_CONNECT_REDIRECT_URL: newConfig.REACT_APP_BROKER_CONNECT_REDIRECT_URL,
                                     REACT_APP_ANGEL_ONE_API_KEY: newConfig.REACT_APP_ANGEL_ONE_API_KEY,
                                     REACT_APP_ZERODHA_API_KEY: newConfig.REACT_APP_ZERODHA_API_KEY,
+                                    // Per-tenant config migrated to appadvisors (see newConfig block
+                                    // above). Persisted here so TradeContext's
+                                    // configData.config.REACT_APP_* reads the backend value (?? .env).
+                                    // Guarded with `|| stored.config?.X` so a transiently-empty API
+                                    // response can never blank out a previously-good value.
+                                    REACT_APP_ADVISOR_SPECIFIC_TAG: newConfig.REACT_APP_ADVISOR_SPECIFIC_TAG || stored.config?.REACT_APP_ADVISOR_SPECIFIC_TAG,
+                                    REACT_APP_WHITE_LABEL_TEXT: newConfig.REACT_APP_WHITE_LABEL_TEXT || stored.config?.REACT_APP_WHITE_LABEL_TEXT,
+                                    REACT_APP_ADVISOR_SPECIFIER: newConfig.REACT_APP_ADVISOR_SPECIFIER || stored.config?.REACT_APP_ADVISOR_SPECIFIER,
+                                    REACT_APP_RAZORPAY_LIVE_API_KEY: newConfig.REACT_APP_RAZORPAY_LIVE_API_KEY || stored.config?.REACT_APP_RAZORPAY_LIVE_API_KEY,
+                                    REACT_APP_DIGIO_CHECK: newConfig.REACT_APP_DIGIO_CHECK || stored.config?.REACT_APP_DIGIO_CHECK,
+                                    REACT_APP_ADVISOR_LOGO: newConfig.REACT_APP_ADVISOR_LOGO || stored.config?.REACT_APP_ADVISOR_LOGO,
+                                    // D3 / Codex T5: persist the parity flags into the same
+                                    // AsyncStorage blob TradeContext reads, so useConfig() and
+                                    // configData never disagree on a gate.
+                                    riaBillingEnabled: newConfig.riaBillingEnabled,
+                                    nbaHomeEnabled: newConfig.nbaHomeEnabled,
+                                    portfolioHealthEnabled: newConfig.portfolioHealthEnabled,
+                                    transitionEngineEnabled: newConfig.transitionEngineEnabled,
+                                    voiceSupportUserEnabled: newConfig.voiceSupportUserEnabled,
+                                    portfolioHealth: newConfig.portfolioHealth,
+                                    performanceSummaryEnabled: newConfig.performanceSummaryEnabled,
+                                    kycBlockingEnabled: newConfig.kycBlockingEnabled,
                                 },
                             };
                             await AsyncStorage.setItem('@app:advisorConfig', JSON.stringify(updatedStored));

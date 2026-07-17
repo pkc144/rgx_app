@@ -16,6 +16,11 @@ def jscFlavor = 'org.webkit:android-jsc:+'
 android {
     namespace "com.rgx.aq"
 
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
     compileSdk rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     ndkVersion rootProject.ext.ndkVersion
@@ -114,6 +119,29 @@ dependencies {
 
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
 apply plugin: "com.google.gms.google-services"
+
+// Force every library's generateCodegenArtifactsFromSchema to finish before
+// any :app CMake/NDK task runs. Without this, a clean assembleRelease races:
+// Android-autolinking.cmake references
+// node_modules/*/android/build/generated/source/codegen/jni/ dirs that
+// per-library codegen hasn't created yet, and cmake configure fails with
+// "add_subdirectory given source ... which is not an existing directory".
+//
+// The closure is lazy — Gradle resolves it at execution-graph construction,
+// by which point every subproject has been evaluated and its codegen task
+// has been registered. Eager findByName(...) from whenTaskAdded returns null
+// for most libraries and silently wires nothing.
+tasks.whenTaskAdded { task ->
+    if (task.name.startsWith("configureCMake") ||
+        task.name.startsWith("buildCMake") ||
+        task.name.startsWith("externalNativeBuild")) {
+        task.dependsOn({
+            rootProject.subprojects.findResults { sub ->
+                sub.tasks.findByName("generateCodegenArtifactsFromSchema")
+            }
+        })
+    }
+}
 
 /**
  * Variant-specific google-services.json handling

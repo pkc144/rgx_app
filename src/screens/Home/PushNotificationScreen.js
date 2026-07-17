@@ -14,7 +14,7 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Feather';
 import {useNavigation} from '@react-navigation/native';
 import {useTrade} from '../TradeContext';
@@ -960,13 +960,13 @@ const getUnreadCount = () => {
 
   if (isNotificationLoading && !refreshing) {
     return (
-      <GradientView
+      <LinearGradient
         colors={['#EAEEFF', '#fff']}
         start={{x: 0, y: 0}}
         end={{x: 0, y: 1}}
         style={{flex: 1}}>
         <SafeAreaView style={{flex: 1}}>
-             <GradientView
+             <LinearGradient
           colors={[gradient1, gradient2]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
@@ -987,24 +987,24 @@ const getUnreadCount = () => {
               Stay updated with the latest alerts
             </Text>
           </View>
-        </GradientView>
+        </LinearGradient>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#6B7A99" />
             <Text style={styles.loadingText}>Loading notifications...</Text>
           </View>
         </SafeAreaView>
-      </GradientView>
+      </LinearGradient>
     );
   }
 
   return (
-    <GradientView
+    <LinearGradient
       colors={['#EAEEFF', '#fff']}
       start={{x: 0, y: 0}}
       end={{x: 0, y: 1}}
       style={{flex: 1}}>
       <SafeAreaView style={{flex: 1}}>
-        <GradientView
+        <LinearGradient
           colors={[gradient1, gradient2]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
@@ -1045,7 +1045,7 @@ const getUnreadCount = () => {
                   </Text>
                 </TouchableOpacity>
               </View>
-        </GradientView>
+        </LinearGradient>
 
         {!allNotifications ||
         !allNotifications.notifications ||
@@ -1111,7 +1111,7 @@ const getUnreadCount = () => {
 
         {renderNotificationModal()}
       </SafeAreaView>
-    </GradientView>
+    </LinearGradient>
   );
 };
 

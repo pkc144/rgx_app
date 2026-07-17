@@ -18,6 +18,176 @@
 
 ---
 
+## 2026-06-11 (2) — _pending commit_ — fix(sdk-webview): AliceBlue iOS blank — REAL root cause = firebase-messaging bootstrap abort; WKWebView API shims (serviceWorker + Notification)
+
+**Broker(s) affected:** AliceBlue only (shim lives inside the AliceBlue-gated injected script; no-op on Android).
+
+**Files touched:**
+- `../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow.tsx` (+ lib rebuild)
+- `../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/webview_auth_flow.dart` (parity)
+- `src/UIComponents/BrokerConnectionUI/AliceBlueConnectUI.js` (legacy lane — same latent bug; also copied to Alphanomy fork)
+- `docs/PHASE3_ARCHITECTURE.md`, `docs/PHASE3_BROKER_AUDIT.md` (root-cause correction)
+
+**Change summary:** The earlier same-day UA fix did NOT resolve the user's iOS blank screen (re-tested after a verified SDK pull + rebuild). Read AliceBlue's deployed bundle (`assets/index-6a09ab85.js`): their Vue entry module runs firebase-messaging at module top level before `mount("#app")` — `navigator.serviceWorker.addEventListener` unguarded, plus a UA-gated `Notification.requestPermission()`. iOS WKWebView has neither API → their bootstrap throws → `#app` never mounts → blank. Android WebView has both → works. Fix: the AliceBlue-gated document-start script now stubs `navigator.serviceWorker` and `window.Notification` before the page's scripts run. UA override stays (covers the UA-gated Notification branch; matches legacy). Same shim prepended to the legacy modal's interceptor in BOTH app repos (every code path, one cycle — CLAUDE.md broker-auth lesson).
+
+**Verdict change(s):** none — AliceBlue stays SDK-clean.
+
+**Regression(s) observed:** the 2026-06-11 (1) UA-only entry below attributed the blank to UA sniffing — necessary-but-insufficient; the serviceWorker abort happens on every UA. This entry corrects the record.
+
+**Rollback decision:** no.
+
+**Next step:** ~~dev pulls SDK + iOS retest~~ **DONE — iOS device-verified 2026-06-11**: dev rebuilt iOS with SDK `c0d53d5` and AliceBlue connect worked end-to-end. Alphanomy already carries both lanes (shared SDK symlink + legacy shim `460cdc6`).
+
+---
+
+## 2026-06-11 — _pending commit_ — fix(sdk-webview): AliceBlue blank screen on iOS — Safari UA + OTP-validate interceptor (AliceBlue-gated)
+
+**Broker(s) affected:** AliceBlue only (all other brokers explicitly unaffected — overrides are `broker === "AliceBlue"`-gated, `undefined` otherwise).
+
+**Files touched:**
+- `../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow.tsx` (+ `lib/` rebuild via tsc)
+- `../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/webview_auth_flow.dart` (parity port, same commit cycle)
+- `docs/PHASE3_ARCHITECTURE.md` § WebViewBrokerAuthFlow contract (new "AliceBlue-only WebView overrides" block)
+- `docs/PHASE3_BROKER_AUDIT.md` AliceBlue row (new quirk + last-verified)
+
+**Change summary:** User-reported (iOS, 2026-06-11): "connect AliceBlue → screen opens, spins, stays blank" — Android fine, every other broker fine on both platforms. Root cause: AliceBlue's portal SPA (ant.aliceblueonline.com) UA-sniffs and renders blank on iOS WKWebView's default UA (which has no `Version/x Safari/x` tokens); Android's default WebView UA carries Chrome tokens, so it passed. Legacy `AliceBlueConnectUI.js` solved exactly this with a spoofed Safari UA in commit `59e8e1f` ("aliceblue fix", 2026-03-02) — the SDK widget never inherited it (classic Phase 3 gap: legacy surface not fully mapped before SDK migration). Fix: AliceBlue-gated `userAgent` (iOS only) + AliceBlue-gated `injectedJavaScriptBeforeContentLoaded` carrying the legacy OTP-validate redirect interceptor (parity with legacy + tidi_new; self-deactivating if AliceBlue's portal behaves). Flutter package got the identical pair per the cross-platform parity rule.
+
+**Verdict change(s):** AliceBlue stays **SDK-clean** (promoted 2026-04-28) — the gap was discovered and closed in the same change; no allowlist movement.
+
+**Regression(s) observed:** the fix itself addresses a production-visible iOS regression that had been latent since AliceBlue's Phase 3 promotion (SDK lane never had the UA override the legacy lane had).
+
+**Rollback decision:** no.
+
+**Next step:** user to verify on an iOS device/simulator: connect AliceBlue end-to-end (login page renders → OTP → callback intercepted → connected). If the post-OTP redirect still sticks, the interceptor's `console.log` armed-marker + `[SDK WebView] handleNav` logs identify which stage fails.
+
+**Broker(s) affected:** Kotak (any `credentials_totp` flow).
+
+**Files touched:**
+- `../alphaquark-mobile-sdk/packages/rn/src/components/BrokerCredentialForm.tsx` (new `TOTP_REUSE_COOLDOWN_MS` constant + `lastTotpSubmitAtRef` + pre-submit gate inside `onSubmit`)
+- `docs/PHASE3_ARCHITECTURE.md` § `BrokerCredentialForm` — SDK widget contract (new "TOTP-window debounce" subsection)
+- `docs/CHANGELOG.md`
+
+**Change summary:** The legacy `KotakModal.js:128-167` gated back-to-back Connect taps with a 30s cooldown matching Kotak's TOTP rotation window — the SDK form didn't. User-reported 2026-06-05 (screenshot, in-app banner `broker_credential_update_failed (HTTP 400): Invalid TOTP`): a re-submit within the rotation window burned a stale/single-use TOTP and surfaced the broker's `Invalid TOTP` rejection even though the underlying issue was the user's own retry, not a credential problem. The widget now stamps `lastTotpSubmitAtRef` BEFORE the network call inside `onSubmit`, and a second submit within `TOTP_REUSE_COOLDOWN_MS` (30 s) short-circuits with the inline banner `"TOTP rotates every 30s and cannot be reused. Generate a fresh 6-digit code in your authenticator and try again in ~Xs."` — no network call, no second `Invalid TOTP`, no confusion when the first request already succeeded silently.
+
+**Verdict change(s):** None. Kotak stays SDK-clean in `PHASE3_BROKER_AUDIT.md`; this is a UX hardening on a path that was already correct end-to-end.
+
+**Verification status:** ⚠️ NOT device-rendered yet. To verify after rebuilding the SDK (`cd ../alphaquark-mobile-sdk/packages/rn && npm run build`) + Metro reload: open Phase3 Kotak modal → fill creds → tap Connect → IMMEDIATELY tap Connect again (or any time within 30s) → expect the inline `"TOTP rotates every 30s…"` banner, no second network request in the device log.
+
+**Regression(s) observed:** None expected — `credentials_totp` is the only flow with the new gate; other flows (`credentials`, `oauth`, `stub`) are unchanged.
+
+**Rollback decision:** No.
+
+**Next step:** Device verification of the cooldown on the Kotak Phase 3 modal; downstream parity port into the Flutter SDK's equivalent BrokerCredentialPage if the Flutter form doesn't already carry it.
+
+---
+
+## 2026-05-29 — _pending commit_ — fix(phase3): ICICI/HDFC/Motilal missing IP panel (bug-81) + clearer Kotak setup copy (bug-80)
+
+**Broker(s) affected:** ICICI Direct, HDFC, Motilal Oswal (bug-81); Kotak (bug-80).
+
+**Files touched:**
+- `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js` (EGRESS_BROKER_KEY map + EgressIpCallout `broker=` prop)
+- `src/UIComponents/BrokerConnectionUI/HelpUI/KotakHelpContent.js` (copy + visual hierarchy)
+- `docs/PHASE3_ARCHITECTURE.md` (EgressIpCallout broker-key contract)
+- `docs/CHANGELOG.md`
+
+**bug-81 (ICICI "I can't see the IP field"):** Phase3SdkBrokerModal passed `broker={brokerName}` (the DISPLAY name, e.g. `"ICICI Direct"`) to `EgressIpCallout`. The callout lowercases to `"icici direct"`, which isn't in its `WHITELIST_BROKERS` set (`"icicidirect"`), so it short-circuited to `brokerState="partner"` and rendered nothing — the IP panel vanished for ICICI Direct, HDFC (`"hdfc securities"` ≠ `"hdfcsec"`), and Motilal Oswal (`"motilal oswal"` ≠ `"motilaloswal"`). The per-broker help still told users to "paste your dedicated static IP (claimed in the IP-whitelist panel above)" — a panel that wasn't there. Single-word brokers (Upstox/Fyers/Kotak/Groww) coincidentally lowercased to the right key, hiding the bug. **Fix:** added `EGRESS_BROKER_KEY` mapping the display name → the lowercase backend key the callout (and every legacy `*ConnectUI`) expects.
+
+**bug-80 (Kotak "instructions too confusing"):** the 4-step Kotak guide rendered step headers in the same weight/colour as body text, so it read as an undifferentiated wall; users couldn't tell what to do after logging in (the Kotak email-wait + the "come back to the app" step were buried). **Fix (copy/clarity only — all URLs/facts unchanged):** added an upfront overview (sets expectations + flags the ~30-min email wait + that Step 4 is back in the app), a distinct `stepHeader` style, an explicit ⏳ `checkpoint` for the email wait, and reworded Step 4 to "Link your account (back in this app) → fill the fields below."
+
+**Verification status:** ⚠️ NOT device-rendered by me (SDK `file:` link path doesn't resolve on this workstation). ESLint: no NEW errors (1 pre-existing `react-hooks/exhaustive-deps` on KotakHelpContent's untouched `useEffect`, same as the other HelpContent files; no pre-commit hook blocks on it). **Confirm on device:** Connect ICICI/HDFC/Motilal now show the "Dedicated static IP assigned" panel; Connect Kotak reads clearly.
+
+**Verdict change(s):** None.
+
+**Regression(s) observed:** none (pending device test).
+
+**Rollback decision:** No.
+
+**Next step:** Device verification of the IP panel on ICICI/HDFC/Motilal.
+
+---
+
+## 2026-05-29 — _pending commit_ — fix(phase3-layout): form-phase ScrollView flex so empty-field brokers don't render blank (bug-78 Dhan, bug-79 AliceBlue)
+
+**Broker(s) affected:** Dhan, AliceBlue (any empty-field broker with no `EgressIpCallout` and no `Phase3BrokerHelp`). Indirectly all brokers' form-phase scroll.
+
+**Files touched:**
+- `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js` (form-phase ScrollView `style` + `scrollPad`)
+- `docs/PHASE3_ARCHITECTURE.md` (Layout section)
+- `docs/CHANGELOG.md`
+
+**Trigger:** QA bug-78 ("Check dhan app — it just loading the screen") + bug-79 (AliceBlue same). Screenshot: "Connect Dhan" header over a fully blank white body.
+
+**Root cause:** Form-phase laid the SDK `BrokerCredentialForm` inside `formWrap` (`flex: 1`), which sat inside a *content-sized* outer `ScrollView` (no `flex: 1` on the ScrollView, no `flexGrow` on the content container). A `flex: 1` child in a content-sized scroll container has no free space, so `formWrap` collapsed to ~0 height, collapsing the SDK form's nested ScrollView → nothing rendered. Brokers WITH a callout + help (Upstox/ICICI/Kotak) still showed those siblings, hiding the collapse; Dhan + AliceBlue (empty-field partner-OAuth, NOT in `IP_WHITELIST_BROKERS`, NOT in `Phase3BrokerHelp`'s `HELP_BY_BROKER`) had `formWrap` as the sole child → blank body. Regression window traces to `aae0370` (restored outer ScrollView wrapping siblings) — the nested-ScrollView layout never gave `formWrap`'s flex a bounded parent.
+
+**Change summary:** Added `style={styles.formScroll}` (`flex: 1`) to the form-phase ScrollView and `flexGrow: 1` to `scrollPad` (its contentContainerStyle). Now the ScrollView fills the panel below the Header and the content container fills at least the viewport, so `formWrap`'s `flex: 1` resolves to a real height (short brokers render fully; taller brokers overflow + scroll). No logic/encryption/route change.
+
+**Verification status:** ⚠️ NOT yet rendered on device by me — the SDK `file:` link path (`../../alphaquark-mobile-sdk`) resolves wrong on this workstation (`node_modules/@alphaquark/mobile-sdk` symlink → `/Users/pratik/alphaquark-mobile-sdk`, nonexistent; SDK actually lives under `…/PycharmProjects/…`), so Metro can't bundle the SDK here. ESLint clean. **Must be confirmed on an emulator/device: open Connect Dhan + Connect AliceBlue and confirm the form (intro + Connect button) renders; re-test Upstox/Kotak/ICICI for scroll regressions.**
+
+**Verdict change(s):** None — layout fix, no legacy↔SDK verdict moved.
+
+**Regression(s) observed:** none yet (pending device test).
+
+**Rollback decision:** No.
+
+**Next step:** Device verification of Dhan/AliceBlue render + Upstox/Kotak/ICICI scroll. If taller brokers regress (two-scroll-region dead zone), revisit the unified-scroll `headerSlot` approach (commit `2c6cb9c`) which tidi_new uses.
+
+---
+
+## 2026-05-28 — _pending commit_ — fix(phase3-ux): replace unexplained form dim with a labeled IP-whitelist lock (bug-77 Upstox)
+
+**Broker(s) affected:** All `IP_WHITELIST_BROKERS` (Upstox, Fyers, ICICI, HDFC, Motilal, Kotak, Groww) — Upstox was the reported case.
+
+**Files touched:**
+- `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js` (form-phase gating UX)
+- `docs/PHASE3_ARCHITECTURE.md` (state + Form-phase + Known-issues sections)
+- `docs/CHANGELOG.md`
+
+**Trigger:** QA bug-77 ("Check uptox broker account") + user annotation "why the screen has white transparent layer in all broker page?". The Upstox connect form was wrapped in a bare `opacity: 0.45` View until `egressReady`, with no on-screen explanation. Users read the dim as a rendering glitch ("white transparent layer"), not as "you still need to tick the IP-whitelist box above."
+
+**Change summary:** Replaced the silent `opacity: 0.45` dim with an explicit locked state: (1) an amber `lockNotice` banner above the form telling the user exactly what to do and inviting a tap; (2) `pointerEvents="none"` + a gentler `formWrapLocked` dim (`opacity: 0.55`) so the form reads as intentionally disabled; (3) `nudgeEgressAck()` — tapping the banner sets `unmetAck` (flashes the existing `EgressIpCallout` checkbox via its `showUnmetAck` prop) and scrolls the form `ScrollView` back to the callout. Pure presentation/gating change; no change to credential collection, encryption, OAuth handoff, or backend routes.
+
+**Root-cause note (for the bug-77 `broker_login_url_missing (HTTP 500)` error itself):** That error is a *backend/infra* failure — ccxt `/upstox/login` returns HTTP 500 when its outbound `requests.get` to api.upstox.com fails (`app_upstox.py:96,194`), forwarded verbatim by `Routes/sdk/v1/connections.js`. The documented #1 cause (missing GRE-tunnel /128) was **ruled out** this session: the customer's IP `2a11:6c7:1103:7010:3e63:43c1:8a93:e95f` is present on the tunnel (63 /128s). Backend fix deferred — out of scope for this app-only UX change and requires sign-off.
+
+**Verdict change(s):** None — cross-cutting UX, no per-broker legacy↔SDK verdict moved.
+
+**Regression(s) observed:** none (ESLint clean; non-IP brokers unaffected since `egressReady` starts `true` for them).
+
+**Rollback decision:** No.
+
+**Next step:** If the backend 500 recurs after IP whitelisting, investigate ccxt's per-customer egress binding to api.upstox.com (separate, backend-scoped task).
+
+---
+
+## 2026-05-26 — _no commit yet_ — investigate(phase3-zerodha): live emulator repro before any code change
+
+**Broker(s) affected:** Zerodha (investigation only)
+
+**Files touched:** None yet (audit doc only — see `PHASE3_BROKER_AUDIT.md § Zerodha — 2026-05-26 live investigation`).
+
+**Trigger:** User-reported on the Play Store APK from this branch: SDK Zerodha connect "keeps loading and does not go forward."
+
+**Static audit (this session, no code change):** Read end-to-end:
+- `src/UIComponents/BrokerConnectionUI/ZerodhaConnectUI.js` (the legacy modal — confirmed it uses ONLY `onNavigationStateChange`, NOT the `onShouldStartLoadWithRequest` + URL fallback that earlier audit notes claimed; SDK already has more intercept coverage than legacy).
+- `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js` Zerodha path (autojump for reauth, form-phase for first connect, OAuth phase with `redirectUrl=https://prod.alphaquark.in/stock-recommendation`, `extras.apiKey` seeded from env).
+- `../alphaquark-mobile-sdk/packages/rn/src/components/WebViewBrokerAuthFlow.tsx` (four intercept paths, `request_token` in callback param list, origin-gated matcher).
+- `aq_backend_github/Routes/sdk/v1/connections.js` Zerodha `/login-url` (1187-1222) and `/exchange-token` (1585-1655) branches.
+
+No obvious bug found. Three live hang-cause hypotheses (full details in `PHASE3_BROKER_AUDIT.md § Zerodha — 2026-05-26`):
+1. **Backend `userEmail` null (most likely)** — Firebase phone-only signin → null `sdkSession.user_email` → ccxt 502 after 20s = looks like stuck loading.
+2. **Android 302 race** — `prod.alphaquark.in/stock-recommendation` 302s to `/login` when AQ session cookie absent (typical fresh install); Android may resolve server-side before SDK intercepts fire.
+3. **ccxt `/zerodha/login-url` upstream timeout** — 15s, least likely.
+
+**Verdict change:** None (Zerodha row stays Incomplete-audit / SDK-broken pending reproduction).
+
+**Rollback decision:** Considered but DEFERRED. User chose emulator reproduction first over a "ship-the-safety-patch-and-pray" rollback. Both `BrokerConnectModalDispatch.js` and `PHASE3_BROKER_AUDIT.md` summary table left unchanged.
+
+**Aspirational-claim correction:** Previous audit (2026-04-28) said legacy `ZerodhaConnectUI` has "Android-aware `onShouldStartLoadWithRequest` + URL-pattern fallback." That claim is wrong — legacy uses plain `onNavigationStateChange` (lines 410-426). Recorded in `PHASE3_BROKER_AUDIT.md § Zerodha — 2026-05-26` so future contributors don't try to "port" code that doesn't exist.
+
+**Next step:** Launch app in Android emulator with `adb logcat | grep -E "SDK WebView|Phase3SdkBrokerModal|Zerodha"` running; reproduce the Connect Zerodha flow; identify which phase (`loading` / `webview` / `exchanging`) hangs; land the appropriate SDK / backend / ccxt fix; then re-run the flow end-to-end and update Zerodha's verdict in `PHASE3_BROKER_AUDIT.md`.
+
+---
+
 ## 2026-05-01 — _pending commit_ — fix(fyers-exchange): 4-round saga finally resolved (CLAUDE.md lesson recorded)
 
 **Broker(s) affected:** Fyers (all paths)

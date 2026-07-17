@@ -57,9 +57,14 @@ export const brokerDisplayConfig = [
     logo: require('../assets/fyers.png'),
   },
   {
-    name: 'Motilal Oswal',
-    key: 'Motilal',
-    logo: require('../assets/Motilalicon.png'),
+    // IIFL Securities — added to the picker 2026-07-13 (matches web
+    // AllBrokerList). Fully wired: normalizeBrokerKey('IIFL Securities') → 'IIFL'
+    // → <IIFLModal> in BrokerConnectModalDispatch. Motilal Oswal was removed
+    // here the same day (de-listed on web 2026-06-13); its dispatch case +
+    // normalize stay for already-connected users.
+    name: 'IIFL Securities',
+    key: 'IIFL Securities',
+    logo: require('../assets/iifl.png'),
   },
   {
     name: 'Groww',
@@ -70,6 +75,16 @@ export const brokerDisplayConfig = [
     name: 'Axis Securities',
     key: 'Axis Securities',
     logo: require('../assets/axis.png'),
+  },
+  {
+    name: 'Arihant Capital',
+    key: 'Arihant Capital',
+    logo: require('../assets/arihant.png'),
+  },
+  {
+    name: 'DefinEdge',
+    key: 'DefinEdge Securities',
+    logo: require('../assets/definedge.png'),
   },
 ];
 

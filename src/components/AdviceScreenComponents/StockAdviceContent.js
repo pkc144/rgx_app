@@ -25,7 +25,7 @@ import {useTrade} from '../../screens/TradeContext';
 import eventEmitter from '../EventEmitter';
 import useLTPStore from './DynamicText/useLtpStore';
 import APP_VARIANTS from '../../utils/Config';
-import GradientView from '../GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import { useConfig } from '../../context/ConfigContext';
 
 const StockAdviceContent = React.memo(
@@ -90,7 +90,7 @@ const StockAdviceContent = React.memo(
     const {width: screenWidth} = useWindowDimensions();
     const {ltps} = useLTPStore.getState();
     const defaultRationale =
-      "This recommendation is based on a comprehensive analysis of the company's growth potential and value metrics. This recommendation also accounts for potential future risks, ensuring a balanced approach to maximizing returns while mitigating uncertainties. Please contact your advisor for any queries.";
+      "This recommendation is based on a comprehensive analysis of the company's growth potential and value metrics. This recommendation also accounts for potential future risks, ensuring a balanced approach to maximizing returns while mitigating uncertainties. Please contact your manager for any queries.";
 
     const onRefresh = () => {
       setRefreshing(true);
@@ -441,7 +441,7 @@ const StockAdviceContent = React.memo(
             //   </Text>
             // </View>
             type === 'OSrejected' ? (
-              <GradientView
+              <LinearGradient
                 colors={[gradient1, gradient2]}
                 style={{
                   flex: 1,
@@ -480,7 +480,7 @@ const StockAdviceContent = React.memo(
                 />
 
                 {/* Icon container */}
-                <GradientView
+                <LinearGradient
                   colors={[gradient1, gradient2]}
                   style={{
                     width: 90,
@@ -516,7 +516,7 @@ const StockAdviceContent = React.memo(
                       <Text style={{fontSize: 28}}>📋</Text>
                     </View>
                   </View>
-                </GradientView>
+                </LinearGradient>
 
                 {/* Title */}
                 <Text
@@ -558,10 +558,10 @@ const StockAdviceContent = React.memo(
                   All your order status information will appear here when
                   available.
                 </Text>
-              </GradientView>
+              </LinearGradient>
             ) : (
               // Original Bespoke Advice Empty State
-              <GradientView
+              <LinearGradient
                 colors={[gradient1, gradient2]}
                 start={{x: 0, y: 1}}
                 end={{x: 1, y: 1}}
@@ -596,7 +596,7 @@ const StockAdviceContent = React.memo(
                 </Text>
 
                 {/* Icon container */}
-                <GradientView
+                <LinearGradient
                   colors={[gradient1, gradient2]}
                   style={{
                     width: 80,
@@ -612,7 +612,7 @@ const StockAdviceContent = React.memo(
                     elevation: 8,
                   }}>
                   <Text style={{fontSize: 36, color: 'white'}}>💫</Text>
-                </GradientView>
+                </LinearGradient>
 
                 {/* Headings */}
                 <Text
@@ -711,7 +711,7 @@ const StockAdviceContent = React.memo(
                     </View>
                   ))}
                 </View>
-              </GradientView>
+              </LinearGradient>
             )
           }
           onEndReachedThreshold={0.5}

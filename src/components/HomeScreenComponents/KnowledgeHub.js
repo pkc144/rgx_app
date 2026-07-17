@@ -27,7 +27,7 @@ import { WebView } from "react-native-webview";
 import { useTrade } from "../../screens/TradeContext";
 import LinkOpeningWeb from "../../screens/Home/NewsScreen/LinkOpeningWeb";
 import FileViewer from 'react-native-file-viewer';
-import GradientView from '../GradientView';
+import LinearGradient from "react-native-linear-gradient";
 import { useConfig } from "../../context/ConfigContext";
 
 const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
@@ -438,7 +438,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
         const { title, subtitle, emoji } = messages[type] || {};
 
         return (
-            <GradientView
+            <LinearGradient
                 colors={[gradient1, gradient2]}
                 style={{
                     flex: 1,
@@ -478,7 +478,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                 />
 
                 {/* Icon container */}
-                <GradientView
+                <LinearGradient
                     colors={[gradient1, gradient2]}
                     style={{
                         width: 90,
@@ -517,7 +517,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                             <Text style={{ fontSize: 28 }}>{emoji}</Text>
                         </View>
                     </View>
-                </GradientView>
+                </LinearGradient>
 
                 {/* Title */}
                 <Text
@@ -546,7 +546,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                 >
                     {subtitle}
                 </Text>
-            </GradientView>
+            </LinearGradient>
         );
     };
 
@@ -714,7 +714,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
             </View>
 
             {!(type === "home") && (
-                <GradientView
+                <LinearGradient
                     colors={[gradient1, gradient2]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 0, y: 1 }}
@@ -761,7 +761,7 @@ const KnowledgeHub = ({ type = "all", maxItems = 1, ...props }) => {
                             );
                         })}
                     </View>
-                </GradientView>
+                </LinearGradient>
             )}
 
 

@@ -78,4 +78,12 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
-.env
+.env.broker
+android/app/src/main/assets/index.android.bundle
+android/app/src/main/res/drawable-mdpi/
+android/app/src/main/res/drawable-*/node_modules_*.png
+android/app/*.keystore
+android/app/*.keystore.bak
+
+# Claude-local navigation index (per codes/CLAUDE.md convention)
+docs/CLAUDE_NAV.md

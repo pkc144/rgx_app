@@ -439,7 +439,7 @@ const AddToCartModal = ({
         setOpenReviewTrade(true);
       } else if ((tradeType?.allSell || tradeType?.isMixed) && cartHasEquityDeliverySells) {
         if (
-          ['consent', 'physical', 'ddpi'].includes(userDetails?.ddpi_status)
+          ['physical', 'ddpi'].includes(userDetails?.ddpi_status)
         ) {
           setShowDdpiModal(false);
           setOpenReviewTrade(true);
@@ -976,7 +976,7 @@ const AddToCartModal = ({
         errorMessage =
           error.response?.data?.details?.[0]?.message_aq ||
           error.response?.data?.details?.[0]?.message ||
-          'There was an issue in placing the trade, please try again after sometime or contact your advisor';
+          'There was an issue in placing the trade, please try again after sometime or contact your manager';
       }
 
       if ((allSell || isMixed) && !allFNO) {
@@ -1066,7 +1066,7 @@ const AddToCartModal = ({
       Toast.show({
         type: 'error',
         text1: 'Order blocked — missing exchange',
-        text2: `Missing exchange for: ${missingList}. Please contact your advisor.`,
+        text2: `Missing exchange for: ${missingList}. Please contact your manager.`,
         visibilityTime: 8000,
       });
       return;

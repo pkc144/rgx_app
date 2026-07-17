@@ -1,8 +1,9 @@
 import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
-import GradientView from '../../components/GradientView';
+import LinearGradient from 'react-native-linear-gradient';
 import Svg, {Circle} from 'react-native-svg';
 import {useConfig} from '../../context/ConfigContext';
+import useTokens from '../../theme/useTokens';
 
 const PortfolioCard = ({
   allHoldingsData,
@@ -10,10 +11,10 @@ const PortfolioCard = ({
   profitAndLoss,
   pnlPercentage,
 }) => {
-  // Get dynamic colors from config
   const config = useConfig();
-  const gradient1 = config?.gradient1 || 'rgba(0, 38, 81, 1)';
-  const gradient2 = config?.gradient2 || 'rgba(0, 86, 183, 1)';
+  const tokens = useTokens();
+  const gradient1 = tokens.colors.brand.gradientStart;
+  const gradient2 = tokens.colors.brand.gradientEnd;
 
   const invested = Number(allHoldingsData?.totalinvvalue) || 0;
   const pnl = Number(profitAndLoss) || 0;
@@ -36,7 +37,7 @@ const PortfolioCard = ({
 
   return (
     <View style={portfolioCardStyles.pcWrapper}>
-      <GradientView
+      <LinearGradient
         colors={[gradient1, gradient2]}
         start={{x: 0, y: 0}}
         end={{x: 1, y: 1}}
@@ -89,7 +90,7 @@ const PortfolioCard = ({
             </Text>
           </View>
         </View>
-      </GradientView>
+      </LinearGradient>
     </View>
   );
 };
@@ -105,6 +106,10 @@ const portfolioCardStyles = StyleSheet.create({
     borderRadius: 15,
     overflow: 'hidden',
     minHeight: 120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
     elevation: 5,
     padding: 20,
     position: 'relative',

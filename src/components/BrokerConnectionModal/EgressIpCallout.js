@@ -22,6 +22,13 @@
  *                             by-step instructions, acknowledgment
  *                             checkbox (the only way parent's Connect
  *                             unlocks)
+ *   8. `shared_ip`          — IPv4-only broker using the shared advisor
+ *                             static IP (no per-customer IPv4 pool yet).
+ *                             Same UX + ack gate as `claimed`, different
+ *                             language. Backend returns this for e.g.
+ *                             Motilal Oswal / Angel One / Arihant — see
+ *                             ccxt-india common/egress_registry.py
+ *                             compute_broker_status branch 1.
  *
  * Parent contract (identical to web):
  *   <EgressIpCallout
@@ -58,6 +65,7 @@ import server from '../../utils/serverConfig';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import LinkifiedUrl from '../../UIComponents/BrokerConnectionUI/HelpUI/LinkifiedUrl';
+import {useColors} from '../../theme/useColors';
 
 // Brokers requiring per-customer IP whitelisting. Partners short-
 // circuit to null without hitting /egress/me. Keep keys in sync with
@@ -91,10 +99,10 @@ const BROKER_DEV_PORTAL_URLS = {
   angelone: 'https://smartapi.angelone.in/',
   fyers: 'https://fyers.in/web/api-dashboard/user-apps',
   motilaloswal: 'https://openapi.motilaloswal.com/',
-  kotak: 'https://npapi.kotaksecurities.com/',
+  kotak: 'https://napi.kotaksecurities.com/',
   icicidirect: 'https://api.icicidirect.com/apiuser/home',
   iifl: 'https://api.iiflsecurities.com/',
-  hdfcsec: 'https://developer.hdfcsec.com/',
+  hdfcsec: 'https://developer.hdfcsky.com/',
   groww: 'https://groww.in/trade-api/api-keys',
 };
 
@@ -135,6 +143,12 @@ const EgressIpCallout = ({
   const brokerDisplay = BROKER_DISPLAY_NAMES[brokerKey] || brokerKey;
   const brokerDevPortal = BROKER_DEV_PORTAL_URLS[brokerKey];
   const brokerHint = BROKER_WHITELIST_HINT[brokerKey];
+
+  // Brand the genuine action elements (primary CTA + ack checkbox) to the
+  // running white-label tenant. The semantic state panels (info/warning/
+  // error) intentionally keep their conventional blue/amber/red.
+  const colors = useColors();
+  const brand = colors?.brand?.primary || '#2563EB';
 
   const [loading, setLoading] = useState(true);
   const [brokerState, setBrokerState] = useState(null);
@@ -201,13 +215,18 @@ const EgressIpCallout = ({
   // Gate the parent Connect button. True ONLY for:
   //   - partner brokers (no whitelisting required)
   //   - claimed AND acknowledged
+  //   - shared_ip AND acknowledged (IPv4-only brokers on the shared
+  //     advisor IP — same ack requirement, different IP source)
   useEffect(() => {
     if (!onAcknowledgeChange) return;
     if (brokerState === 'partner') {
       onAcknowledgeChange(true);
       return;
     }
-    if (brokerState === 'claimed' && !claiming) {
+    if (
+      (brokerState === 'claimed' || brokerState === 'shared_ip') &&
+      !claiming
+    ) {
       onAcknowledgeChange(acknowledged);
       return;
     }
@@ -217,7 +236,7 @@ const EgressIpCallout = ({
   // Parent flipped showUnmetAck — flash the ack checkbox.
   useEffect(() => {
     if (!showUnmetAck) return;
-    if (brokerState !== 'claimed') return;
+    if (brokerState !== 'claimed' && brokerState !== 'shared_ip') return;
     setFlashAck(true);
     Animated.sequence([
       Animated.timing(flashAnim, {
@@ -326,6 +345,97 @@ const EgressIpCallout = ({
     );
   }
 
+  // State: shared_ip — IPv4-only broker using the shared advisor IP.
+  // Same UX + hard ack gate as "claimed", but the language explains it
+  // is a shared static IP (one per advisor), not per-customer. Also
+  // covers legacy "ipv4_provisioning" responses that carry an address.
+  if (
+    brokerState === 'shared_ip' ||
+    (brokerState === 'ipv4_provisioning' && brokerEntry?.address)
+  ) {
+    const sharedIp = brokerEntry?.address || '72.61.251.253';
+    return (
+      <View style={styles.container}>
+        {MigrationBanner}
+        <View style={[styles.card, styles.cardAmber]}>
+          <Text style={styles.titleAmber}>Your dedicated static IP</Text>
+          <Text style={[styles.bodyAmber, {fontSize: 11}]}>
+            IPv4 — shared advisor static IP (SEBI compliant, does not change)
+          </Text>
+
+          <View style={styles.ipBox}>
+            <Text style={styles.ipText} selectable>
+              {sharedIp}
+            </Text>
+            <Text style={styles.ipHint}>(long-press to copy)</Text>
+          </View>
+
+          <Text style={[styles.stepText, {marginTop: 10}]}>
+            Paste it into your {brokerDisplay} IP whitelist
+            {brokerHint ? (
+              <>
+                {' — '}
+                <Text style={styles.italic}>{brokerHint}</Text>
+              </>
+            ) : null}
+            {brokerDevPortal ? (
+              <>
+                {' '}
+                <LinkifiedUrl url={brokerDevPortal} display="(open portal)" />
+              </>
+            ) : null}
+          </Text>
+
+          <Animated.View
+            style={[
+              styles.ackRow,
+              flashAck && {
+                backgroundColor: flashAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['#FEF3C7', '#FEE2E2'],
+                }),
+                borderColor: '#EF4444',
+              },
+            ]}>
+            <TouchableOpacity
+              onPress={() => setAcknowledged(!acknowledged)}
+              style={styles.checkboxRow}
+              activeOpacity={0.7}>
+              <View
+                style={[
+                  styles.checkbox,
+                  acknowledged && [
+                    styles.checkboxChecked,
+                    {backgroundColor: brand, borderColor: brand},
+                  ],
+                  flashAck && !acknowledged && styles.checkboxFlash,
+                ]}>
+                {acknowledged && <Text style={styles.checkboxMark}>✓</Text>}
+              </View>
+              <Text style={styles.ackText}>
+                {flashAck && !acknowledged && (
+                  <Text style={[styles.bold, {color: '#B91C1C'}]}>
+                    ⚠ Please tick this box to confirm you've whitelisted the
+                    IP.{'\n'}
+                  </Text>
+                )}
+                I have added <Text style={styles.ipInline}>{sharedIp}</Text>{' '}
+                to my {brokerDisplay} developer portal whitelist. I understand
+                broker API calls will be rejected until the entry is active on{' '}
+                {brokerDisplay}'s side. This is a shared static IP used across
+                customers of this advisor.
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          {errorMsg && (
+            <Text style={[styles.bodyRed, {marginTop: 6}]}>{errorMsg}</Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   if (brokerState === 'ipv4_provisioning') {
     return (
       <View style={styles.container}>
@@ -375,7 +485,11 @@ const EgressIpCallout = ({
           <TouchableOpacity
             onPress={handleClaim}
             disabled={claiming}
-            style={[styles.primaryButton, claiming && {opacity: 0.6}]}
+            style={[
+              styles.primaryButton,
+              {backgroundColor: brand},
+              claiming && {opacity: 0.6},
+            ]}
             activeOpacity={0.8}>
             {claiming ? (
               <ActivityIndicator size="small" color="#fff" />
@@ -406,9 +520,6 @@ const EgressIpCallout = ({
               : 'IPv4 — unique to your account'}
           </Text>
 
-          <Text style={[styles.stepHeader, {marginTop: 12}]}>
-            Whitelist this IP in your {brokerDisplay} developer portal:
-          </Text>
           <View style={styles.ipBox}>
             <Text style={styles.ipText} selectable>
               {brokerEntry.address}
@@ -416,27 +527,21 @@ const EgressIpCallout = ({
             <Text style={styles.ipHint}>(long-press to copy)</Text>
           </View>
 
-          <View style={{marginTop: 10}}>
-            {brokerDevPortal && (
-              <Text style={styles.stepText}>
-                <Text style={styles.bold}>a.</Text> Open{' '}
-                <LinkifiedUrl
-                  url={brokerDevPortal}
-                  display={brokerDevPortal.replace(/^https?:\/\//, '')}
-                />
-              </Text>
-            )}
-            {brokerHint && (
-              <Text style={styles.stepText}>
-                <Text style={styles.bold}>b.</Text> Navigate to{' '}
+          <Text style={[styles.stepText, {marginTop: 10}]}>
+            Paste it into your {brokerDisplay} IP whitelist
+            {brokerHint ? (
+              <>
+                {' — '}
                 <Text style={styles.italic}>{brokerHint}</Text>
-              </Text>
-            )}
-            <Text style={styles.stepText}>
-              <Text style={styles.bold}>{brokerHint ? 'c.' : 'b.'}</Text> Paste
-              the IP into the whitelist field and save
-            </Text>
-          </View>
+              </>
+            ) : null}
+            {brokerDevPortal ? (
+              <>
+                {' '}
+                <LinkifiedUrl url={brokerDevPortal} display="(open portal)" />
+              </>
+            ) : null}
+          </Text>
 
           <Animated.View
             style={[
@@ -450,7 +555,10 @@ const EgressIpCallout = ({
               <View
                 style={[
                   styles.checkbox,
-                  acknowledged && styles.checkboxChecked,
+                  acknowledged && [
+                    styles.checkboxChecked,
+                    {backgroundColor: brand, borderColor: brand},
+                  ],
                   flashAck && !acknowledged && styles.checkboxFlash,
                 ]}>
                 {acknowledged && <Text style={styles.checkboxMark}>✓</Text>}

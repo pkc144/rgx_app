@@ -367,9 +367,9 @@ The Flutter app's MP-subscribe path (per audit) reaches `/rebalance/process-trad
 
 - `lib/components/home/portfolio/Phase3SdkConnectScreen.dart` — SDK lane shell.
 - `lib/components/home/portfolio/BrokerSelectionPage.dart` — pre-connect picker.
-- SDK package: `../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/broker_form_schema.dart` — per-broker schemas.
-- SDK package: `../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/broker_credential_form.dart` — credential form widget.
-- SDK package: `../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/webview_broker_auth_flow.dart` — OAuth WebView.
+- SDK package: `../../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/broker_form_schema.dart` — per-broker schemas.
+- SDK package: `../../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/broker_credential_form.dart` — credential form widget.
+- SDK package: `../../alphaquark-mobile-sdk/packages/flutter/lib/src/widgets/webview_broker_auth_flow.dart` — OAuth WebView.
 - `main.dart` lines 142-143 — `AqSdkScope` mount + `_AqSdkScopeWrapper` async-email gate.
 
 ### Step trace

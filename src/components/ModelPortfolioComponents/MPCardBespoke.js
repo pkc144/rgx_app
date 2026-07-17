@@ -33,6 +33,7 @@ import moment from 'moment';
 import { useConfig } from '../../context/ConfigContext';
 import { useGstConfig } from '../../context/GstConfigContext';
 import { withGst, gstLabel } from '../../utils/gstHelpers';
+import useTokens from '../../theme/useTokens';
 
 const ACCEPTABLE_DATE_FORMATS = [
   'D MMM YYYY, HH:mm:ss',
@@ -70,11 +71,14 @@ const MPCardBespoke = ({
   const [animation] = useState(new Animated.Value(0)); // Initial height is 0
   const navigation = useNavigation();
 
-  // Get dynamic colors from config
+  // Brand colors flow through useTokens so the active variant supplies the
+  // fallback (default = blue, moneyman_app = green). config.mainColor /
+  // gradient1 / gradient2 still layer through useTokens's legacy branding.
   const config = useConfig();
-  const mainColor = config?.mainColor || '#2053DB';
-  const gradient1 = config?.gradient1 || '#3B82F6';
-  const gradient2 = config?.gradient2 || '#1E3A8A';
+  const tokens = useTokens();
+  const mainColor = tokens.colors.brand.primary;
+  const gradient1 = tokens.colors.brand.gradientStart;
+  const gradient2 = tokens.colors.brand.gradientEnd;
   const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
   const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
