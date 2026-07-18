@@ -35,7 +35,7 @@
 // logo, not a ZamZam-specific asset.
 import SharedDefaultLogo from '../src/assets/AppLogo/logo.png';
 import AlphaQuarkLogo from '../src/assets/logo.png';
-import RGXLogo from '../src/assets/RGXResearchLogo.jpg';
+import RGXLogo from '../src/assets/RGXResearchLogo.png';
 
 // Shared UI config — theme, colors, layout
 const sharedUIConfig = {
