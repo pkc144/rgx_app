@@ -90,23 +90,19 @@ The legacy pre-signed `authUrl` flow (`src/utils/reauthHelpers.js#handleSmartRea
 
 **`SDK_LEGACY_FALLBACK = new Set(['Angel One', 'Zerodha'])`** is kept defensively while the allowlist is empty; it has no practical effect (the broker has to be in the allowlist for the fallback to even matter). Once a broker is promoted, `SDK_LEGACY_FALLBACK` is the immediate kill-switch for that broker without removing it from the allowlist. If the allowlist stays empty long-term, `SDK_LEGACY_FALLBACK` and the entire `useSdkBrokerFlow() && !isReauthFlow && ...` block become dead code and can be deleted.
 
-## `useSharedAngelOneKey` — Angel One dual-mode toggle
+## Angel One — per-customer SmartAPI only (2026-07-18)
 
-Mirror of `prod-alphaquark-github`'s `AppConfigContext.useSharedAngelOneKey` (commit `0f774455`). Resolution order:
+AlphaB2B no longer permits the platform/shared SmartAPI key for customer
+connections. `BrokerConnectModalDispatch` routes Angel One directly to
+`Phase3SdkBrokerModal` even if the SDK master flag is off; that modal always
+collects the customer’s own `apiKey`, `secretKey`, and `clientCode` and always
+shows the Angel One static-IP gate. `AngleoneBookingTrueSheet` is no longer a
+reachable connect route.
 
-1. `configData.config.useSharedAngelOneKey` — per-advisor backend value from `/api/admin/frontend-config`. Authoritative when present (boolean).
-2. `REACT_APP_USE_SHARED_ANGEL_ONE_KEY` env — build-time default. Falsy values: `'false' | '0' | 'no'`.
-3. `true` — platform default. Matches the web AppConfigContext default-safe direction.
-
-Modes:
-
-- **Shared (true)** — every customer's Angel One OAuth uses ONE platform-shared SmartAPI app via env `REACT_APP_ANGEL_ONE_API_KEY`. Validated through ccxt-india's `/angelone/login-url`. Legacy `AngleoneBookingTrueSheet` handles this.
-- **Per-customer (false)** — each customer ships their own SmartAPI `apiKey + secretKey + clientCode` via the SDK widget → `/sdk/v1/connections/Angel%20One/update-credentials` → `/api/angel-one/update-key` (per `prod-alphaquark-github` 0202f27c). The new `Phase3SdkBrokerModal` would handle this end-to-end IF the SDK widget could chain `/update-credentials` → fetch personal `loginUrl` → open WebView. It currently can't — see `PHASE3_BROKER_AUDIT.md § Angel One`.
-
-Today both modes route to legacy via `SDK_LEGACY_FALLBACK`. The eventual SDK design must:
-
-- Shared mode: add a shared-key path on `/sdk/v1/connections/Angel%20One/login-url` that resolves the advisor's `all_advisor_details.angel_one_api_key`; complete `/exchange-token` Angel One callback handler that calls ccxt `/angelone/generate-session` and mints the long-lived JWT.
-- Per-customer mode: extend the SDK widget API to support a `flow=credentials-then-oauth` shape — collect creds → POST update-credentials → capture the returned `loginUrl` → open WebView at it → exchange.
+`useSharedAngelOneKey`, `REACT_APP_USE_SHARED_ANGEL_ONE_KEY`, and
+`REACT_APP_ANGEL_ONE_API_KEY` may remain in cached/backend configuration for
+legacy data and other clients, but they must not select a mobile connection
+path. Do not reintroduce shared-mode instructions or a one-tap publisher login.
 
 ## `Phase3SdkBrokerModal` — component contract
 
@@ -325,3 +321,50 @@ Triggered by `ManageConnectionsModal`'s smart-reauth handler when an existing br
 - Phase 1/2 background: `docs/SDK_MOBILE_FIT_ASSESSMENT.md`
 - Per-broker audit: `docs/PHASE3_BROKER_AUDIT.md`
 - Work log: `docs/PHASE3_PROGRESS.md`
+
+---
+
+## 2026-07-18 — Phase3SdkBrokerModal contract updates: guide card + v3 touch layout
+
+1. **Guidance parity in the host**: the form phase now renders
+   `<BrokerGuideCard>` (from `brokerGuideConfigs.js` — the shared web-parity
+   setup-guide content: numbered steps, portal deep-link, walkthrough video,
+   copyable redirect URL) ABOVE the EgressIpCallout, for brokers with a guide
+   config (Upstox/HDFC/ICICI/Kotak/Groww/Fyers/Arihant/DefinEdge).
+   `Phase3BrokerHelp` remains the fallback for brokers without one. This is
+   why Kotak/Groww/Fyers/Upstox/HDFC/ICICI did NOT move to
+   `SDK_LEGACY_FALLBACK` — per the "fix the SDK widget/host, not the
+   allowlist" rule, the polish shipped in the host instead. Broker brand
+   colors paint only the monogram; action accents come from the advisor/app
+   theme (`useConfig()`).
+2. **v3 sibling-Pressable touch layout everywhere**: the form phase and the
+   missing-schema branch were still on the v2 layout (panel View claiming the
+   JS responder + refusing termination), which fought the inner ScrollView's
+   pan responder — user-visible as erratic/sticky credential-form scrolling
+   (2026-07-18 Kotak report). Both now use the same v3 layout the OAuth phase
+   already had: scrim View `pointerEvents="box-none"` + absoluteFill Pressable
+   sibling BEHIND a handler-free panel View.
+3. Full container/UX rules (RN `<Modal>` ban, CrossPlatformOverlay, stepper
+   sheet, egress registration): `docs/BROKER_CONNECTION.md` § 2026-07-18.
+
+### 2026-07-18 addendum — display-name guides, in-app walkthrough, and SDK skin
+
+- `getBrokerGuideConfig()` accepts both dispatcher keys and SDK display names:
+  `ICICI Direct → ICICI`, `Hdfc/HDFC Securities → HDFC`, plus the existing
+  Motilal/DefinEdge aliases. This is required because the SDK exposes display
+  names; without it ICICI/HDFC render the older `Phase3BrokerHelp` branch.
+- `BrokerGuideCard` and `BrokerConnectStepperSheet` pass the selected video id
+  to `BrokerWalkthroughPlayer`, an in-app overlay with explicit Back/Close.
+  A walkthrough tap must play inside the app and preserve the connection state;
+  portal and hosted-payment links remain external by design.
+- `SdkProviderRoot` supplies the active advisor colour theme to
+  `AqSdkProvider`. This is a host skin only: SDK schemas, validation, encryption
+  and submit contracts remain owned by `alphaquark-mobile-sdk`.
+- Guide copy that asks for an app name must interpolate `whiteLabelText`; never
+  hard-code the AlphaQuark brand in a white-label broker instruction.
+- Zerodha's empty-field OAuth form has a host-level session notice: ask the
+  customer to select **Login to Kite web** on the next screen. That preserves
+  the Kite web session for the broker's normal next-few-hours session window;
+  it is instructional only and does not claim to change Kite's expiry policy.
+- IIFL remains intentionally unavailable pending a re-certified broker flow;
+  it is not an SDK fallback or IPv4/IPv6 registration candidate.

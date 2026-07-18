@@ -412,3 +412,42 @@ Same rule as Phase 3: this doc is the design source of truth, the audit is the p
 - Promoting or freezing a screen group (e.g. lifting the MP freeze)
 
 Cosmetic-only changes (token defaults, internal primitive layout) need an audit row update + progress log entry, not necessarily an architecture-doc change.
+
+---
+
+## 2026-07-18 — Current presentation boundary notes
+
+The Portfolio and MP investment presentations remain in `designs/default/`; the
+containers retain navigation, payment, subscription and data behaviour. The
+current fixes are presentation-level: Portfolio renders the Trade P&L control
+with the scrollable Model Portfolio list rather than above it, and the MP modal
+reserves a non-overlapping header area for its close control. No payment or
+Digio implementation moved into `designs/`.
+
+The broker SDK remains a `src/` host/SDK-bound surface. Its advisor-theme skin
+and in-app walkthrough shell are host chrome, not a replacement for SDK form
+rendering or security logic.
+
+PortfolioSummaryCard is likewise presentation-only. Its portfolio-state label,
+fund-row typography, and explanatory copy must use the Portfolio screen's
+Poppins hierarchy; an expired subscription status is subordinate metadata, never
+an inline suffix that competes with or wraps a fund name.
+
+`MPPerformanceScreen` remains a container/presentation split. Its navigational
+bar stays fixed for safe back navigation, while the portfolio summary belongs
+inside the Overview scroll surface. The summary may link to the consent-gated
+historical-performance section, but it must not promote CAGR as a standalone
+headline return; risk wording identifies volatility as manager-selected.
+
+The subscribed detail (`AfterSubscriptionScreen`) follows the same customer
+mental model: current holdings, manager target mix, then strategy/performance.
+Its action bar is a safe-area-aware control region, not content that can be
+clipped by a device's gesture area.
+
+### Customer terminology — Manager (2026-07-18)
+
+All customer-visible labels, helper copy, alerts and empty states use
+**manager** (including “financial manager” where that is clearer), not
+“advisor”. This is a presentation rule only: API headers, routes, config keys,
+database fields and variable names such as `X-Advisor-Subdomain`, `advisor`,
+and `advisorName` remain unchanged for compatibility.

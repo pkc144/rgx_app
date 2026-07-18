@@ -1034,3 +1034,192 @@ Every broker's `directLink` is a URL on **the broker's domain** and rots wheneve
 5. No code changes to `BrokerDdpiHelpModal.js` should be needed — the config drives everything.
 6. Verify the `directLink` URL using curl with a realistic Chrome UA (`Mozilla/5.0 ... Chrome/120 ...`) — not all broker portals respond to the bare curl UA. If the page 200s with Chrome UA, it'll render in the in-app WebView.
 
+
+---
+
+## 🔴 Broker-connect modal container + guidance UX architecture (2026-07-18)
+
+**This section is BLOCKING-tracked from CLAUDE.md § "Broker-connect modal
+container + guidance UX". Any change to the files named here MUST update this
+section in the same commit.** It exists because on 2026-07-18 we lost most of a
+day to a freeze class that was ALREADY solved elsewhere in the codebase but
+undocumented — do not let that knowledge rot again.
+
+### 1. The RN `<Modal>` ban (the freeze failure mode)
+
+React Native's `<Modal>` **hard-freezes this app on Android** (New
+Architecture / Bridgeless): the modal window paints as a **tiny white box in
+the top-left corner** and the UI thread wedges (logcat shows JS silence + an
+`EGL_emulation` frame of 40,000ms+; no redbox, no exception). ArihantConnectModal
+and DefinEdgeConnectModal shipped 2026-06-09 built on RN `<Modal>` and froze on
+every open until converted (2026-07-18).
+
+**Rule: broker-connect surfaces NEVER use React Native's `<Modal>`.**
+The sanctioned container is **`src/components/CrossPlatformOverlay.js`**:
+- iOS → `FullWindowOverlay` (react-native-screens)
+- Android → plain `absoluteFillObject` View (zIndex/elevation 9999) + a
+  BackHandler that closes the overlay on hardware back.
+Every working broker connect UI renders through it. If a broker surface shows
+the tiny-white-box freeze, grep it for `<Modal` first.
+
+### 2. Two lanes + dispatch
+
+`src/components/BrokerConnectionModal/BrokerConnectModalDispatch.js` is the
+single routing point (rendered by GlobalUIModals/ModalManager AND every
+inline call-site):
+- `REACT_APP_USE_SDK_BROKER_FLOW=true` (current prod) → ALL brokers go to
+  **`Phase3SdkBrokerModal`** (SDK lane), EXCEPT `SDK_LEGACY_FALLBACK` members.
+- Flag off → legacy per-broker modals.
+- `SDK_LEGACY_FALLBACK` = `{}` (empty, 2026-07-18). **Keep this Set tiny;
+  the rule is "fix the SDK widget/host — not the allowlist."** The six
+  stepper brokers (Kotak/Groww/Fyers/Upstox/HDFC/ICICI) briefly sat here on
+  2026-07-18 and were removed the same day once the SDK host reached parity;
+  Arihant + DefinEdge came off later the same day once their
+  `credentials_otp_two_step` SDK stack was verified end-to-end (schemas +
+  form step-machine + client methods in the compiled lib, backend
+  /sdk/v1/connections routes live on tidi) and the host gained their guide
+  configs + egress map entries. Their stepper-ized legacy modals remain the
+  documented rollback if device verification fails.
+- `normalizeBrokerKey` maps display keys → canonical keys ('Hdfc Securities'
+  → 'HDFC' etc.). ANY broker added to the tile list
+  (`src/config/brokerDisplayConfig.js`) MUST either have a
+  `BROKER_FORM_SCHEMAS` entry in the SDK repo or be in `SDK_LEGACY_FALLBACK`
+  — otherwise the SDK lane crashes on an undefined schema (guarded, but the
+  guard shows a "Not available yet" box, not a working flow).
+
+### 3. Touch architecture — v3 sibling-Pressable (the erratic-scroll fix)
+
+The SDK modal's panel layout went through three iterations (full history in
+Phase3SdkBrokerModal.js comments):
+- v1: Pressable scrim wrapping Pressable panel → ate WebView/TextInput taps.
+- v2: Pressable scrim wrapping View panel with `onStartShouldSetResponder=
+  ()=>true` + `onResponderTerminationRequest=()=>false` → the panel's JS
+  responder claim FOUGHT the inner ScrollView's pan responder → **erratic /
+  sticky scrolling** on credential forms (2026-07-18 Kotak report).
+- **v3 (the rule)**: scrim View with `pointerEvents="box-none"` + an
+  `absoluteFill` Pressable rendered as a SIBLING BEHIND the panel View, which
+  itself has NO touch handlers. Dim-area taps dismiss; panel content
+  (ScrollView / WebView / inputs) gets untouched native gesture handling.
+All three phases of Phase3SdkBrokerModal (form, OAuth WebView, missing-schema)
+now use v3. New overlay panels MUST use v3.
+
+### 4. Guidance UX — web parity (`brokerGuideConfigs.js`)
+
+`src/components/BrokerConnectionModal/brokerGuideConfigs.js` is the **single
+source of truth** for per-broker setup guidance, mirroring prod web's
+`BrokerConnectStepper` content (web: `connectBroker.js` Upstox/HDFC/ICICI block
++ per-broker `*Connection.js`). Exports:
+- `getBrokerGuideConfig(brokerName, {whiteLabelText, brokerConnectRedirectURL,
+  iciciRedirectUrl})` → `{monogram, brandFrom, brandTo, portalUrl, portalLabel,
+  walkthroughVideoId, guideSteps[], note?, redirectUrl?}` (keys = normalized
+  broker names). Currently: Upstox, HDFC, ICICI, Kotak, Groww, Fyers,
+  Motilal Oswal, Angel One (per-customer SmartAPI), Arihant Capital,
+  DefinEdge Securities — i.e. EVERY static-IP/whitelist broker. opts also
+  carries `ccxtBaseUrl` (Motilal's fixed ccxt callback redirect).
+- `<BrokerGuideCard config accent brokerName>` — the polished card (numbered
+  steps with `<b>` bold parsing, tap-to-copy Redirect URL row, portal
+  deep-link button, YouTube walkthrough link).
+
+Consumers:
+- **SDK lane**: Phase3SdkBrokerModal renders `<BrokerGuideCard>` above its
+  EgressIpCallout + BrokerCredentialForm; `Phase3BrokerHelp` remains the
+  fallback for brokers without a guide config.
+- **Legacy lane**: `BrokerConnectStepperSheet` (below) — its call-sites carry
+  the same content inline today (dedup onto getBrokerGuideConfig = known
+  cleanup).
+
+**Branding rule (mirrors web)**: the broker's brand colors paint ONLY the
+monogram badge. Every action element (step numbers, portal CTA, links,
+submit, chips) uses the ADVISOR/app accent (`useConfig()` mainColor/gradient2/
+buttonColor) so white-label tenants keep their branding.
+
+**One-time setup reassurance:** every API-key guide renders a top notice that
+creating the broker app/API credentials is normally a one-time setup. Once the
+connection is saved, later reconnects normally use the customer’s broker login
+(User ID, password and any required OTP) rather than asking them to create a
+new app. Wording must be reassuring but non-absolute because broker session
+rules vary. Where customer-owned credentials are required (Angel One), say they
+can enter them securely in the app; do not tell customers to withhold the keys.
+
+### 5. `BrokerConnectStepperSheet` (legacy-lane surface)
+
+`src/components/BrokerConnectionModal/BrokerConnectStepperSheet.js` — RN port
+of web's BrokerConnectStepper, rendered through CrossPlatformOverlay. Hosts:
+gradient monogram header, Credentials→OTP step chips, guide card,
+EgressIpCallout, fields (password show/hide, multiline, keyboardType,
+maxLength, per-field error), OTP phase (resend cooldown, expiry hint),
+copyable redirect row. Egress gate: pass `egressReady/setEgressReady/
+unmetAck/setUnmetAck` from the container when its submit handler already
+guards on them (Kotak/Groww/Fyers/Upstox/HDFC/ICICI pattern); omit them and
+the sheet self-manages (Arihant/DefinEdge pattern). Submit with an unmet ack
+flashes the callout checkbox — never a silent dead tap.
+
+Stepper-ized legacy containers (logic untouched, render swapped):
+ArihantConnectModal, DefinEdgeConnectModal, KotakModal (keeps its 5-field Neo
+login incl. MPIN+TOTP — web has only 3 fields; do NOT drop fields to match
+web), GrowwConnectModal, FyersConnect + upstoxModal + HDFCconnectModal +
+icicimodal (these four keep their OAuth WebView phase: `showWebView` renders
+the original *ConnectUI branch untouched; Fyers naming swap — "App ID" lives
+in `secretKey` state, OAuth secret in `apiKey` state).
+
+### 6. EgressIpCallout registration (the IPv4/static-IP flow)
+
+`src/components/BrokerConnectionModal/EgressIpCallout.js` — a broker shows the
+static-IP/whitelist flow ONLY if its lowercase backend broker_key is in
+`WHITELIST_BROKERS` AND has entries in `BROKER_DISPLAY_NAMES`,
+`BROKER_DEV_PORTAL_URLS`, `BROKER_WHITELIST_HINT`. 2026-07-18 added `arihant`
++ `definedge` (they were missing → no IP UI at all despite being IPv4-only
+brokers). **Adding any new whitelist/IPv4 broker requires all four entries**,
+kept in sync with web's EgressIpCallout sets. Ack contract:
+`onAcknowledgeChange(true)` for partner brokers, `claimed|shared_ip` +
+checkbox otherwise, false while loading/claiming.
+
+### 7. New-broker checklist (do ALL of these)
+
+1. Tile: `brokerDisplayConfig.js` (display-name key) + `normalizeBrokerKey`
+   mapping if the key needs aliasing.
+2. SDK schema in `alphaquark-mobile-sdk` `BROKER_FORM_SCHEMAS` **or** a legacy
+   modal + `SDK_LEGACY_FALLBACK` entry (documented, with removal criterion).
+3. Legacy modal (if any) renders via `BrokerConnectStepperSheet` or
+   CrossPlatformOverlay — NEVER RN `<Modal>`.
+4. Guide config in `brokerGuideConfigs.js` (web-parity steps).
+5. If IP-whitelist/IPv4: all four EgressIpCallout map entries (+ backend
+   egress registry, see ccxt-india docs).
+6. Update THIS section + CLAUDE.md matrix in the same commit.
+
+| Date | Change |
+|------|--------|
+| 2026-07-18 | Initial section: RN-Modal ban + CrossPlatformOverlay rule, v3 touch fix (erratic scroll), brokerGuideConfigs + BrokerGuideCard in SDK lane, BrokerConnectStepperSheet + 8 stepper-ized legacy modals, EgressIpCallout arihant/definedge registration, new-broker checklist. |
+| 2026-07-18 | Current-state correction: guide lookup now normalises the SDK display names `ICICI Direct` and `Hdfc/HDFC Securities` to the ICICI/HDFC guide configs, preventing a fall-through to legacy inline help. Explicit **Watch walkthrough** actions use `BrokerWalkthroughPlayer` inside the app; no broker-guide action may hand a user to YouTube. `EgressIpCallout` now exposes a one-tap Copy IP action and clear mandate states (required, pending, confirmed, failed). IIFL is removed from the IPv4 registration and disabled from the broker picker/connection flow until its integration is re-certified. |
+
+### 8. Dedicated static-IP mandate and hosted checkout (2026-07-18)
+
+Some broker APIs accept requests only from an address the customer has added to
+their allowed-IP list. `EgressIpCallout` makes that requirement explicit before
+the connection form is enabled. It covers the registered whitelist brokers
+(`upstox`, `angelone`, `fyers`, `motilaloswal`, `kotak`, `hdfcsec`,
+`icicidirect`, `groww`, `arihant`, `definedge`); the family shown is taken from
+the backend registry and must never be guessed by the app.
+
+For a customer-pays dedicated IPv4 allocation, the recurring ₹99 service
+mandate is deliberately opened in the external browser by default. The hosted
+AlphaQuark page avoids embedding Cashfree in a white-label app whose package or
+domain is not approved in Cashfree. On return to the app, it polls
+`/api/egress-ipv4/verify`; the backend/Cashfree result is the only authority
+that can grant the address. The app must show a visible pending/confirmed/failed
+status and retain a manual **I've paid — verify** recovery action. It must not
+grant an IP from a WebView/deep-link result.
+
+The supporting backend work was deployed from `aq_backend_github` in commits
+`db6721d`, `bcd1213`, and `8a0ac66`: opaque hosted-checkout token, hosted
+checkout/return routes, advisor-header exception only for those public routes,
+and verification status. Cashfree must permit the hosted AlphaQuark domain
+before this can be customer-live. Native Cashfree checkout is an explicit opt-in
+only for a package approved by Cashfree.
+
+### Angel One credential ownership (2026-07-18)
+
+AlphaB2B does not offer a shared/platform Angel One SmartAPI connection. Every
+new connection requires the customer’s own SmartAPI API key, secret and client
+code, plus their broker-required static-IP setup. Do not display or revive the
+legacy one-tap shared-key/publisher-login path.

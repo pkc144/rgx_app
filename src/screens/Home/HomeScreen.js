@@ -1398,12 +1398,17 @@ const HomeScreen = ({ }) => {
   const [hasMPData, setHasMPData] = useState(false);
   const [hasBespokeData, setHasBespokeData] = useState(false);
 
-  // Whether user has active recommendations or rebalances.
-  // planList is truthy only when the user has an active subscription (set by
-  // api/sendnotification). Unsubscribed users who received a demo reco must
-  // still see the Plans section — so we gate on planList here to prevent a
-  // blurred demo card from hiding the Plans discovery section.
-  const hasActiveContent = !!planList && (filteredAndSortedStrategies.length > 0 || stockRecoNotExecutedfinal?.length > 0);
+  // Entitlements come from their product-specific source, never from one
+  // broad "has any plan" boolean. The MP endpoint is server-filtered to paid,
+  // active, unexpired model subscriptions; planList remains the legacy gate
+  // for bespoke recommendations only. This prevents an unrelated/stale
+  // ClientList subscription from turning a browseable model into a rebalance
+  // card on Home.
+  const hasActiveModelPortfolio = filteredAndSortedStrategies.length > 0;
+  const hasActiveBespokeRecommendations =
+    !!planList && (stockRecoNotExecutedfinal?.length || 0) > 0;
+  const hasActiveContent =
+    hasActiveModelPortfolio || hasActiveBespokeRecommendations;
 
   // Data for All Tab
   // If user has active subscriptions (recos/rebalances), show those first, plans after.

@@ -21,7 +21,7 @@ const StepGuideModal = ({ showStepGuideModal, setShowStepGuideModal }) => {
     { number: '02', image: step2, title: 'Decide and Place Orders', description: 'Choose which advices to accept and execute the buy orders.' },
     { number: '03', image: step3, title: 'Hold Stocks', description: 'Keep the purchased stocks in your portfolio.' },
     { number: '04', image: step4, title: 'Monitor for Sell Advice', description: 'Wait for the sell advices from your manager.' },
-    { number: '05', image: step5, title: 'Book Profit/Loss', description: 'Sell stocks based on the advisor\'s recommendations and current market conditions.' },
+    { number: '05', image: step5, title: 'Book Profit/Loss', description: 'Sell stocks based on your manager\'s recommendations and current market conditions.' },
   ];
 
   return (

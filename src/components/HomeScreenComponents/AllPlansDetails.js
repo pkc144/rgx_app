@@ -154,7 +154,7 @@ const AllPlanDetails = ({ type }) => {
   const mapPlanToCard = (plan) => ({
     id: plan._id,
     title: plan.name || "Plan Title",
-    author: plan.advisor || "Advisor Name",
+    author: plan.advisor || "Manager Name",
     invested: plan.subscription?.amount || "-",
     returns: '—',
     returnsPercentage: '—',
@@ -335,7 +335,7 @@ const renderPlanItem = ({ item }) => {
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               {/* Advisor */}
               <View style={styles.infoCard}>
-                <Text style={styles.infoLabel}>Advisor</Text>
+                <Text style={styles.infoLabel}>Manager</Text>
                 <Text style={styles.infoValue}>{selectedPlan?.advisor}</Text>
               </View>
 

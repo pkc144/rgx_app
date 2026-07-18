@@ -20,7 +20,7 @@ import PortfolioPositionText from '../../components/AdviceScreenComponents/Dynam
 import HoldingDynamicText from '../../components/AdviceScreenComponents/DynamicText/HoldingDynamicText';
 import {useConfig} from '../../context/ConfigContext';
 import useTokens from '../../theme/useTokens';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
 import {fetchFunds} from '../../FunctionCall/fetchFunds';
 import portfolioEvents, {PORTFOLIO_EVENTS} from '../../utils/portfolioEvents';
@@ -470,6 +470,10 @@ const PortfolioScreen = () => {
   // Client-side MP P&L aggregation (matching web app behavior)
   const [mpHoldings, setMpHoldings] = useState([]);
   const [mpHoldingsLoaded, setMpHoldingsLoaded] = useState(false);
+  // "As of" timestamp for the last holdings fetch — drives the
+  // refresh-on-focus staleness check below (web parity: ModalPFList
+  // holdingsAsOf + focus/visibilitychange refetch, C4-1).
+  const holdingsAsOfRef = useRef(0);
 
   const {getLTPForSymbol} = useWebSocketCurrentPrice(
     mpHoldings.map(h => ({symbol: h.symbol, exchange: h.exchange || 'NSE'})),
@@ -520,10 +524,30 @@ const PortfolioScreen = () => {
       }
       setMpHoldings(allHoldings);
       setMpHoldingsLoaded(true);
+      holdingsAsOfRef.current = Date.now();
     } catch (err) {
       console.log('MP holdings aggregation error:', err.message);
     }
   };
+
+  // Refresh holdings on screen focus when the snapshot is stale (>60s) —
+  // RN analog of web's focus/visibilitychange staleness refetch. Prevents
+  // showing an old holdings snapshot when the user returns to this tab
+  // after executing a rebalance / trade elsewhere (web parity C4-1).
+  useFocusEffect(
+    React.useCallback(() => {
+      if (
+        userEmail &&
+        configData &&
+        modelPortfolioStrategy?.length > 0 &&
+        holdingsAsOfRef.current &&
+        Date.now() - holdingsAsOfRef.current > 60000
+      ) {
+        fetchAllMPHoldings();
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [userEmail, configData, modelPortfolioStrategy]),
+  );
 
   useEffect(() => {
     if (userEmail && configData && modelPortfolioStrategy?.length > 0) {
@@ -1413,8 +1437,6 @@ const PortfolioScreen = () => {
 
   const renderModalPFCard = ({item, index}) => (
     <ModelPFCard
-      price={160000}
-      percentage={20}
       userEmail={userEmail}
       strategy={processedData}
       specificPlan={item.latest}

@@ -7,6 +7,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 const KotakHelpContent = ({ expanded, onExpandChange }) => {
   const brokerConnectRedirectURL = Config.REACT_APP_BROKER_CONNECT_REDIRECT_URL;
+  const appName = Config.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark';
   useEffect(() => {
     onExpandChange?.(expanded);
   }, [expanded]);
@@ -89,7 +90,7 @@ const KotakHelpContent = ({ expanded, onExpandChange }) => {
           </Text>
 
           <Text style={styles.instruction1}>
-            (ii) Create an Application: Navigate to the "Applications" section, click on "Add New Application," and fill required details (use any app name, e.g., {Config?.REACT_APP_WHITE_LABEL_TEXT || 'AlphaQuark'}). Select Unlimited in Shared Quota, leave description & group empty, then save.
+            (ii) Create an Application: Navigate to the "Applications" section, click on "Add New Application," and fill required details (use any app name, e.g., {appName}). Select Unlimited in Shared Quota, leave description & group empty, then save.
           </Text>
 
           <Text style={styles.instruction1}>

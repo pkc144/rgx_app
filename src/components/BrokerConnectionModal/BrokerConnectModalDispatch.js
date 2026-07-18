@@ -75,7 +75,6 @@
 
 import React, {useState} from 'react';
 import Config from 'react-native-config';
-import {useConfig} from '../../context/ConfigContext';
 
 // Legacy per-broker modals
 import IIFLModal from '../iiflmodal';
@@ -150,10 +149,56 @@ import AngelOneCautionaryWarning from './AngelOneCautionaryWarning';
 //   Phase3SdkBrokerModal.js the same day, which prevents this crash class
 //   even if a future broker is forgotten here.
 //
+//   UPDATE (same day, 2026-07-17, later commit): the underlying gap is
+//   now closed on the SDK side — `alphaquark-mobile-sdk` `develop` gained
+//   a `BrokerFlowKind: "credentials_otp_two_step"` + `BROKER_FORM_SCHEMAS`
+//   entries for both brokers (derived verbatim from these same legacy
+//   modals + their paired `aq_backend_github` routes), plus the backend
+//   picked up `POST /:broker/initiate-login` + `POST /:broker/resend-otp`
+//   + a `PUT /:broker/connect` dispatch entry for both brokers
+//   (`Routes/sdk/v1/connections.js`, `Ibt-branch`). `npm run build` (tsc)
+//   + the full jest suite pass, and a Metro release-bundle build of THIS
+//   app confirms the rebuilt `lib/` integrates cleanly (both schemas and
+//   `initiateBrokerLogin` are present in the compiled bundle). What's
+//   NOT done: a real-device test of either flow against a live Arihant /
+//   DefinEdge account. Per the "fix the SDK widget — not the allowlist"
+//   rule above, these two entries stay in this Set UNTIL that device
+//   verification passes — flipping to the SDK lane at that point is a
+//   one-line removal of `'Arihant Capital', 'DefinEdge Securities'` from
+//   this Set, nothing else. Do not remove them speculatively.
+//
 // Otherwise the Set is intentionally kept small — keep it so future
 // near-term gaps have a documented home rather than scattering fallback
 // decisions across files.
-const SDK_LEGACY_FALLBACK = new Set(['Arihant Capital', 'DefinEdge Securities']);
+// 2026-07-18: the SDK lane reached guidance parity IN THE HOST — the six
+// stepper brokers (Kotak/Groww/Fyers/Upstox/HDFC/ICICI) briefly sat in this
+// Set, but per the "fix the SDK widget — not the allowlist" rule above, the
+// polish now lives in Phase3SdkBrokerModal itself: it renders the shared
+// <BrokerGuideCard> (web-parity setup guide from brokerGuideConfigs.js —
+// numbered steps, portal deep-link, walkthrough video, copyable redirect
+// URL) above its existing EgressIpCallout, and the form phase adopted the
+// v3 sibling-Pressable touch layout (fixes the erratic credential-form
+// scrolling). So those six stay on the SDK lane.
+//
+// 2026-07-18 (later): Arihant Capital + DefinEdge Securities REMOVED — the
+// full SDK stack for their `credentials_otp_two_step` flow is verified
+// present end-to-end (compiled lib BROKER_FORM_SCHEMAS + BrokerCredentialForm
+// creds→otp step machine + AqSdkClient.initiateBrokerLogin/resendOtp +
+// backend /sdk/v1/connections routes live on tidi), and the host now carries
+// their guide configs + EGRESS_BROKER_KEY/IP_WHITELIST_BROKERS entries.
+// Device verification in progress; if either flow breaks on-device, re-add
+// that broker here with a PHASE3_PROGRESS.md entry (its stepper-ized legacy
+// modal remains fully functional as the rollback).
+// IIFL is deliberately kept on its native OAuth route. The current SDK
+// schema models IIFL as a credentials/TOTP form, while the live IIFL
+// integration starts at markets.iiflcapital.com and returns auth_token +
+// clientid to /iifl/login/client. Sending customers to the SDK form made
+// IIFL the odd broker out and, more importantly, did not complete the live
+// broker handshake. IIFLModal now owns the same branded guide + static-IP
+// gate as the SDK route, so this is a correctness fallback, not a UI
+// regression. Remove this entry only together with an SDK OAuth schema and
+// matching backend exchange-token route.
+const SDK_LEGACY_FALLBACK = new Set(['IIFL']);
 
 const useSdkBrokerFlow = () => {
   const v = String(Config?.REACT_APP_USE_SDK_BROKER_FLOW || '')
@@ -193,21 +238,12 @@ const BrokerConnectModalDispatch = ({
   reauthConfig,
   ...rest
 }) => {
-  // Hook must run unconditionally (before the isVisible early-return).
-  const runtimeConfig = useConfig();
   if (!isVisible) return null;
 
   const key = normalizeBrokerKey(brokerName);
-  // Per-customer Angel One (advisor `useSharedAngelOneKey === false`)
-  // MUST use the SDK modal — that's the only path with the
-  // apiKey/secretKey/clientCode form + per-customer egress-IP whitelist.
-  // The legacy AngleOneBookingTrueSheet is the SHARED-key publisher-login
-  // WebView and has no per-customer story. This override is additive:
-  // shared-key Angel One (the default) is completely untouched, so no
-  // existing advisor's connect flow changes. See
-  // prod-alphaquark-github/docs/IPV4_EGRESS_BILLING_DESIGN.md.
-  const angelOnePerCustomer =
-    key === 'Angel One' && runtimeConfig?.useSharedAngelOneKey === false;
+  // Angel One is per-customer only. Its legacy sheet signs every customer into
+  // a platform-shared SmartAPI app, so it must never be dispatched again.
+  const angelOnePerCustomer = key === 'Angel One';
   const commonProps = {
     isVisible: true,
     onClose,

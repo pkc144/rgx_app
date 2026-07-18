@@ -153,6 +153,11 @@ export const TradeProvider = ({children}) => {
   const [modelPortfolioStrategyfinal, setModelPortfolioStrategyfinal] =
     useState([]);
   const [isDatafetchinMP, setIsDatafetchingMP] = useState(false);
+  // This is the single client-side readiness flag for the server-filtered
+  // active-model entitlement query. Consumers must not infer entitlement from
+  // historical holdings or catalog metadata while it is unresolved.
+  const [modelPortfolioEntitlementsLoaded, setModelPortfolioEntitlementsLoaded] =
+    useState(false);
 
   // Repair-trades state — auto-fetched after MP strategies load.
   // Each entry: { modelName, uniqueId, userBroker, failedTrades[], message, modelId }
@@ -404,6 +409,7 @@ export const TradeProvider = ({children}) => {
     try {
       setIsDatafetchingMP(true);
       if (userEmail && configData) {
+        setModelPortfolioEntitlementsLoaded(false);
         console.log(
           '📊 TradeContext: Getting model portfolio with config:',
           configData?.config?.REACT_APP_HEADER_NAME,
@@ -421,7 +427,8 @@ export const TradeProvider = ({children}) => {
           },
         });
 
-        setModelPortfolioStrategyfinal(response?.data?.subscribedPortfolios);
+        setModelPortfolioStrategyfinal(response?.data?.subscribedPortfolios || []);
+        setModelPortfolioEntitlementsLoaded(true);
 
         // Best-effort: fetch repair-trades alongside strategies so the
         // RebalanceCard can flag any partial executions. Failures here MUST
@@ -437,6 +444,9 @@ export const TradeProvider = ({children}) => {
       }
     } catch (error) {
       setModelPortfolioStrategyfinal([]);
+      // The request completed, but no stale catalog/holdings result is allowed
+      // to override this source of truth.
+      setModelPortfolioEntitlementsLoaded(true);
       if (error.response) {
         console.error(
           'TradeContext: Model Portfolio API Error:',
@@ -1621,6 +1631,7 @@ const getAllTrades = async () => {
         videos,
         fetchVideos,
         modelPortfolioStrategyfinal,
+        modelPortfolioEntitlementsLoaded,
         stockRecoNotExecutedfinal,
         recommendationStockfinal,
         isDatafetching,

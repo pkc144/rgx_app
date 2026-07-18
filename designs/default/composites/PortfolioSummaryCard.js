@@ -38,9 +38,11 @@ import {
 import { LineChart } from 'react-native-chart-kit';
 import { ChevronDown, ChevronRight } from 'lucide-react-native';
 import { getAuth } from '@react-native-firebase/auth';
+import { useNavigation } from '@react-navigation/native';
 import { useConfig } from '../../../src/context/ConfigContext';
 import useTokens from '../../../src/theme/useTokens';
 import PortfolioSummaryService from '../../../src/FunctionCall/services/PortfolioSummaryService';
+import { useTrade } from '../../../src/screens/TradeContext';
 
 // ── formatters (mirror web's `inr` / `pct`) ────────────────────────────────
 const inr = v => {
@@ -55,6 +57,8 @@ const inr = v => {
 };
 const pct = n =>
   typeof n === 'number' && !isNaN(n) ? `${n >= 0 ? '+' : ''}${n.toFixed(2)}%` : '—';
+const entitlementKey = value =>
+  String(value || '').toLowerCase().replace(/_/g, ' ').trim();
 
 /**
  * Self-contained error boundary — this embedded widget must NEVER crash the
@@ -78,10 +82,15 @@ class SummaryErrorBoundary extends React.Component {
 }
 
 function PortfolioSummaryInner() {
+  const navigation = useNavigation();
   const config = useConfig();
   const tokens = useTokens();
   const enabled = !!(config && config.performanceSummaryEnabled);
   const email = getAuth().currentUser?.email || null;
+  const {
+    modelPortfolioStrategyfinal,
+    modelPortfolioEntitlementsLoaded,
+  } = useTrade();
 
   const c = tokens.colors;
   // Red-for-losses-only tone helper.
@@ -124,6 +133,19 @@ function PortfolioSummaryInner() {
   // ── derive: fund-wise summary ────────────────────────────────────────────
   const portfolios = summary?.portfolios || [];
   const hasSummary = portfolios.length > 0;
+  const activeModelNames = useMemo(
+    () =>
+      new Set(
+        (modelPortfolioStrategyfinal || []).map(portfolio =>
+          entitlementKey(portfolio?.model_name),
+        ),
+      ),
+    [modelPortfolioStrategyfinal],
+  );
+  const isSubscriptionActive = portfolio =>
+    modelPortfolioEntitlementsLoaded
+      ? activeModelNames.has(entitlementKey(portfolio?.modelName))
+      : undefined;
 
   // ── derive: value history (aggregate vs single model) ────────────────────
   const byModel = history?.by_model || [];
@@ -216,15 +238,43 @@ function PortfolioSummaryInner() {
             <Text style={[styles.thCell, styles.thRight]}>Net return</Text>
             <Text style={[styles.thCell, styles.thRight]}>Return %</Text>
           </View>
+          {modelPortfolioEntitlementsLoaded &&
+            portfolios.length > 0 &&
+            portfolios.every(p => isSubscriptionActive(p) === false) && (
+              <TouchableOpacity
+                style={styles.expiredBanner}
+                onPress={() => navigation?.navigate?.('Plans')}
+                activeOpacity={0.8}>
+                <View style={styles.expiredBannerCopy}>
+                  <Text style={styles.expiredBannerTitle}>Expired subscriptions</Text>
+                  <Text style={styles.expiredBannerText}>
+                    These holdings remain visible for reference. Renew to start
+                    receiving rebalances and recommendations again.
+                  </Text>
+                </View>
+                <View style={styles.expiredBannerCta}>
+                  <Text style={styles.expiredBannerCtaText}>Renew plans</Text>
+                  <ChevronRight size={15} color={c.brand.primary} />
+                </View>
+              </TouchableOpacity>
+            )}
           {portfolios.map(p => {
             const net = p.returnsNet ?? p.returns ?? 0;
             const netP = p.returnsPercentageNet ?? p.returnsPercentage ?? 0;
+            const subscriptionActive = isSubscriptionActive(p);
             return (
               <View key={`${p.modelName}-${p.broker || ''}`} style={styles.row}>
                 <View style={{ flex: 2 }}>
-                  <Text style={styles.fundName} numberOfLines={1}>
-                    {p.modelName}
-                  </Text>
+                  <View>
+                    <Text style={styles.fundName} numberOfLines={1}>
+                      {p.modelName}
+                    </Text>
+                    {subscriptionActive === false && (
+                      <View style={styles.expiredBadge}>
+                        <Text style={styles.expiredBadgeText}>Expired plan</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.fundMeta} numberOfLines={1}>
                     {p.stockCount
                       ? `${p.stockCount} holding${p.stockCount > 1 ? 's' : ''}`
@@ -497,14 +547,15 @@ const makeStyles = c =>
       marginTop: 12,
     },
     title: {
-      fontSize: 15,
+      fontSize: 16,
       fontFamily: 'Poppins-SemiBold',
       color: c.text.primary,
-      marginBottom: 2,
+      marginBottom: 3,
     },
     subtitle: {
-      fontSize: 11,
-      fontFamily: 'Satoshi-Regular',
+      fontSize: 12,
+      lineHeight: 17,
+      fontFamily: 'Poppins-Regular',
       color: c.text.muted,
       marginBottom: 12,
     },
@@ -535,7 +586,7 @@ const makeStyles = c =>
     },
     thCell: {
       flex: 1,
-      fontSize: 10,
+      fontSize: 11,
       fontFamily: 'Poppins-Medium',
       color: c.text.muted,
       textTransform: 'uppercase',
@@ -549,13 +600,13 @@ const makeStyles = c =>
       borderBottomColor: c.border.subtle,
     },
     totalRow: { borderBottomWidth: 0, borderTopWidth: 1.5, borderTopColor: c.border.default },
-    fundName: { fontSize: 13, fontFamily: 'Satoshi-Bold', color: c.text.primary },
-    fundMeta: { fontSize: 10, fontFamily: 'Satoshi-Regular', color: c.text.disabled, marginTop: 1 },
+    fundName: { fontSize: 13, fontFamily: 'Poppins-SemiBold', color: c.text.primary },
+    fundMeta: { fontSize: 11, fontFamily: 'Poppins-Regular', color: c.text.muted, marginTop: 2 },
     cellRight: {
       flex: 1,
       textAlign: 'right',
       fontSize: 13,
-      fontFamily: 'Satoshi-Regular',
+      fontFamily: 'Poppins-Medium',
       color: c.text.primary,
     },
     subRow: {
@@ -583,10 +634,57 @@ const makeStyles = c =>
     chart: { marginTop: 8, borderRadius: 12, marginLeft: -8 },
     note: {
       marginTop: 10,
+      fontSize: 11,
+      lineHeight: 16,
+      fontFamily: 'Poppins-Regular',
+      color: c.text.muted,
+    },
+    expiredBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 10,
+      marginBottom: 4,
+      padding: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: '#FCD34D',
+      backgroundColor: '#FFFBEB',
+    },
+    expiredBannerCopy: { flex: 1, paddingRight: 10 },
+    expiredBannerTitle: {
+      fontSize: 12,
+      fontFamily: 'Poppins-SemiBold',
+      color: '#92400E',
+    },
+    expiredBannerText: {
+      marginTop: 2,
+      fontSize: 11,
+      lineHeight: 16,
+      fontFamily: 'Poppins-Regular',
+      color: '#92400E',
+    },
+    expiredBannerCta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'center',
+    },
+    expiredBannerCtaText: {
+      fontSize: 11,
+      fontFamily: 'Poppins-SemiBold',
+      color: c.brand.primary,
+    },
+    expiredBadge: {
+      alignSelf: 'flex-start',
+      marginTop: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+      backgroundColor: '#FEF3C7',
+    },
+    expiredBadgeText: {
       fontSize: 10,
-      lineHeight: 15,
-      fontFamily: 'Satoshi-Regular',
-      color: c.text.disabled,
+      fontFamily: 'Poppins-Medium',
+      color: '#92400E',
     },
   });
 

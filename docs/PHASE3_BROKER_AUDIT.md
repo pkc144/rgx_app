@@ -469,3 +469,26 @@ When you change anything in the Phase 3 surface area:
 4. If the change opens a gap → demote verdict AND remove from `SDK_ELIGIBLE_MODALS` (or add to `SDK_LEGACY_FALLBACK` as a quick mitigation) AND log in `PHASE3_PROGRESS.md`.
 
 Never let `SDK_ELIGIBLE_MODALS` and this doc disagree.
+
+---
+
+## 2026-07-18 — Mobile guide/render correction (code-read + debug build)
+
+| Surface | Finding | Current state |
+|---|---|---|
+| Upstox and every configured guide | A paused inline YouTube iframe exposed YouTube's own external hand-off. | Explicit walkthrough control now mounts `BrokerWalkthroughPlayer` and starts playback in-app. Broker portal links are still intentionally external. |
+| ICICI Direct | SDK supplied `ICICI Direct`, while the guide map only had `ICICI`; it therefore displayed the older help component. | Display-name normalisation selects the shared guide card and current Egress flow. |
+| HDFC Securities | SDK supplied `Hdfc Securities`, while the guide map only had `HDFC`; same fall-through. | Display-name normalisation selects the shared guide card and current Egress flow. |
+| IIFL Securities | Instructions/UI did not match the live broker authorisation path and the connection could hang. | Disabled from new connections and from the IPv4 egress map pending a separately verified integration. |
+
+This is not a broker API certification: the Android debug build and source paths
+were checked, but each broker still needs its normal real-account connection
+test before its production verdict can be promoted.
+
+### Angel One policy correction — 2026-07-18
+
+Shared/platform SmartAPI login is disabled for AlphaB2B. New Angel One connects
+must use the SDK per-customer credential form and the customer static-IP gate;
+the legacy shared publisher-login sheet is not a dispatch target. Existing
+connected customers are not silently migrated—the next reconnect requires their
+own SmartAPI credentials and normal broker verification.

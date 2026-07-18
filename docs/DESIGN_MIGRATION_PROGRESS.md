@@ -298,6 +298,23 @@ Purpose: token-migrated the fallback hex in every MP surface that was doing `con
     - **Dead code removed in same commit:** PanResponder system (every callback returned `false` — pan never fired); `tabs` array + `animateToTab` + `Animated.Value` refs (defunct tab UI never rendered — JSX only renders `<PlacedOrders />`); `imageUrl` state + `fetchUserProfile` (set but never read); `isModalOpen` state + `MODAL_STATE` EventEmitter listener (consumed only by the dead PanResponder); `renderStatusIcon` (orphan, references undefined `item`/`color2`).
   - **Presentation** (`designs/default/screens/OrderScreen.js`, ~250 lines): receives viewModel + actions; renders the search row + FlatList. Includes inline `BasketRow` helper for orders with `basket_advice`. Empty-state hero uses LinearGradient with `viewModel.gradient` (advisor-themable). Search + price-range filter state stays as local UI state in presentation (filter math is `useMemo`).
   - **Composite** (`designs/default/composites/OrderRow.js`, ~180 lines): the legacy `OrderItem` extracted. Uses `Pill` (variant=profit / loss for BUY / SELL), `Icon` (lucide Check / X / Pause for status icons — replaces vector-icons AntDesign), `Text` primitives, `useTokens()` for colours where mapping is unambiguous. Owns its `showReason` UI state internally. Receives `onDdpiHelpPress` callback for the rejection-reason DDPI help link.
+  - **2026-07-18 visual follow-up:** the presentation now uses the shared
+    page/canvas/search/card hierarchy; `OrderRow` is a contained white card
+    with an explicit broker, side and status grouping. This is visual-only:
+    filtering, data fetch and DDPI-help behaviour remain in the container.
+    Production-parity broker/type/status filters are intentionally local
+    presentation state, so opening or leaving Orders does not mutate trade
+    data, fetch state or the selected broker elsewhere in the app.
+  - **2026-07-18 scrolling follow-up:** the screen title is the only compact
+    fixed chrome. Search, count and broker/type/status filters are rendered as
+    `FlatList.ListHeaderComponent`, so they scroll with the list and cannot
+    permanently consume the area needed to read order cards on short phones.
+    The empty state distinguishes an intentionally filtered empty result from
+    a genuinely empty order history and states the current pending-order rule.
+    Legacy rows with no stored status are deliberately excluded from the
+    actionable Pending count rather than silently being treated as pending.
+    Broker/type/status chip counts are cascading local derivations of the
+    already-fetched order array; they update without a backend request.
   - **Utils** (`src/utils/orderUtils.js`, ~60 lines): `isToday`, `formatSymbol`, `formatOrderDate`, `getStatusColors`. Pure helpers — no hooks, no side effects. `getStatusColors` keeps the legacy hex pairs (`#F0FFE8` / `#16A085` for success, etc.) — a future PR may token-ify these.
 - **What shipped (docs)**:
   - `docs/DESIGN_SYSTEM_ARCHITECTURE.md § Migration order`: Phase E split into E.1 (shipped) and E.2 (HomeScreen — pending prep).
@@ -552,3 +569,48 @@ Purpose: token-migrated the fallback hex in every MP surface that was doing `con
   3. Phase B — `DesignProvider` skeleton. No component registrations yet.
   4. Phase C onward — primitives, then one composite, then HomeScreen.
 - **Reassess MP freeze**: revisit when the SDK MP plan firms up (tracked separately, see `docs/SDK_MOBILE_FIT_ASSESSMENT.md`). If SDK MP is dropped, the freeze lifts and these surfaces enter `designs/` migration. If SDK MP ships, the freeze becomes permanent and these surfaces follow the Phase 3 contract instead.
+
+---
+
+## 2026-07-18 — Portfolio/MP presentation corrections
+
+- `PortfolioCard`: normalises currency only at render time (whole rupees for
+  invested, two decimals for P&L), preventing exposed IEEE floating-point
+  artefacts while preserving underlying broker calculation precision.
+- `PortfolioCard` is now the scrolling header of holdings and positions rather
+  than fixed chrome. Its source label resolves a named broker account and
+  describes dummy/demo/paper data as a simulated portfolio, so the data origin
+  is unambiguous without consuming most of a short screen.
+- `MPCard` Home presentation uses a bounded horizontal card width and two-line
+  title clamp. This is a layout contract for both Android and iOS, not a
+  platform-specific workaround. Entitlement copy on both this card and the
+  embedded Portfolio summary is sourced only from the server-filtered
+  `TradeContext` model-portfolio entitlement snapshot.
+- `MPPerformanceScreen` uses the same snapshot for the Portfolio and Research
+  tabs. Non-subscribers receive a clear report-benefit explanation and
+  subscription action, rather than an ambiguous “No reports” empty state.
+- `PortfolioScreenPresentation`: moved the Trade P&L entry into the Model
+  Portfolio list header so it participates in normal scrolling; removed the
+  duplicate fixed placement and an empty-state conflict.
+- `MPInvestNowModal` presentation: reserved header space and fixed the close
+  control position so it cannot be clipped beyond the right edge.
+- No registry, token, primitive, provider, or container/presentation ownership
+  change. This is a focused presentation-maintenance entry.
+- `LinkOpeningWeb` blog reader: constrains the article title and reserves a
+  fixed padded close target, preventing the close icon from being clipped by a
+  long title on narrow screens.
+- `PortfolioSummaryCard`: align the summary table, status treatment and helper
+  copy with the Portfolio screen’s Poppins hierarchy; expired status remains
+  available but never attaches to or wraps the fund name.
+- `MPCard` plan selection: add list clearance below tabs and correct card
+  containment/metric/action hierarchy without changing pricing or subscription
+  mechanics.
+- `MPPerformanceScreen`: moved the detailed summary into the Overview scroll
+  path, standardised header/action typography and tap targets, replaced the
+  headline CAGR treatment with a contextual historical-performance entry,
+  labelled volatility as manager-selected, and scrolls to the chart after
+  performance consent. Subscription, payment and chart-fetching logic remain
+  in the container.
+- `AfterSubscriptionScreen`: clarified the holdings/target/strategy hierarchy,
+  removed the duplicate/misleading expiry presentation, and moved Exit/Modify
+  into an adaptive safe-area action bar. Data ownership remains unchanged.

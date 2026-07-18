@@ -17,6 +17,7 @@ import {AqSdkClient, AqSdkProvider, ExecuteAdviceOverlay as _MaybeExecuteAdviceO
 import Config from 'react-native-config';
 
 import {getAdvisorSubdomain} from '../utils/variantHelper';
+import {useConfig} from '../context/ConfigContext';
 
 // Defensive fallback (2026-05-07): the installed @alphaquark/mobile-sdk
 // version doesn't export `ExecuteAdviceOverlay`, so the named import
@@ -173,6 +174,7 @@ async function mintSession(userRef) {
 }
 
 export default function SdkProviderRoot({userEmail, children}) {
+  const appConfig = useConfig();
   // Single client instance per app lifetime — instantiated lazily so
   // we don't burn a constructor when the SDK flag is off.
   const client = useMemo(
@@ -185,6 +187,43 @@ export default function SdkProviderRoot({userEmail, children}) {
     [],
   );
   const effectiveUserRef = userEmail || SDK_TEST_USER_REF || null;
+  // SDK forms used their package-default Material blue/grey styling while
+  // the surrounding app used the advisor theme. Supplying the theme once at
+  // the provider makes every SDK form, input and CTA read as one surface —
+  // including the lower half of broker connection pages.
+  const sdkTheme = useMemo(() => {
+    const primary =
+      appConfig?.mainColor || appConfig?.gradient2 || '#0056B7';
+    return {
+      colors: {
+        primary,
+        secondary: primary,
+        surface: '#FFFFFF',
+        surfaceMuted: '#F4F7FB',
+        text: '#172033',
+        textMuted: '#64748B',
+        textLabel: '#334155',
+        inputBorder: '#CBD5E1',
+        inputBorderError: '#DC2626',
+        error: '#B91C1C',
+        warning: '#92400E',
+        success: '#047857',
+        headerBackground: primary,
+        headerText: '#FFFFFF',
+        primaryDisabled: '#94A3B8',
+        divider: '#E2E8F0',
+      },
+      typography: {
+        titleSize: 19,
+        titleWeight: '800',
+        bodySize: 13,
+        helperSize: 12,
+        buttonSize: 15,
+        fontFamily: 'Satoshi-Regular',
+      },
+      shape: {radiusSm: 10, radiusMd: 14},
+    };
+  }, [appConfig?.mainColor, appConfig?.gradient2]);
 
   // 2026-05-07: <ExecuteAdviceOverlay /> MUST be rendered inside the
   // provider tree. The SDK's `AqSdkClient.executeAdvice()` calls into
@@ -197,7 +236,10 @@ export default function SdkProviderRoot({userEmail, children}) {
   // omitting it was the silent root cause of the post-tap-Place-Order
   // permanent spinner observed 2026-05-06/07.
   return (
-    <AqSdkProvider client={client} userRef={effectiveUserRef}>
+    <AqSdkProvider
+      client={client}
+      userRef={effectiveUserRef}
+      theme={sdkTheme}>
       {children}
       <ExecuteAdviceOverlay />
     </AqSdkProvider>

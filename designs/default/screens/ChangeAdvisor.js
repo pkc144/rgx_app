@@ -116,7 +116,7 @@ const ChangeAdvisor = ({ viewModel, actions }) => {
                     </TouchableOpacity>
 
                     <View style={styles.infoSection}>
-                        <Text variant="caption" style={styles.infoText}>• RA ID must be provided by your financial advisor</Text>
+                        <Text variant="caption" style={styles.infoText}>• RA ID must be provided by your financial manager</Text>
                         <Text variant="caption" style={styles.infoText}>• Spaces and lowercase letters will be automatically corrected</Text>
                         <Text variant="caption" style={styles.infoText}>• App will restart after successful update</Text>
                     </View>

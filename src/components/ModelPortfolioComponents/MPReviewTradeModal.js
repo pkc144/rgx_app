@@ -896,7 +896,7 @@ const MPReviewTradeModal = ({
       const syntheticResponse = stockDetails.map(stock => {
         const stockMissing = !(stock.exchange && String(stock.exchange).trim());
         const perStockMsg = stockMissing
-          ? 'Exchange missing — advisor must correct this trade.'
+          ? 'Exchange missing — manager must correct this trade.'
           : 'Blocked: another trade in this batch was missing exchange.';
         return {
           symbol: stock.tradingSymbol,

@@ -492,6 +492,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       handleSubscribe={() => handlePricingCardClick(item)}
       description={item.description}
       index={index}
+      isHorizontal={type.includes('horizontal')}
     />
   );
 
@@ -518,7 +519,7 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
       refreshControl={
         <RefreshControl refreshing={refreshingMP} onRefresh={getAllStrategy} />
       }
-      contentContainerStyle={{padding: 5}}
+      contentContainerStyle={{paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24}}
       style={{margin: 0}}
       ListEmptyComponent={
         <View style={localStyles.emptyContainer}>

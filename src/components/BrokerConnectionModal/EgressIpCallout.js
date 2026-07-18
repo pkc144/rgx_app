@@ -42,11 +42,9 @@
  * Returns true ONLY when broker is a partner (nothing to check) OR
  * the customer has claimed AND ticked the acknowledgment.
  *
- * Clipboard: RN 0.78 no longer ships Clipboard in core and this
- * project doesn't install `@react-native-clipboard/clipboard`. The
- * IP address is rendered as a `<Text selectable>` so users can
- * long-press to copy natively on both iOS and Android without a new
- * native dependency.
+ * The address has a one-tap Copy button as well as selectable text.
+ * Customers paste this value into a broker portal often enough that a
+ * long-press-only interaction is too easy to miss.
  */
 
 import React, {useCallback, useEffect, useRef, useState} from 'react';
@@ -58,6 +56,7 @@ import {
   StyleSheet,
   Animated,
   Linking,
+  AppState,
 } from 'react-native';
 import axios from 'axios';
 import Config from 'react-native-config';
@@ -66,6 +65,7 @@ import {generateToken} from '../../utils/SecurityTokenManager';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import LinkifiedUrl from '../../UIComponents/BrokerConnectionUI/HelpUI/LinkifiedUrl';
 import {useColors} from '../../theme/useColors';
+import Clipboard from '@react-native-clipboard/clipboard';
 // Native CashFree subscription checkout for the customer_pays ₹99/mo
 // dedicated-IP paywall — SAME primitive MPInvestNowModal uses for plan
 // mandates. IPV4_EGRESS_BILLING_DESIGN.md §6.2.
@@ -85,11 +85,15 @@ const WHITELIST_BROKERS = new Set([
   'angelone',
   'fyers',
   'motilaloswal',
-  'iifl',
   'kotak',
   'hdfcsec',
   'icicidirect',
   'groww',
+  // Arihant TradeBridge — per-customer IP whitelisting on the customer's
+  // TradeBridge account. IPv4-only broker (dedicated-IP flow like Angel One).
+  'arihant',
+  // DefinEdge INTEGRATE — per-customer IP whitelist in MyAccount → API Config.
+  'definedge',
 ]);
 
 const BROKER_DISPLAY_NAMES = {
@@ -97,11 +101,12 @@ const BROKER_DISPLAY_NAMES = {
   angelone: 'Angel One',
   fyers: 'Fyers',
   motilaloswal: 'Motilal Oswal',
-  iifl: 'IIFL',
   kotak: 'Kotak Neo',
   hdfcsec: 'HDFC Securities',
   icicidirect: 'ICICI Direct',
   groww: 'Groww',
+  arihant: 'Arihant Capital',
+  definedge: 'DefinEdge Securities',
 };
 
 const BROKER_DEV_PORTAL_URLS = {
@@ -111,9 +116,10 @@ const BROKER_DEV_PORTAL_URLS = {
   motilaloswal: 'https://openapi.motilaloswal.com/',
   kotak: 'https://napi.kotaksecurities.com/',
   icicidirect: 'https://api.icicidirect.com/apiuser/home',
-  iifl: 'https://api.iiflsecurities.com/',
   hdfcsec: 'https://developer.hdfcsky.com/',
   groww: 'https://groww.in/trade-api/api-keys',
+  arihant: 'https://tradebridge.arihantplus.com/',
+  definedge: 'https://myaccount.definedgesecurities.com/',
 };
 
 const BROKER_WHITELIST_HINT = {
@@ -123,9 +129,10 @@ const BROKER_WHITELIST_HINT = {
   motilaloswal: 'App settings → Allowed IPs',
   kotak: 'Consumer Key settings → IP Whitelist',
   icicidirect: 'Breeze API app → IP Whitelist',
-  iifl: 'XTS connect → App → Allowed IPs',
   hdfcsec: 'InvestRight API app → Allowed IPs',
   groww: 'Trade API → Generate TOTP token → Whitelisted IPs',
+  arihant: 'TradeBridge portal → API Keys → Whitelisted IPs',
+  definedge: 'MyAccount → API Config → Whitelisted IPs',
 };
 
 function buildHeaders(configData) {
@@ -148,6 +155,7 @@ const EgressIpCallout = ({
   configData,
   showUnmetAck = false,
   onUnmetAckHandled,
+  showSetupGuide = true,
 }) => {
   const brokerKey = (broker || '').toLowerCase().trim();
   const brokerDisplay = BROKER_DISPLAY_NAMES[brokerKey] || brokerKey;
@@ -159,6 +167,25 @@ const EgressIpCallout = ({
   // error) intentionally keep their conventional blue/amber/red.
   const colors = useColors();
   const brand = colors?.brand?.primary || '#2563EB';
+
+  // Keep the compliance flow visually part of the app rather than a generic
+  // warning block. The content and acknowledgement rules stay identical to
+  // the web flow; this only gives the two connection steps a clear hierarchy.
+  const StaticIpProgress = ({ready = false}) => (
+    <View style={[styles.progressCard, {borderColor: brand}]}> 
+      <View style={[styles.progressBadge, {backgroundColor: brand}]}> 
+        <Text style={styles.progressBadgeText}>{ready ? '✓' : '1'}</Text>
+      </View>
+      <View style={styles.progressCopy}>
+        <Text style={[styles.progressEyebrow, {color: brand}]}>SECURE CONNECTION</Text>
+        <Text style={styles.progressTitle}>
+          {ready
+            ? 'Static IP ready — finish the broker connection'
+            : 'Step 1 of 2 · Set up your static IP'}
+        </Text>
+      </View>
+    </View>
+  );
 
   const [loading, setLoading] = useState(true);
   const [brokerState, setBrokerState] = useState(null);
@@ -175,9 +202,38 @@ const EgressIpCallout = ({
   // CF; subscription webhooks are unreliable).
   const [paymentInfo, setPaymentInfo] = useState(null); // the 402 body
   const [paymentStarted, setPaymentStarted] = useState(false);
+  const [checkoutSession, setCheckoutSession] = useState(null);
+  const [awaitingHostedReturn, setAwaitingHostedReturn] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState(null);
+  const [copiedIp, setCopiedIp] = useState(null);
+  const copyResetRef = useRef(null);
+  // The browser checkout is the default: it gives every customer a visible
+  // browser back control and lets white-label packages use AlphaQuark's
+  // Cashfree-approved domain. A legacy native checkout can be explicitly
+  // enabled only for a package that is approved in Cashfree.
+  const preferHostedCheckout =
+    String(Config.REACT_APP_CASHFREE_HOSTED_SUBSCRIPTION || 'true')
+      .trim()
+      .toLowerCase() !== 'false';
+  const appStateRef = useRef(AppState.currentState);
+
+  const copyIpAddress = useCallback((address) => {
+    if (!address) return;
+    Clipboard.setString(address);
+    setCopiedIp(address);
+    if (copyResetRef.current) clearTimeout(copyResetRef.current);
+    copyResetRef.current = setTimeout(() => setCopiedIp(null), 1800);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (copyResetRef.current) clearTimeout(copyResetRef.current);
+    },
+    [],
+  );
 
   const fetchStatus = useCallback(async () => {
     if (!brokerKey || !WHITELIST_BROKERS.has(brokerKey)) {
@@ -303,6 +359,12 @@ const EgressIpCallout = ({
         // customer_pays advisor — show the subscribe sheet, not an error.
         setPaymentInfo(err.response.data);
         setVerifyMsg(null);
+        setPaymentStatus({
+          phase: 'ready',
+          title: 'Mandate required before IP assignment',
+          detail:
+            'Start the secure monthly mandate, then we will confirm it with Cashfree before assigning your IP.',
+        });
       } else {
         const apiErr =
           err.response?.data?.message ||
@@ -319,6 +381,11 @@ const EgressIpCallout = ({
   const handleVerifyPayment = useCallback(async () => {
     setVerifying(true);
     setVerifyMsg(null);
+    setPaymentStatus({
+      phase: 'checking',
+      title: 'Checking your payment with Cashfree',
+      detail: 'This can take a few moments after mandate authorisation.',
+    });
     try {
       const body = {broker: brokerKey};
       if (customerId) body.customer_id = customerId;
@@ -329,50 +396,112 @@ const EgressIpCallout = ({
         {headers: buildHeaders(configData), timeout: 30000},
       );
       if (res.data?.granted) {
+        setPaymentStatus({
+          phase: 'confirmed',
+          title: 'Payment confirmed — your static IP is active',
+          detail: 'Add the address below to your broker’s allowed-IP list, then confirm the whitelist entry.',
+        });
         setPaymentInfo(null);
         setPaymentStarted(false);
         await fetchStatus(); // → claimed with the dedicated IP
       } else {
-        setVerifyMsg(
+        const rawStatus = String(res.data?.payment_status || '').toUpperCase();
+        const failed = ['FAILED', 'CANCELLED', 'USER_DROPPED'].includes(rawStatus);
+        const detail =
           res.data?.message ||
-            'Payment not confirmed yet — finish the payment, then tap “I’ve paid — verify”.',
-        );
+          'Payment not confirmed yet — finish the payment, then tap “I’ve paid — verify”.';
+        setPaymentStatus({
+          phase: failed ? 'failed' : 'pending',
+          title: failed
+            ? 'Cashfree did not confirm this payment'
+            : 'Mandate or payment is still pending',
+          detail,
+        });
+        setVerifyMsg(detail);
       }
     } catch (err) {
-      setVerifyMsg(
-        `Could not verify the payment: ${
-          err.response?.data?.error || err.message
-        }`,
-      );
+      const detail = `Could not verify the payment: ${
+        err.response?.data?.error || err.message
+      }`;
+      setPaymentStatus({
+        phase: 'failed',
+        title: 'We could not confirm the payment yet',
+        detail,
+      });
+      setVerifyMsg(detail);
     } finally {
       setVerifying(false);
     }
   }, [brokerKey, customerId, customerEmail, configData, fetchStatus]);
 
+  // A hosted mandate finishes in the external browser. When the customer
+  // returns to the app, poll the server rather than trusting a deep-link or
+  // browser result. The backend is the only authority that can grant an IP.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextState => {
+      const returnedToApp =
+        appStateRef.current !== 'active' && nextState === 'active';
+      appStateRef.current = nextState;
+      if (returnedToApp && awaitingHostedReturn) {
+        setAwaitingHostedReturn(false);
+        handleVerifyPayment();
+      }
+    });
+    return () => subscription.remove();
+  }, [awaitingHostedReturn, handleVerifyPayment]);
+
+  const openHostedCheckout = async hostedCheckoutUrl => {
+    if (!hostedCheckoutUrl || !/^https:\/\//i.test(hostedCheckoutUrl)) {
+      throw new Error('Secure hosted checkout link was not returned.');
+    }
+    setPaymentStarted(true);
+    setAwaitingHostedReturn(true);
+    setPaymentStatus({
+      phase: 'awaiting',
+      title: 'Complete the mandate in your browser',
+      detail:
+        'Return to this app afterwards. We will check Cashfree automatically and never assign the IP before confirmation.',
+    });
+    await Linking.openURL(hostedCheckoutUrl);
+  };
+
   // Create the CF subscription on the platform account, then launch the
-  // native mandate checkout. onVerify auto-verifies (mobile advantage
-  // over web's manual button); the manual button stays as the fallback.
-  const handleSubscribe = async () => {
+  // native or AlphaQuark-hosted mandate checkout. The hosted path is for
+  // white-label package IDs not approved for the native Cashfree SDK.
+  const handleSubscribe = async (useHosted = preferHostedCheckout) => {
     setSubscribing(true);
     setVerifyMsg(null);
     try {
-      const body = {broker: brokerKey};
-      if (customerId) body.customer_id = customerId;
-      if (customerEmail) body.email = customerEmail;
-      const res = await axios.post(
-        `${server.server.baseUrl}api/egress-ipv4/subscribe`,
-        body,
-        {headers: buildHeaders(configData), timeout: 25000},
-      );
-      if (res.data?.already_active) {
-        await handleVerifyPayment();
+      let checkoutSessionInfo = checkoutSession;
+      if (!checkoutSessionInfo) {
+        const body = {broker: brokerKey};
+        if (customerId) body.customer_id = customerId;
+        if (customerEmail) body.email = customerEmail;
+        const res = await axios.post(
+          `${server.server.baseUrl}api/egress-ipv4/subscribe`,
+          body,
+          {headers: buildHeaders(configData), timeout: 25000},
+        );
+        if (res.data?.already_active) {
+          await handleVerifyPayment();
+          return;
+        }
+        checkoutSessionInfo = {
+          subscriptionId: res.data?.subscription_id,
+          subscriptionSessionId: res.data?.subscription_session_id,
+          hostedCheckoutUrl: res.data?.hosted_checkout_url,
+        };
+        setCheckoutSession(checkoutSessionInfo);
+      }
+
+      if (useHosted) {
+        await openHostedCheckout(checkoutSessionInfo.hostedCheckoutUrl);
         return;
       }
-      const subsSessionId = res.data?.subscription_session_id;
-      const subscriptionId = res.data?.subscription_id;
-      if (!subsSessionId) {
-        throw new Error(res.data?.error || 'no payment session returned');
-      }
+
+      const subsSessionId = checkoutSessionInfo.subscriptionSessionId;
+      const subscriptionId = checkoutSessionInfo.subscriptionId;
+      if (!subsSessionId) throw new Error('no payment session returned');
       setPaymentStarted(true);
       CFPaymentGatewayService.setCallback({
         onVerify: async () => {
@@ -394,6 +523,15 @@ const EgressIpCallout = ({
                   error?.message || 'please try again'
                 }. If you were charged, tap “I’ve paid — verify”.`,
           );
+          setPaymentStatus({
+            phase: isCancel ? 'pending' : 'failed',
+            title: isCancel
+              ? 'Payment was cancelled'
+              : 'Cashfree could not complete the payment',
+            detail: isCancel
+              ? 'You can reopen the secure payment page whenever you are ready.'
+              : error?.message || 'Please try again. If you were charged, verify the payment.',
+          });
         },
       });
       CFPaymentGatewayService.setEventSubscriber({
@@ -414,10 +552,62 @@ const EgressIpCallout = ({
           err.message ||
           'Could not start the subscription.';
       setVerifyMsg(message);
+      setPaymentStatus({
+        phase: 'failed',
+        title: 'The payment screen could not be opened',
+        detail: message,
+      });
     } finally {
       setSubscribing(false);
     }
   };
+
+  // A 402 response replaces the normal “claim IP” state with the optional
+  // ₹99 subscription offer. This must never become a dead end: the customer
+  // can decline it and return to the ordinary broker-connect screen without
+  // starting (or cancelling) a Cashfree mandate.
+  const handleDismissPayment = () => {
+    setPaymentInfo(null);
+    setPaymentStarted(false);
+    setCheckoutSession(null);
+    setAwaitingHostedReturn(false);
+    setVerifyMsg(null);
+    setPaymentStatus(null);
+  };
+
+  const PaymentStatusPanel = paymentStatus ? (
+    <View
+      style={[
+        styles.paymentStatus,
+        paymentStatus.phase === 'confirmed' && styles.paymentStatusConfirmed,
+        paymentStatus.phase === 'failed' && styles.paymentStatusFailed,
+        paymentStatus.phase === 'pending' && styles.paymentStatusPending,
+      ]}>
+      <Text style={styles.paymentStatusTitle}>{paymentStatus.title}</Text>
+      <Text style={styles.paymentStatusDetail}>{paymentStatus.detail}</Text>
+    </View>
+  ) : null;
+
+  const addressFamily = brokerEntry?.family === 'ipv6' ? 'IPv6' : 'IPv4';
+  const SetupGuide =
+    showSetupGuide && brokerState !== 'partner' ? (
+      <View style={styles.setupGuide}>
+        <Text style={[styles.setupEyebrow, {color: brand}]}>BROKER SETUP</Text>
+        <Text style={styles.setupTitle}>Set up {brokerDisplay} in three steps</Text>
+        <Text style={styles.setupStep}>1. Get or review the static IP shown below.</Text>
+        <Text style={styles.setupStep}>
+          2. Add it in {brokerHint || `${brokerDisplay}’s developer portal`}.
+        </Text>
+        <Text style={styles.setupStep}>
+          3. Save the broker entry, then tick the confirmation box to continue.
+        </Text>
+        {brokerEntry?.address ? (
+          <Text style={styles.setupFamily}>
+            Assigned address family: {addressFamily}
+          </Text>
+        ) : null}
+      </View>
+    ) : null;
 
   // Partner broker — nothing to render.
   if (brokerState === 'partner') return null;
@@ -429,27 +619,33 @@ const EgressIpCallout = ({
     const amount = plan.amount ?? 99;
     return (
       <View style={styles.container}>
+        {SetupGuide}
+        {PaymentStatusPanel}
         <View style={[styles.card, styles.cardBlue]}>
+          <StaticIpProgress />
           <Text style={styles.titleBlue}>
             {brokerDisplay} needs a dedicated static IP — ₹{amount}/month
           </Text>
           <Text style={styles.bodyBlue}>
-            • Your own static IP, reserved for you — whitelist it once in your{' '}
-            {brokerDisplay} portal and it never changes.
+            • {brokerDisplay} accepts trading API requests only from an IP
+            address you have whitelisted. AlphaQuark reserves a dedicated
+            static IP for you so that address remains stable.
           </Text>
           <Text style={styles.bodyBlue}>
-            • Covers every broker that needs a static IPv4, not just{' '}
-            {brokerDisplay}.
+            • This ₹{amount}/month mandate is required only while you use a
+            broker that needs a dedicated static IP. It covers every such
+            broker connected through this manager, not only {brokerDisplay}.
           </Text>
           <Text style={styles.bodyBlue}>
-            • Auto-renews monthly via CashFree; cancel anytime — the IP is
-            released after a 7-day grace period.
+            • You authorise AlphaQuark to collect the monthly service charge
+            securely through Cashfree. You can cancel the mandate anytime; the
+            IP is released after the 7-day grace period.
           </Text>
           {verifyMsg && (
             <Text style={[styles.bodyBlue, {marginTop: 6}]}>{verifyMsg}</Text>
           )}
           <TouchableOpacity
-            onPress={handleSubscribe}
+            onPress={() => handleSubscribe(preferHostedCheckout)}
             disabled={subscribing || verifying}
             style={[
               styles.primaryButton,
@@ -462,11 +658,32 @@ const EgressIpCallout = ({
             ) : (
               <Text style={styles.primaryButtonText}>
                 {paymentStarted
-                  ? 'Open payment again'
-                  : `Subscribe — ₹${amount}/month`}
+                  ? preferHostedCheckout
+                    ? 'Open secure browser payment again'
+                    : 'Open payment again'
+                  : preferHostedCheckout
+                    ? `Continue in browser — ₹${amount}/month`
+                    : `Authorise ₹${amount}/month`}
               </Text>
             )}
           </TouchableOpacity>
+          {!preferHostedCheckout && (
+            <TouchableOpacity
+              onPress={() => handleSubscribe(true)}
+              disabled={subscribing || verifying}
+              style={[
+                styles.secondaryButton,
+                {borderColor: brand},
+                (subscribing || verifying) && {opacity: 0.6},
+              ]}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Open secure payment in browser">
+              <Text style={[styles.secondaryButtonText, {color: brand}]}> 
+                Open secure payment in browser instead
+              </Text>
+            </TouchableOpacity>
+          )}
           {paymentStarted && (
             <TouchableOpacity
               onPress={handleVerifyPayment}
@@ -491,6 +708,21 @@ const EgressIpCallout = ({
               )}
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            onPress={handleDismissPayment}
+            disabled={subscribing || verifying}
+            style={[
+              styles.secondaryButton,
+              {borderColor: brand},
+              (subscribing || verifying) && {opacity: 0.6},
+            ]}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Go back without subscribing">
+            <Text style={[styles.secondaryButtonText, {color: brand}]}> 
+              Not now — go back
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -516,6 +748,8 @@ const EgressIpCallout = ({
     return (
       <View style={styles.container}>
         {MigrationBanner}
+        {SetupGuide}
+        {PaymentStatusPanel}
         <View style={[styles.card, styles.cardNeutral]}>
           <View style={styles.row}>
             <ActivityIndicator size="small" color="#6B7280" />
@@ -532,6 +766,8 @@ const EgressIpCallout = ({
     return (
       <View style={styles.container}>
         {MigrationBanner}
+        {SetupGuide}
+        {PaymentStatusPanel}
         <View style={[styles.card, styles.cardRed]}>
           <Text style={styles.titleRed}>
             Unable to check your dedicated IP
@@ -560,18 +796,21 @@ const EgressIpCallout = ({
     return (
       <View style={styles.container}>
         {MigrationBanner}
+        {SetupGuide}
+        {PaymentStatusPanel}
         <View style={[styles.card, styles.cardAmber]}>
+          <StaticIpProgress />
           <Text style={styles.titleAmber}>Your dedicated static IP</Text>
           <Text style={[styles.bodyAmber, {fontSize: 11}]}>
-            IPv4 — shared advisor static IP (SEBI compliant, does not change)
+            IPv4 — shared manager static IP (SEBI compliant, does not change)
           </Text>
 
-          <View style={styles.ipBox}>
-            <Text style={styles.ipText} selectable>
-              {sharedIp}
-            </Text>
-            <Text style={styles.ipHint}>(long-press to copy)</Text>
-          </View>
+          <IpAddressBox
+            address={sharedIp}
+            copied={copiedIp === sharedIp}
+            onCopy={copyIpAddress}
+            accent={brand}
+          />
 
           <Text style={[styles.stepText, {marginTop: 10}]}>
             Paste it into your {brokerDisplay} IP whitelist
@@ -643,6 +882,8 @@ const EgressIpCallout = ({
     return (
       <View style={styles.container}>
         {MigrationBanner}
+        {SetupGuide}
+        {PaymentStatusPanel}
         <View style={[styles.card, styles.cardAmber]}>
           <Text style={styles.titleAmber}>
             {brokerDisplay} connections are temporarily unavailable
@@ -670,7 +911,10 @@ const EgressIpCallout = ({
     return (
       <View style={styles.container}>
         {MigrationBanner}
+        {SetupGuide}
+        {PaymentStatusPanel}
         <View style={[styles.card, styles.cardBlue]}>
+          <StaticIpProgress />
           <Text style={styles.titleBlue}>Claim your dedicated static IP</Text>
           <Text style={styles.bodyBlue}>
             SEBI regulations require {brokerDisplay} to only accept orders
@@ -715,7 +959,10 @@ const EgressIpCallout = ({
     return (
       <View style={styles.container}>
         {MigrationBanner}
+        {SetupGuide}
+        {PaymentStatusPanel}
         <View style={[styles.card, styles.cardAmber]}>
+          <StaticIpProgress ready={acknowledged} />
           <Text style={styles.titleAmber}>Dedicated static IP assigned</Text>
           <Text style={[styles.bodyAmber, {fontSize: 11}]}>
             {brokerEntry.family === 'ipv6'
@@ -723,12 +970,12 @@ const EgressIpCallout = ({
               : 'IPv4 — unique to your account'}
           </Text>
 
-          <View style={styles.ipBox}>
-            <Text style={styles.ipText} selectable>
-              {brokerEntry.address}
-            </Text>
-            <Text style={styles.ipHint}>(long-press to copy)</Text>
-          </View>
+          <IpAddressBox
+            address={brokerEntry.address}
+            copied={copiedIp === brokerEntry.address}
+            onCopy={copyIpAddress}
+            accent={brand}
+          />
 
           <Text style={[styles.stepText, {marginTop: 10}]}>
             Paste it into your {brokerDisplay} IP whitelist
@@ -794,6 +1041,8 @@ const EgressIpCallout = ({
   return (
     <View style={styles.container}>
       {MigrationBanner}
+      {SetupGuide}
+      {PaymentStatusPanel}
       <View style={[styles.card, styles.cardNeutral]}>
         <Text style={styles.bodyText}>
           Your dedicated IP status for {brokerDisplay} is not yet available.
@@ -809,14 +1058,136 @@ const EgressIpCallout = ({
   );
 };
 
+const IpAddressBox = ({address, copied, onCopy, accent}) => (
+  <View style={styles.ipBox}>
+    <Text style={styles.ipText} selectable>
+      {address}
+    </Text>
+    <TouchableOpacity
+      onPress={() => onCopy(address)}
+      style={[styles.copyButton, {borderColor: accent}]}
+      accessibilityRole="button"
+      accessibilityLabel={`Copy static IP ${address}`}>
+      <Text style={[styles.copyButtonText, {color: accent}]}>
+        {copied ? 'Copied ✓' : 'Copy IP'}
+      </Text>
+    </TouchableOpacity>
+  </View>
+);
+
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 10,
+    marginTop: 18,
+    marginBottom: 12,
+  },
+  setupGuide: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+  },
+  setupEyebrow: {
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 10,
+    letterSpacing: 0.8,
+  },
+  setupTitle: {
+    color: '#1E293B',
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 15,
+    marginTop: 3,
+    marginBottom: 8,
+  },
+  setupStep: {
+    color: '#475569',
+    fontFamily: 'Satoshi-Regular',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  setupFamily: {
+    color: '#0F766E',
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 11,
+    marginTop: 8,
+  },
+  paymentStatus: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  paymentStatusPending: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  paymentStatusConfirmed: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  paymentStatusFailed: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  paymentStatusTitle: {
+    color: '#1E293B',
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 13,
+  },
+  paymentStatusDetail: {
+    color: '#475569',
+    fontFamily: 'Satoshi-Regular',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 3,
   },
   card: {
-    borderRadius: 10,
+    borderRadius: 16,
     borderWidth: 2,
     padding: 14,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 3},
+    elevation: 2,
+  },
+  progressCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    marginBottom: 12,
+  },
+  progressBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 9,
+  },
+  progressBadgeText: {
+    color: '#FFFFFF',
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 13,
+  },
+  progressCopy: {flex: 1},
+  progressEyebrow: {
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 10,
+    letterSpacing: 0.6,
+  },
+  progressTitle: {
+    color: '#1F2937',
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 13,
+    marginTop: 2,
   },
   cardNeutral: {
     backgroundColor: '#FFFFFF',
@@ -908,6 +1279,19 @@ const styles = StyleSheet.create({
     fontFamily: 'Satoshi-Bold',
     fontSize: 13,
   },
+  secondaryButton: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingHorizontal: 16,
+  },
+  secondaryButtonText: {
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 13,
+  },
   retryButton: {
     backgroundColor: '#DC2626',
     paddingVertical: 7,
@@ -931,7 +1315,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FDE68A',
     borderRadius: 8,
-    paddingVertical: 10,
+    padding: 10,
     paddingHorizontal: 12,
     marginTop: 6,
   },
@@ -940,11 +1324,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#111827',
   },
-  ipHint: {
-    fontFamily: 'Satoshi-Regular',
-    fontSize: 10,
-    color: '#9CA3AF',
-    marginTop: 2,
+  copyButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#F8FAFC',
+  },
+  copyButtonText: {
+    fontFamily: 'Satoshi-Bold',
+    fontSize: 12,
   },
   stepText: {
     fontFamily: 'Satoshi-Regular',

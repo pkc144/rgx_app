@@ -56,16 +56,10 @@ export const brokerDisplayConfig = [
     key: 'Fyers',
     logo: require('../assets/fyers.png'),
   },
-  {
-    // IIFL Securities — added to the picker 2026-07-13 (matches web
-    // AllBrokerList). Fully wired: normalizeBrokerKey('IIFL Securities') → 'IIFL'
-    // → <IIFLModal> in BrokerConnectModalDispatch. Motilal Oswal was removed
-    // here the same day (de-listed on web 2026-06-13); its dispatch case +
-    // normalize stay for already-connected users.
-    name: 'IIFL Securities',
-    key: 'IIFL Securities',
-    logo: require('../assets/iifl.png'),
-  },
+  // IIFL Securities is intentionally not listed until its legacy v1
+  // authorisation service is restored and tested end-to-end. It is not the
+  // XTS/App-ID flow, so exposing it with XTS/IP-whitelist instructions would
+  // mislead new customers. Existing connections remain untouched.
   {
     name: 'Groww',
     key: 'Groww',

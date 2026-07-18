@@ -622,6 +622,23 @@ GTT Flow:
 - **Leg shape**: mobile now places each `{entryLeg, leg1, leg2}` object **inside** the per-trade object in `trades[]` (not at the payload top level) and transforms capitalized leg fields (`Symbol` → `tradingSymbol`, `Exchange` → `exchange`, `Type` → `transactionType`, `OrderType` → `orderType`, `ProductType` → `productType`). `parseFloat()` is applied to `triggerPrice` and `ltp`, both feeding `price`. `quantity` is pulled from `stock.quantity` per-trade. See `buildOrderPayload` in `src/utils/ProcessTrades.js`.
 - **Response path**: mobile now treats the GTT response body as a top-level array (`Array.isArray(gttResponse)` → spread into `allResults`) matching web's `response.data[0]` reading. A backwards-compat branch retains the old `{response: [...]}` envelope path in case any backend version returns that shape.
 
+#### Orders-history relevance rule (2026-07-18)
+
+`src/screens/Home/OrderScreen.js` receives the mixed historic trade feed from
+`GET /api/user/trade-reco-for-user`. Before it reaches the Orders presentation,
+normal pending/AMO rows are retained only when their order date is today. A GTT
+row is the explicit exception: it remains visible while pending because its
+trigger is intentionally valid beyond a single trading day. The recogniser
+accepts the legacy GTT shapes (`gttCheck`, `gtt_check`, `isGTT`, `gttId`,
+`gtt_id`, nested `gtt.id`, and GTT order-type strings). `manually_placed` is
+completed customer action, not pending history, and is retained. This prevents
+stale pending rows from inflating the Orders Pending filter or presenting an
+old inactionable order as current work.
+
+Rows with no persisted broker/trade status are classified as **unavailable**,
+not pending. They remain visible in All for historical transparency, but do not
+inflate Pending or appear when the customer selects that actionable filter.
+
 ### 4.5.0 Cart vs Trade-Intent State Separation (2026-04-17)
 
 **Files:** `src/components/AdviceScreenComponents/StockAdvices.js`

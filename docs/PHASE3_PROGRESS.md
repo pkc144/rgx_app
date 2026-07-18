@@ -1080,3 +1080,55 @@ When you ship a Phase 3 commit:
 4. The CHANGELOG.md entry for the same commit should reference this log entry's date.
 
 Append-only — never delete or edit prior entries. Corrections go in a new entry that references the prior one.
+
+---
+
+## 2026-07-18 — SDK-lane guidance parity + scroll fix; Arihant/DefinEdge freeze root-cause
+
+- **Root-caused the Arihant/DefinEdge hard freeze**: their legacy modals (only
+  consumers of React Native `<Modal>` among broker surfaces) freeze the app on
+  Android New Architecture — tiny white window top-left + wedged UI thread.
+  Both rewritten onto `BrokerConnectStepperSheet` → `CrossPlatformOverlay`.
+  RN `<Modal>` is now BANNED on broker surfaces (CLAUDE.md blocking section).
+- **Phase3SdkBrokerModal**: gained `<BrokerGuideCard>` (shared
+  `brokerGuideConfigs.js`, web-parity guide content for 8 brokers) above the
+  EgressIpCallout; form + missing-schema phases converted v2 → v3
+  sibling-Pressable (fixes erratic credential-form scrolling, Kotak report).
+- **SDK_LEGACY_FALLBACK**: Kotak/Groww/Fyers/Upstox/HDFC/ICICI were added for
+  ~1 hour then REMOVED the same day once host parity shipped — Set back to
+  Arihant + DefinEdge only (their SDK schemas still await device
+  verification).
+- **EgressIpCallout**: registered `arihant` + `definedge` in
+  WHITELIST_BROKERS + display/portal/hint maps (they showed no IP UI at all
+  despite being IPv4-only brokers).
+- Legacy stepper-ized modals (flag-off lane + fallback pair): Arihant,
+  DefinEdge, Kotak, Groww, Fyers, Upstox, HDFC, ICICI — logic untouched,
+  render swapped; OAuth WebView phases preserved (Fyers/Upstox/HDFC/ICICI).
+- **(later same day)** Arihant + DefinEdge removed from
+  `SDK_LEGACY_FALLBACK` (Set now empty): SDK stack verified end-to-end
+  (compiled-lib schemas + creds→otp step machine + initiateBrokerLogin /
+  resend-otp client methods; backend routes confirmed on tidi), host gained
+  their guide configs + `EGRESS_BROKER_KEY`/`IP_WHITELIST_BROKERS` entries
+  ('Arihant Capital'→'arihant', 'DefinEdge Securities'→'definedge').
+  Device verification in progress; stepper-ized legacy modals are the
+  rollback.
+
+---
+
+## 2026-07-18 — Follow-up: broker-guide parity and hosted IP-mandate recovery
+
+- Normalised SDK display names in `brokerGuideConfigs.js`, so ICICI Direct and
+  HDFC Securities use the shared polished guide instead of legacy inline help.
+- Added `BrokerWalkthroughPlayer` and wired the existing Watch walkthrough
+  controls to it; playback remains in-app with a visible Back/Close control.
+- Restyled the SDK host with the advisor theme and aligned the form/guide/IP
+  sections; legacy HDFC/ICICI OAuth headers received the same branded top space.
+- `EgressIpCallout` now gives the static IP a visible Copy button, explains the
+  dedicated-IP recurring mandate, opens hosted checkout externally by default,
+  and reports Cashfree required/pending/confirmed/failed state before enabling
+  the broker connection.
+- IIFL removed from the picker/egress registration and disabled until live
+  authorisation instructions and broker handling are re-certified.
+
+Verification performed: focused JavaScript lint (no errors), `git diff --check`,
+and Android debug assembly. Live broker/Cashfree certification remains pending.

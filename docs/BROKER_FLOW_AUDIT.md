@@ -2546,3 +2546,17 @@ Every legacy modal posts to `${ccxtUrl}rebalance/change_broker_model_pf` after s
 
 **Fix path:** In `Phase3SdkBrokerModal.onSuccess` (after `fetchBrokerStatusModal()` succeeds), POST to `change_broker_model_pf` with the broker name. Or add the call to `fetchBrokerStatusModal` itself.
 
+---
+
+## 2026-07-18 — Connection UX routing addendum
+
+The broker guide is resolved after SDK display-name selection, not only from the
+picker key. `ICICI Direct` and `Hdfc/HDFC Securities` must normalise to ICICI
+and HDFC respectively; otherwise they silently route to the old inline-help UI.
+The current common route is guide card → (when required) static-IP callout → SDK
+form/OAuth. The walkthrough action is an in-app player overlay. Only a broker
+portal or AlphaQuark-hosted Cashfree mandate opens outside the app.
+
+For the customer-pays IPv4 path, returning from the browser never completes the
+connection on its own: the app calls `/api/egress-ipv4/verify` and enables the
+form only after the server reports a confirmed mandate and allocated address.

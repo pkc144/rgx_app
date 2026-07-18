@@ -16,6 +16,7 @@ import {ChevronLeft, Bookmark} from 'lucide-react-native';
 import {getAuth} from '@react-native-firebase/auth';
 import {TabView, SceneMap, TabBar} from 'react-native-tab-view';
 import {useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import axios from 'axios';
 import Config from 'react-native-config';
 import moment from 'moment';
@@ -162,6 +163,7 @@ const AfterSubscriptionScreen = ({route}) => {
   const user = auth.currentUser;
   const userEmail = user && user.email;
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);
   const [userDetails, setUserDetails] = useState();
   const [strategyDetails, setStrategyDetails] = useState(null);
@@ -173,9 +175,9 @@ const AfterSubscriptionScreen = ({route}) => {
   const [modifyInvestmentModal, setModifyInvestmentModal] = useState(false);
   const [tabHeights, setTabHeights] = useState([0, 0, 0]);
   const [routes] = useState([
-    {key: 'holdings', title: 'Portfolio Holdings'},
-    {key: 'portfolio', title: 'Portfolio Distribution'},
-    {key: 'methodology', title: 'Methodology'},
+    {key: 'holdings', title: 'Holdings'},
+    {key: 'portfolio', title: 'Target mix'},
+    {key: 'methodology', title: 'Strategy'},
   ]);
   const handleTabLayout = index => event => {
     const {height} = event.nativeEvent.layout;
@@ -616,6 +618,12 @@ const AfterSubscriptionScreen = ({route}) => {
     getSingleStrategyDetails();
   }, [fileName]);
 
+  const nextRebalanceMoment = moment(strategyDetails?.nextRebalanceDate);
+  const nextRebalanceLabel = nextRebalanceMoment.isValid() &&
+    nextRebalanceMoment.endOf('day').isSameOrAfter(moment())
+    ? nextRebalanceMoment.format('DD MMM, YYYY')
+    : 'Schedule to be announced';
+
   return (
     <LinearGradient
       colors={[gradientStart, gradientEnd]}
@@ -645,24 +653,24 @@ const AfterSubscriptionScreen = ({route}) => {
                 <View style={styles.circle2} />
                 <View style={styles.circle3} />
               </View>
-              {/* 3-card layout: Invested | Current | Returns — all from same data source */}
+              {/* One value hierarchy: funded amount, current value, then current P&L. */}
               <View style={{flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 10}}>
                 <View style={{flex: 1, alignItems: 'flex-start'}}>
-                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>TOTAL INVESTED</Text>
+                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>INVESTED</Text>
                   <Text style={{color: '#FFFFFF', fontSize: 18, fontFamily: 'Poppins-SemiBold', marginTop: 2}}>
                     ₹{totalInvested?.toLocaleString('en-IN', {maximumFractionDigits: 0}) || '0'}
                   </Text>
                 </View>
                 <View style={{width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 8}} />
                 <View style={{flex: 1, alignItems: 'center'}}>
-                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>TOTAL CURRENT</Text>
+                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>CURRENT VALUE</Text>
                   <Text style={{color: '#FFFFFF', fontSize: 18, fontFamily: 'Poppins-SemiBold', marginTop: 2}}>
                     ₹{totalCurrent?.toLocaleString('en-IN', {maximumFractionDigits: 0}) || '0'}
                   </Text>
                 </View>
                 <View style={{width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 8}} />
                 <View style={{flex: 1, alignItems: 'flex-end'}}>
-                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>CURRENT RETURNS</Text>
+                  <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 10, fontFamily: 'Poppins-Regular'}}>CURRENT P&L</Text>
                   <Text style={{
                     color: (totalCurrent - totalInvested) >= 0 ? '#4ADE80' : '#F87171',
                     fontSize: 14,
@@ -682,33 +690,26 @@ const AfterSubscriptionScreen = ({route}) => {
               </View>
               <View style={styles.metaRow}>
                 <Text style={styles.metaText}>
-                  Exp. Date{' '}
-                  {moment(strategyDetails?.nextRebalanceDate).format(
-                    'DD MMM YYYY',
-                  )}
+                  Values use the latest available prices and may be delayed.
                 </Text>
               </View>
             </View>
 
             <View style={styles.pillsRow}>
               <InfoPill
-                title="Next Rebalance"
-                value={
-                  strategyDetails?.nextRebalanceDate && moment(strategyDetails.nextRebalanceDate).isBefore(moment())
-                    ? 'Rebalance due'
-                    : moment(strategyDetails?.nextRebalanceDate).format('DD MMM, YYYY')
-                }
+                title="Upcoming rebalance"
+                value={nextRebalanceLabel}
                 accent
               />
               <InfoPill
-                title="Last Rebalance"
+                title="Previous rebalance"
                 value={
                   strategyDetails?.last_updated
                     ? moment(strategyDetails.last_updated).format('DD MMM, YYYY')
                     : 'N/A'
                 }
               />
-              <InfoPill title="Rebalance" value={strategyDetails?.frequency} />
+              <InfoPill title="Rebalance basis" value={strategyDetails?.frequency || 'As per strategy'} />
             </View>
           </LinearGradient>
 
@@ -738,6 +739,14 @@ const AfterSubscriptionScreen = ({route}) => {
                           scrollEnabled={true}
                           nestedScrollEnabled={true}
                           contentContainerStyle={{paddingHorizontal: 12, paddingTop: 10, paddingBottom: 16, gap: 10}}
+                          ListHeaderComponent={
+                            <View style={styles.tabIntro}>
+                              <Text style={styles.tabIntroTitle}>Your current holdings</Text>
+                              <Text style={styles.tabIntroBody}>
+                                Stocks currently recorded in this model portfolio. These can differ from the target mix until the latest rebalance is completed.
+                              </Text>
+                            </View>
+                          }
                           ListFooterComponent={
                             <Text style={{fontSize: 9, fontFamily: 'Poppins-Regular', color: '#9CA3AF', marginTop: 4, textAlign: 'center'}}>
                               Prices may be delayed.
@@ -837,8 +846,13 @@ const AfterSubscriptionScreen = ({route}) => {
                   ),
 
                   portfolio: () => (
-                    <View
-                      style={{flex: 1, width: '100%', paddingHorizontal: 16}}>
+                    <View style={{flex: 1, width: '100%', paddingHorizontal: 16}}>
+                      <View style={styles.tabIntro}>
+                        <Text style={styles.tabIntroTitle}>Target allocation</Text>
+                        <Text style={styles.tabIntroBody}>
+                          The manager’s intended stock mix at the latest rebalance. Compare this with Holdings to see what you own today.
+                        </Text>
+                      </View>
                       {latestRebalance?.adviceEntries?.length ? (
                         <DistributionGrid
                           adviceEntries={latestRebalance.adviceEntries}
@@ -867,6 +881,12 @@ const AfterSubscriptionScreen = ({route}) => {
                         style={{flex: 1, backgroundColor: '#fff'}}
                         contentContainerStyle={{padding: 16, paddingBottom: 24}}
                         nestedScrollEnabled={true}>
+                        <View style={styles.tabIntro}>
+                          <Text style={styles.tabIntroTitle}>Strategy & performance</Text>
+                          <Text style={styles.tabIntroBody}>
+                            Learn how this portfolio is managed and review its historical performance with the relevant disclosures.
+                          </Text>
+                        </View>
                         {/* Performance vs index chart */}
                         <Text style={styles.methodSectionHeading}>
                           Performance vs Index
@@ -1013,23 +1033,7 @@ const AfterSubscriptionScreen = ({route}) => {
           </View>
         </ScrollView>
       </SafeAreaView>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          paddingHorizontal: 10,
-          gap: 10,
-          backgroundColor: '#fff',
-          paddingBottom: 10,
-          borderWidth: 0.3,
-          borderColor: '#c8c8c8',
-          // Shadow / Elevation
-          shadowColor: '#000', // iOS
-          shadowOffset: {width: 0, height: 2}, // iOS
-          shadowOpacity: 0.15, // iOS
-          shadowRadius: 4, // iOS
-          elevation: 4,
-        }}>
+      <View style={[styles.bottomActions, {paddingBottom: Math.max(insets.bottom, 12)}]}>
         <TouchableOpacity
           onPress={() => setTerminateModal(true)}
           style={styles.exitBtn}>
@@ -1086,6 +1090,22 @@ const styles = StyleSheet.create({
   container: {flex: 1},
   safeArea: {flex: 1},
   content: {paddingBottom: 32, backgroundColor: '#F6F8FB'},
+  bottomActions: {
+    flexDirection: screenWidth < 360 ? 'column' : 'row',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    backgroundColor: '#fff',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: '#CBD5E1',
+    shadowColor: '#0F172A',
+    shadowOffset: {width: 0, height: -2},
+    shadowOpacity: 0.12,
+    shadowRadius: 7,
+    elevation: 8,
+  },
+  tabIntro: {paddingTop: 12, paddingBottom: 10},
+  tabIntroTitle: {fontSize: 14, lineHeight: 20, fontFamily: 'Poppins-SemiBold', color: '#1F2937'},
+  tabIntroBody: {fontSize: 11, lineHeight: 17, fontFamily: 'Poppins-Regular', color: '#64748B', marginTop: 2},
 
   // Methodology tab
   methodSectionHeading: {
@@ -1394,22 +1414,24 @@ const styles = StyleSheet.create({
   investBtn: {
     backgroundColor: '#0E66FF',
     flex: 1,
-    borderRadius: 4,
+    borderRadius: 10,
     paddingVertical: 10,
     alignItems: 'center',
-    marginTop: 14,
+    justifyContent: 'center',
+    minHeight: 48,
   },
-  investBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '700'},
+  investBtnText: {color: '#FFFFFF', fontSize: 13, fontFamily: 'Poppins-SemiBold', textAlign: 'center'},
 
   exitBtn: {
     backgroundColor: '#e89a69ff',
-    borderRadius: 4,
+    borderRadius: 10,
     flex: 1,
     paddingVertical: 10,
     alignItems: 'center',
-    marginTop: 14,
+    justifyContent: 'center',
+    minHeight: 48,
   },
-  exitBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '700'},
+  exitBtnText: {color: '#FFFFFF', fontSize: 13, fontFamily: 'Poppins-SemiBold', textAlign: 'center'},
 
   handleWrap: {alignItems: 'center', marginTop: 14},
   handle: {width: 120, height: 4, borderRadius: 2, backgroundColor: '#0E2746'},

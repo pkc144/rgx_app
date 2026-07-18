@@ -58,6 +58,7 @@ import {
   getCashfreeEnvironment,
   isInstallSourceError,
   friendlyPaymentError,
+  describeCashfreeDecline,
 } from '../../utils/cashfreeEnv';
 import {
   CashFreeOneTimePayment,
@@ -221,6 +222,11 @@ const MPInvestNowModal = ({
   const [panNumber, setPanNumber] = useState(
     userDetails?.panNumber || '',
   );
+  // Optional GSTIN capture for the invoice (web parity C3a — collapsed
+  // opt-in). GST pricing/labels already handled via GstConfigService;
+  // this is only the customer's own GST number for input-tax-credit.
+  const [gstNumber, setGstNumber] = useState('');
+  const [gstError, setGstError] = useState('');
   const [open, setOpen] = useState(false);
 
   const [consentChecked, setConsentChecked] = useState(false);
@@ -681,6 +687,22 @@ const MPInvestNowModal = ({
     return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan);
   };
 
+  const validateGst = gstin => {
+    if (!gstin) return true; // optional
+    return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(
+      gstin.toUpperCase(),
+    );
+  };
+
+  const handleGstChange = value => {
+    const v = (value || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 15);
+    setGstNumber(v);
+    setGstError(v && !validateGst(v) ? 'Invalid GST format. e.g. 29ABCDE1234F1Z5' : '');
+  };
+
   const handlePanChange = value => {
     const sanitizedValue = value
       .toUpperCase()
@@ -1029,7 +1051,10 @@ const MPInvestNowModal = ({
     'beforePayment'
   );
 
-  const isDigioEnabled = configData?.digioEnabled !== false &&
+  // AlphaB2B does not offer Digio e-signing. Keep it off unless a future
+  // build explicitly opts in through its native build environment.
+  const isDigioEnabled = Config.REACT_APP_DIGIO_ENABLED === 'true' &&
+    configData?.digioEnabled !== false &&
     configData?.config?.REACT_APP_DIGIO_ENABLED !== 'false';
 
   const getInitialAuthMethod = () => {
@@ -1409,6 +1434,7 @@ const MPInvestNowModal = ({
           advisor: advisorTag,
           name: name,
           panNumber: panNumber,
+          gstNumber: gstNumber || undefined,
           birthDate: birthDate,
           telegramId: telegramId,
           capital: invetAmount,
@@ -1720,9 +1746,13 @@ const MPInvestNowModal = ({
         setShowPaymentFail(true);
         CFPaymentGatewayService.removeCallback();
         CFPaymentGatewayService.removeEventSubscriber();
-        if (isInstallSourceError(sdkError)) {
-          Alert.alert('Payment unavailable', friendlyPaymentError(sdkError));
-        }
+        // Actionable bank-decline / retry guidance (was: only the
+        // install-source case got a message; every other decline showed
+        // just the generic fail UI, so customers re-tried the same method
+        // blindly). describeCashfreeDecline handles install-source +
+        // cancel + generic-decline.
+        const _d = describeCashfreeDecline(sdkError);
+        Alert.alert(_d.title, _d.message);
       }
     } catch (err) {
       setLoading(false);
@@ -1815,6 +1845,7 @@ const MPInvestNowModal = ({
           name: name,
           appliedCouponId,
           panNumber: panNumber,
+          gstNumber: gstNumber || undefined,
           countryCode: countryCode,
           selectedCard: selectedCard,
           redirectSpecificLocation: `${configData?.config?.REACT_APP_WEBSITE_URL}/pricing`,
@@ -1955,13 +1986,8 @@ const MPInvestNowModal = ({
       // install-source block as the one-time path. Surface the actionable
       // Play-Store message rather than a generic "Failed to initialize".
       setLoadingmp(false);
-      const message = isInstallSourceError(err)
-        ? friendlyPaymentError(err)
-        : err?.message || 'Failed to initialize payment. Please try again.';
-      Alert.alert(
-        isInstallSourceError(err) ? 'Payment unavailable' : 'Error',
-        message,
-      );
+      const _d = describeCashfreeDecline(err);
+      Alert.alert(_d.title, _d.message);
       console.error('[CF Recurring] Payment failed to initialize:', err?.message, err.response);
     }
   };
@@ -2242,10 +2268,14 @@ const MPInvestNowModal = ({
       gateway: 'payu',
     });
 
+    const _d = describeCashfreeDecline(
+      typeof error === 'string' ? {message: error} : error,
+    );
     Toast.show({
       type: 'error',
-      text1: 'Payment Failed',
-      text2: error || 'Payment was cancelled or failed. Please try again.',
+      text1: _d.title,
+      text2: _d.message,
+      visibilityTime: 6000,
     });
   };
 
@@ -3829,6 +3859,8 @@ const MPInvestNowModal = ({
     panNumber,
     panError,
     isPanValid: panNumber && validatePan(panNumber),
+    gstNumber,
+    gstError,
     birthDate,
     userDetails,
     isModelPortfolio: specificPlan?.type === 'model portfolio',
@@ -3888,6 +3920,7 @@ const MPInvestNowModal = ({
     onHideDisclaimer: () => setShowDisclaimer(false),
     onApplyCoupon: handleApplyCoupon,
     onCouponCodeChange: setCouponCode,
+    onGstChange: handleGstChange,
 
     onDigioPayment: handleDigioPayment,
 

@@ -193,7 +193,7 @@ ViewModel sketches captured in the audit-task pass (2026-05-01). The `viewModel`
 - **Verdict:** `needs-logic-extraction`
 - **Phase:** F or G
 - **Data deps:** `useTrade()` (`userDetails`, `getAllBrokerSpecificHoldings`, `BrokerHoldingsData`, `allHoldingsData`, `getAllHoldings`, `configData`), `useConfig`, `useNavigation`, 11+ `useState` declarations, 3+ `useEffect` blocks (WebSocket subscribe, model-portfolio strategy fetch, EventEmitter `OrderPlacedReferesh` listener), inline axios `axios.get` for MP strategies + `axios.request` for rebalance repair, Firebase `getAuth()`, `WebSocketManager` singleton, `formatCurrency` utility.
-- **Render outputs:** Safe-area + gesture-handler-root wrapper, PortfolioCard (P&L + invested + returns), sticky tab switcher (Bespoke / Model Portfolio) via PortFolioCard2, Holdings `FlatList` with refresh control, conditional empty state, `HoldingScoreModal` bottom-sheet, 10+ broker-specific position-fetch branches (IIFL/ICICI/Upstox/Zerodha/Kotak/HDFC/Dhan/AliceBlue/Fyers/Groww/Motilal), live-price dynamic-text components.
+- **Render outputs:** Safe-area + gesture-handler-root wrapper, PortfolioCard (P&L + invested + returns), sticky tab switcher (Bespoke / Model Portfolio) via PortFolioCard2, Holdings `FlatList` with refresh control, conditional empty state, `HoldingScoreModal` bottom-sheet, 10+ broker-specific position-fetch branches (IIFL/ICICI/Upstox/Zerodha/Kotak/HDFC/Dhan/AliceBlue/Fyers/Groww/Motilal), live-price dynamic-text components. The summary is a display boundary: it rounds invested amounts to whole rupees and P&L to two decimals without mutating broker values used by calculations. It is a list header, not fixed chrome, and resolves the named broker account (or “Simulated portfolio — not a broker account”) in plain language. Portfolio-summary status badges consume the same `TradeContext` entitlement snapshot as plan cards, never their independent valuation response.
 - **Proposed viewModel:**
   ```js
   {
@@ -230,6 +230,7 @@ ViewModel sketches captured in the audit-task pass (2026-05-01). The `viewModel`
 
 | Screen | File | Verdict | Phase | viewModel highlights |
 |---|---|---|---|---|
+| **AccountSettingsScreen** | `src/screens/Home/AccountSettingsScreen.js` | `needs-logic-extraction` | F (after ChangeAdvisor) | Builds account/insight menu items from `useTrade` and configuration gates; route targets must use the navigator's registered names. **2026-07-18:** the customer-facing “Change Manager” item now navigates to registered route `Advisor Change`; its label remains manager-facing copy. |
 | **ChangeAdvisor** | `src/screens/AccountSettingScreen/ChangeAdvisor.js` (~250+ lines) | `needs-logic-extraction` | F (after primary auth) | `{ form: { currentRAId, newRAId }, ui: { isLoading, isInitialLoading, statusMessage }, user: { email } }`. RA-ID input formatting (uppercase + remove spaces) can live in presentation; validation + `updateRACodeAndConfig` + `RNRestart` stay in container. Native Alert dialogs → callbacks if a variant wants custom dialogs. |
 
 ### Model Portfolio screens (in scope as of 2026-05-01 — Phase I)
@@ -495,3 +496,20 @@ These open up after Phase A/B/C land:
 | **Total in scope** (excluding `SDK-bound-skip`) | **~88** | Phase A→I workload. Roughly doubled from the pre-unfreeze count of ~50; the full ~38 previously-frozen MP/rebalance surfaces are now in scope. Phase I (MP screens) is the largest single phase by surface count. |
 
 Numbers will be re-counted at the end of every audit-task PR.
+
+---
+
+## 2026-07-18 audit addendum
+
+| Surface | Verdict | Change recorded |
+|---|---|---|
+| `designs/default/screens/PortfolioScreen.js` | needs-logic-extraction | Presentation placement correction only: Trade P&L now scrolls with Model Portfolio content, avoiding a frozen-on-screen CTA. |
+| `designs/default/screens/MPInvestNowModal.js` | migrated | Header close control is absolutely positioned with title-safe padding so it stays fully visible on narrow Android screens. Container payment/Digio code unchanged by this presentation edit. |
+| `src/components/BrokerConnectionModal/Phase3SdkBrokerModal.js` | SDK-bound-skip | Host chrome updated for guide/IP/form hierarchy and tenant theme; SDK credentials widget remains authoritative. |
+| `src/UIComponents/BrokerConnectionUI/HDFCConnectUI.js`, `ICICIConnectUI.js` | SDK-bound-skip | Legacy OAuth WebView header alignment only; retain as rollback/legacy surfaces. |
+| `src/screens/Home/NewsScreen/LinkOpeningWeb.js` | needs-logic-extraction | Blog-reader header uses a flexing title plus a fixed, padded close target so long article titles cannot push the close control beyond the right edge. |
+| `designs/default/composites/PortfolioSummaryCard.js` | migrated | Expired-plan state is a compact renewable notice and subordinate row metadata; table, supporting copy, and values use one Poppins scale aligned with PortfolioScreen. |
+| Customer-facing plan, portfolio, knowledge and broker callouts | presentation maintenance | Visible “advisor” terminology is manager-facing; transport/config identifiers are intentionally unchanged. |
+| `designs/default/composites/MPCard.js` + Model Portfolio list | migrated | Plan cards require top list clearance below the tab bar, contained discount/status pills, readable metric values, and balanced action buttons; retain current plan/payment behaviour. |
+| `src/screens/Home/AfterSubscriptionScreen.js` | needs-logic-extraction | Subscribed MP detail now explains current holdings versus target allocation, removes the misleading expiry label, and protects persistent Exit/Modify actions with safe-area-aware sizing. |
+| `designs/default/screens/MPPerformanceScreen.js` + `src/screens/Drawer/MPPerformanceScreen.js` | migrated | Overview owns the scrollable model summary; historical performance is disclosure-led (not headline CAGR), volatility is described as manager-selected, and consent routes directly to the chart. |

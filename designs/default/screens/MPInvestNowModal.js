@@ -146,7 +146,9 @@ import {
   SafeAreaView,
   ScrollView,
   FlatList,
+  Alert,
 } from 'react-native';
+import CrossPlatformOverlay from '../../../src/components/CrossPlatformOverlay';
 import {
   ChevronRight,
   XIcon,
@@ -385,6 +387,8 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
     panNumber = '',
     panError = '',
     isPanValid = false,
+    gstNumber = '',
+    gstError = '',
     birthDate = '',
     userDetails = null,
     isModelPortfolio = false,
@@ -440,6 +444,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
     onHideDisclaimer = () => {},
     onApplyCoupon = () => {},
     onCouponCodeChange = () => {},
+    onGstChange = () => {},
 
     onDigioPayment = () => {},
 
@@ -468,7 +473,32 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
   useEffect(() => {
     if (consentChecked) setShowConsentNudge(false);
   }, [consentChecked]);
+  // Payment-step selection validity — MUST mirror the container's
+  // isStepValid(2) second clause: a one-time plan (no frequency options,
+  // `frequency.length === 0`) is valid WITHOUT a selectedCard; a recurring
+  // plan needs a frequency/duration card picked. The old button gated on a
+  // raw `!selectedCard`, which left one-time plans permanently disabled — and
+  // a disabled TouchableOpacity swallows the tap silently, so "Complete
+  // Investment" looked like a dead button on one-time plans (prod, 2026-07-18).
+  const paymentSelectionValid =
+    specificPlan?.frequency?.length === 0 || selectedCard !== null;
   const handleCompleteInvestmentPress = () => {
+    // Breadcrumb — a "dead" Complete tap has burned two debugging sessions
+    // (disabled-swallow 2026-07-16, RN-Modal offset touch targets 2026-07-18).
+    // If this line doesn't appear in logcat, the tap never reached JS.
+    console.log('[Invest] Complete tapped', {
+      paymentSelectionValid,
+      consentChecked,
+      loading,
+    });
+    if (loading) return;
+    if (!paymentSelectionValid) {
+      Alert.alert(
+        'Select a plan option',
+        'Please choose a plan duration to continue.',
+      );
+      return;
+    }
     if (!consentChecked) {
       setShowConsentNudge(true);
       return;
@@ -975,6 +1005,36 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
           stepCompletedColor={stepCompletedColor}
         />
 
+        {/* Optional GSTIN for the invoice (web parity C3a). Only shown when
+            the advisor charges GST (configGst). Backend records it on the
+            subscription; the amount/label GST is already handled elsewhere. */}
+        {configGst ? (
+          <View style={{ marginTop: 8, paddingHorizontal: 12 }}>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: gstError ? '#dc2626' : '#d1d5db',
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                fontSize: 14,
+                color: '#111827',
+              }}
+              placeholder="GST Number (optional)"
+              placeholderTextColor="#9ca3af"
+              value={gstNumber}
+              onChangeText={onGstChange}
+              autoCapitalize="characters"
+              maxLength={15}
+            />
+            {gstError ? (
+              <Text style={{ color: '#dc2626', fontSize: 12, marginTop: 4 }}>
+                {gstError}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={styles.consentContainer}>
           <TouchableOpacity
             style={styles.checkboxContainer}
@@ -1044,12 +1104,16 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
 
         <TouchableOpacity
           onPress={handleCompleteInvestmentPress}
-          disabled={!selectedCard || loading}
+          // Only truly-disable during payment. Selection/consent are validated
+          // in handleCompleteInvestmentPress with visible feedback (a disabled
+          // button silently swallows the tap — the dead-button bug). Greying is
+          // cosmetic; the tap still fires so the user always gets a reason.
+          disabled={loading}
           style={[
             styles.stepButton,
             styles.stepButtonGreen,
             { backgroundColor: stepCompletedColor },
-            (!selectedCard || loading || !consentChecked) &&
+            (!paymentSelectionValid || loading || !consentChecked) &&
             styles.stepButtonDisabled,
           ]}>
           {loading ? (
@@ -1079,7 +1143,12 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
 
   return (
     <>
-      <Modal visible={visible} animationType="slide" transparent={false}>
+      {/* RN Modal (NOT CrossPlatformOverlay): this component is mounted
+          mid-tree inside scrolling screens (Home feed etc.), so an
+          absolute-fill overlay renders INLINE in the feed instead of a
+          full-screen window (regression 2026-07-18, reverted same hour).
+          Modal hoists to its own native window regardless of mount point. */}
+      <Modal visible={!!visible} animationType="slide" transparent={false} onRequestClose={onClose}>
         <SafeAreaView style={styles.container}>
           <View style={styles.headerContainer}>
             <LinearGradient
@@ -1214,14 +1283,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   headerContent: {
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
+    // Reserve space for the absolutely positioned close control. This keeps
+    // long plan names from competing with it on narrow Android screens.
+    paddingRight: 76,
     paddingTop: 10,
     paddingBottom: 10,
   },
   closeButton: {
+    position: 'absolute',
+    right: 20,
+    top: '50%',
+    transform: [{ translateY: -20 }],
     padding: 8,
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -1235,6 +1312,11 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'flex-start',
     marginHorizontal: 16,
+    // Long plan names ("Long-Term Compounding Architecture") were pushing
+    // the close ✕ off the right edge — constrain the title, never the ✕.
+    flex: 1,
+    flexShrink: 1,
+    marginRight: 0,
   },
   planTypeTag: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',

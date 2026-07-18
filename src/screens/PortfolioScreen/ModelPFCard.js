@@ -30,8 +30,6 @@ const ModalPFCard = ({
   specificPlan,
   strategy,
   repair,
-  price,
-  percentage,
   index = 0,
 }) => {
   const { configData } = useTrade();
