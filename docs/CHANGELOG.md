@@ -4,6 +4,148 @@ All notable changes to the AlphaQuark B2B Mobile App are documented here.
 
 ---
 
+## [unreleased] - 2026-07-18 — fix(model-portfolio): label never-executed "Value since you started" as projected, add server-side capital bounds guard
+
+Account `pratik1762006@gmail.com` on `rgxresearch` was showing a ₹32L "Value
+since you started" figure backed by **zero executed trades and no real
+payment**. Traced chain: the "Modify Investment" screen
+(`src/screens/Home/ModifyInvestment1.js`) POSTs any typed number to ccxt-india
+`POST /rebalance/insert-user-doc`, appended to
+`model_portfolio_user.subscription_amount_raw` with only a client-side bounds
+check (`isConfirmDisabled`) — no server-side validation existed. That raw
+figure is then replayed onto the model's NAV series by aq_backend_github's
+`GET /value-history/:email` to compute `total_aum`/`invested`/XIRR/TWRR,
+**independent of whether anything was ever actually executed**. A reliable
+execution signal already exists (`user_net_pf_model` / `user_net_pf_updated`,
+populated only by the real execution pipeline), but the card rendered its
+headline stats unconditionally, with the real `actual_current` value buried
+in a footnote that read as "broker-holdings value is ₹0" — not a real
+disclosure.
+
+Two-part fix (backend changes are in `ccxt-india` and `aq_backend_github`,
+outside this repo):
+1. **ccxt-india**: `insert_user_doc_route` now rejects (`400`) a posted
+   `subscriptionAmountRaw` that falls outside the model's own
+   `minInvestment`/`maxNetWorth` bounds. Validation is skipped entirely when
+   `subscriptionAmountRaw` is absent, so other callers of the route are
+   unaffected.
+2. **aq_backend_github**: `/value-history/:email` now returns an explicit
+   `has_executed_trades` boolean (both per-model and aggregate) computed from
+   whether any broker doc has a non-empty `user_net_pf_model` /
+   `user_net_pf_updated`.
+3. **This repo**: `designs/default/composites/PortfolioSummaryCard.js` — the
+   "Value since you started" card now shows a muted "Projected — based on
+   declared capital; no trades executed yet" badge under the title, and swaps
+   the footnote's confusing "broker-holdings value is ₹0" text for the same
+   no-trades message, whenever `hSummary.has_executed_trades === false`.
+   Gated strictly on the explicit `false` value — `undefined` (older backend
+   not yet redeployed) renders exactly like before, so this ships safely
+   independent of backend deploy order. Numbers are never hidden, only
+   labelled; styling uses `useTokens()` only (no hardcoded colors), per the
+   file's documented color policy (grey informational, red reserved for an
+   actual loss). Applied identically to `Alphab2bapp` — the two copies of
+   this file remain byte-identical.
+
+**Files:** `designs/default/composites/PortfolioSummaryCard.js`.
+
+---
+
+## [unreleased] - 2026-07-18 — fix(sdk): enable @alphaquark/mobile-sdk integration for rgxresearch (broker connect crashed)
+
+Angel One broker connect crashed on open: `Render Error: useAqSdk must be
+used inside <AqSdkProvider>` (thrown from the SDK's `AqSdkProvider.js:117`,
+called by `designs/default/sdk/BrokerCredentialForm.js`).
+
+Root cause — two independent SDK flags, only one of which is bypassable per
+broker:
+- `App.js` only mounts `<AqSdkProvider>` (`src/sdk/SdkProviderRoot.js`) when
+  `REACT_APP_SDK_INTEGRATION=true`. This app's `.env` never set it (default
+  off).
+- `BrokerConnectModalDispatch.js`'s `angelOnePerCustomer` check routes Angel
+  One to the SDK-based `Phase3SdkBrokerModal` → `BrokerCredentialForm`
+  **unconditionally** (bypassing the separate `REACT_APP_USE_SDK_BROKER_FLOW`
+  flag entirely — Angel One is per-customer-only and has no legacy fallback).
+  So Angel One connect always needs the provider, but nothing turned it on.
+
+Confirmed the backend side was already fully provisioned and just never
+wired up client-side: `aq_platform_db.tenants` has an active `rgxresearch`
+tenant, `aq_platform_db.tenant_secret_keys` has an active `v1` secret
+(created 2026-04-27), and `tidi:aq-sdk-mint-server/.env` already has
+`AQ_SDK_TENANT_SECRET_RGXRESEARCH` set (mint service live). Fix was purely
+4 missing client `.env` vars — added, matching `Alphab2bapp`/`arfs_app`
+(which both already have SDK broker connect working):
+```
+REACT_APP_SDK_INTEGRATION=true
+REACT_APP_SDK_MINT_URL=https://app-links.alphaquark.in/sdk/mint
+REACT_APP_SDK_BASE_URL=https://server.alphaquark.in
+REACT_APP_USE_SDK_BROKER_FLOW=true
+```
+Verified on emulator post-rebuild: logcat shows `[AqSdkProvider] setUser
+succeeded, ready=true`, no more render-error crash on broker connect.
+
+**Files:** `.env`.
+
+---
+
+## [unreleased] - 2026-07-18 — chore(branding): regenerate Android launcher icon from new EquityPro shield logo
+
+Replaced all Android launcher icon assets (`mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher*.png`)
+with the new "equitypro.co.in" shield mark, cropped to just the crown+shield
+emblem (dropping the wordmark/tagline below it, which isn't legible at
+launcher size). Generated from a 1024×1024 master per layer:
+- `ic_launcher.png` (legacy, flat) — emblem at 62% canvas height, cream
+  background (`#FDFBFC`, matches existing `ic_launcher_background.png`) baked
+  in, per density.
+- `ic_launcher_foreground.png` / `ic_launcher_adaptive_fore.png` — emblem at
+  48% canvas height (fits Android's adaptive-icon safe-zone circle without
+  corner clipping), same cream bg baked in — matches how the prior foreground
+  asset was authored (opaque RGB, not true alpha).
+- `ic_launcher_background.png` / `ic_launcher_adaptive_back.png` — flat cream,
+  no change in approach.
+- `ic_launcher_monochrome.png` (Android 13+ themed icon layer) — regenerated
+  as a true transparent-background black silhouette. **Fixed a pre-existing
+  bug in the old asset**: it was a solid opaque black square (no alpha
+  channel at all), which would have rendered as a solid black tile under
+  Android's themed-icon mode instead of a tinted shield shape.
+
+iOS `AppIcon.appiconset` NOT touched — the `ios/` project in this repo
+appears to be an unrenamed/shared template (`AlphaQuark.xcodeproj`,
+`ARFSTests` scheme) and it wasn't confirmed this is the actual iOS build
+target for RGX; revisit as a separate task if so.
+
+**Files:** `android/app/src/main/res/mipmap-*/ic_launcher*.png` (30 files).
+
+---
+
+## [unreleased] - 2026-07-18 — fix(branding): rgxresearch logo/toolbarlogo pointed at dead AWS S3 (404/403), repointed to MinIO
+
+`ConfigContext.js`'s `logo: apiData.logo || initialConfig.logo` means the
+**backend** advisor record wins over the bundled variant asset. The
+`rgxresearch` Mongo `appadvisors` doc had `logo`/`toolbarlogo` still set to
+`https://aq-social-02.s3.ap-south-1.amazonaws.com/...` — the legacy AWS S3
+account is dead (`AllAccessDisabled`, confirmed via curl → HTTP 403), part of
+the fleet-wide S3→MinIO migration (`prod-alphaquark-github/docs/
+S3_MINIO_MIGRATION_STATUS.md`) that this one record was missed by. The
+correct asset was already sitting on the live MinIO store at
+`https://s3.alphaquark.in/aq-social-02/rgxresearch/logo.png` (uploaded
+2026-07-02, byte-identical to the new "equitypro.co.in" shield logo supplied
+this session) — just never wired up. Updated both `logo` and `toolbarlogo` in
+`rgxresearch.appadvisors` to that MinIO URL directly via mongosh.
+
+Also swapped the bundled fallback asset (used briefly on config load, or if
+the remote URL ever fails again) from `src/assets/RGXResearchLogo.jpg`
+(opaque JPEG, old mark) to `src/assets/RGXResearchLogo.png` (new transparent
+shield mark, same file as the one now live on MinIO) and updated the
+`RGXLogo` import in `whitelabel/appVariants.js`.
+
+Not touched: Android launcher icon (`mipmap-*/ic_launcher*`) and iOS
+`AppIcon.appiconset` still use the old mark — separate task if those should
+also move to the new logo. **Files:** `src/assets/RGXResearchLogo.png` (new),
+`src/assets/RGXResearchLogo.jpg` (removed), `whitelabel/appVariants.js`;
+DB: `rgxresearch.appadvisors.logo`/`.toolbarlogo`.
+
+---
+
 ## [unreleased] - 2026-07-13 — fix(login): show bundled logo while advisor config loads (not a blank box)
 
 `renderLogo`'s `configLoading` branch returned a blank `<View>`, so the brand mark

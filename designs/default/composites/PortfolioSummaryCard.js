@@ -313,6 +313,13 @@ function PortfolioSummaryInner() {
       {hasHistory && (
         <View style={styles.card}>
           <Text style={styles.title}>Value since you started</Text>
+          {hSummary?.has_executed_trades === false && (
+            <View style={styles.projectedBadge}>
+              <Text style={styles.projectedBadgeText}>
+                Projected — based on declared capital; no trades executed yet
+              </Text>
+            </View>
+          )}
           <Text style={styles.subtitle}>
             How your investment has grown, tracking the model
             {hSummary?.as_of ? ` · as of ${hSummary.as_of}` : ''}
@@ -409,7 +416,9 @@ function PortfolioSummaryInner() {
           <Text style={styles.note}>
             Value assumes you tracked the model's rebalances since your first
             investment.
-            {typeof hSummary?.actual_current === 'number'
+            {hSummary?.has_executed_trades === false
+              ? ' This is a projection based on your declared capital — no trades have been executed yet.'
+              : typeof hSummary?.actual_current === 'number'
               ? ` Your current broker-holdings value is ${inr(hSummary.actual_current)}.`
               : ''}{' '}
             XIRR is money-weighted; TWRR is time-weighted. Past performance
@@ -632,6 +641,21 @@ const makeStyles = c =>
     chipText: { fontSize: 11, color: c.text.muted, fontFamily: 'Poppins-Medium' },
     chipTextOn: { color: c.text.inverse },
     chart: { marginTop: 8, borderRadius: 12, marginLeft: -8 },
+    projectedBadge: {
+      alignSelf: 'flex-start',
+      marginBottom: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: c.border.default,
+      backgroundColor: c.surface.subtle,
+    },
+    projectedBadgeText: {
+      fontSize: 11,
+      fontFamily: 'Poppins-Medium',
+      color: c.text.muted,
+    },
     note: {
       marginTop: 10,
       fontSize: 11,
