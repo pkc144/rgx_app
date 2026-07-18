@@ -4,6 +4,18 @@ All notable changes to the AlphaQuark B2B Mobile App are documented here.
 
 ---
 
+## [unreleased] - 2026-07-18 — fix(android): app crashed at launch — native/JS component name mismatch
+
+`MainActivity.kt`'s `getMainComponentName()` returned `"EquityPro by RGX
+Research"` (with spaces) while `index.js` registers the root component as
+`"EquityProByRGXResearch"` (from `app.json`'s `name`). Native asked the
+AppRegistry for a name JS never registered → red-screen
+`"EquityPro by RGX Research" has not been registered` on every cold start.
+Fixed the Kotlin side to return the exact `app.json` name. **Files:**
+`android/app/src/main/java/com/rgx/aq/MainActivity.kt`.
+
+---
+
 ## [unreleased] - 2026-07-18 — fix(model-portfolio): label never-executed "Value since you started" as projected, add server-side capital bounds guard
 
 Account `pratik1762006@gmail.com` on `rgxresearch` was showing a ₹32L "Value
