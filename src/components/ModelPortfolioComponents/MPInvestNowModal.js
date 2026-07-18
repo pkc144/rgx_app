@@ -515,9 +515,11 @@ const MPInvestNowModal = ({
             break;
 
           case 'PAYMENT_FAILED':
-            // Payment failed, inform user
+            // Reason-aware title + message (PendingPaymentManager →
+            // describeStoredPaymentFailure). Falls back to the old generic
+            // title only if the recovery result predates that change.
             Alert.alert(
-              'Payment Failed',
+              result.needsAction.title || 'Payment Failed',
               result.needsAction.message,
               [{ text: 'OK' }],
             );
