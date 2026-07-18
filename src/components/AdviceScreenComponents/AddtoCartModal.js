@@ -50,7 +50,7 @@ import Config from 'react-native-config';
 import { useConfig } from '../../context/ConfigContext';
 import {generateToken} from '../../utils/SecurityTokenManager';
 import {useModal} from '../ModalContext';
-import {getAdvisorSubdomain} from '../utils/variantHelper';
+import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import BrokerSelectionModal from '../BrokerSelectionModal';
 import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
 import CartFullAmountText from './DynamicText/CartFullAmountText';

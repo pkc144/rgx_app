@@ -44,17 +44,18 @@ import { useModal } from '../../components/ModalContext';
 import eventEmitter from '../EventEmitter';
 import BrokerSelectionModal from '../BrokerSelectionModal';
 
-import { OtherBrokerModel } from '../DdpiModal';
+// Single merged import — six separate `from '../DdpiModal'` lines made
+// Metro's inline-requires transform assign the file's LAST dependency two
+// different indices (pre/post-dedupe), leaving one call site pointing past
+// the registered dependency array -> release-only hard crash
+// 'Requiring unknown module "undefined"' on the Zerodha sell gate
+// (2026-07-18, proven via unminified release bundle inspection).
+import DdpiModal, { OtherBrokerModel, ActivateNowModel, DhanTpinModal, AngleOneTpinModal, FyersTpinModal } from '../DdpiModal';
 import { useTrade } from '../../screens/TradeContext';
 import { useConfig } from '../../context/ConfigContext';
 import IsMarketHours from '../../utils/isMarketHours';
 import { computeTradeVariant } from '../../utils/tradeVariant';
 
-import { ActivateNowModel } from '../DdpiModal';
-import DdpiModal from '../DdpiModal';
-import { DhanTpinModal } from '../DdpiModal';
-import { AngleOneTpinModal } from '../DdpiModal';
-import { FyersTpinModal } from '../DdpiModal';
 import BrokerConnectModalDispatch from '../BrokerConnectionModal/BrokerConnectModalDispatch';
 import Config from 'react-native-config';
 import notifee, { EventType } from '@notifee/react-native';
@@ -62,7 +63,7 @@ import notifee, { EventType } from '@notifee/react-native';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { isZerodhaSellAuthorized } from '../../utils/zerodhaDdpiGate';
 import { isGttNativeBroker, isGttOcoLeg } from '../../utils/gttSupport';
-import { getAdvisorSubdomain } from '../utils/variantHelper';
+import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import useSdkClient from '../../sdk/useSdkClient';
 
 const isSdkExecuteAdviceEnabled = () => {
