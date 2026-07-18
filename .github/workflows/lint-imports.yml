@@ -1,0 +1,41 @@
+# Dangling-import gate
+#
+# Catches named imports from local modules where the target does NOT export
+# that name. Those evaluate to `undefined` at runtime and fail SILENTLY —
+# only when the code path actually runs.
+#
+# This is not hypothetical: on 2026-07-18, `describeCashfreeDecline` was found
+# imported and called at 3 sites in MPInvestNowModal.js while being defined
+# nowhere, in 5 of 7 white-label forks. Those call sites run ONLY on the
+# payment-decline path, so a customer whose card was refused got
+# `describeCashfreeDecline is not a function` instead of retry guidance.
+# Nothing caught it — no build gate, no lint, no test. This job is that gate.
+#
+# Runs on ubuntu (cheap). Unlike android-build/ios-build, this is deliberately
+# NOT workflow_dispatch-only — it must run on every push/PR to be useful.
+name: lint-imports
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dangling-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # The audit only needs @babel/parser, but npm ci gives a faithful tree
+      # and keeps this honest about the repo's real dependency state.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Audit for dangling imports
+        run: node scripts/audit-dangling-imports.js

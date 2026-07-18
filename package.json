@@ -28,7 +28,8 @@
     "detox:test:edge": "detox test -c android.emu.debug e2e/specs/edgeCases.test.js",
     "detox:test:mp": "detox test -c android.emu.debug e2e/specs/modelPortfolio.test.js",
     "test:all": "jest --ci --watchAll=false && detox test -c android.emu.debug",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "audit:imports": "node scripts/audit-dangling-imports.js"
   },
   "dependencies": {
     "@alphaquark/mobile-sdk": "file:../../alphaquark-mobile-sdk/packages/rn",
