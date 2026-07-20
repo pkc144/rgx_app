@@ -28,6 +28,7 @@ import {isOrderRejected, isOrderSuccess, isOrderPending} from '../../utils/order
 import {useComponent} from '../../design/useDesign';
 import useHomeMarketSummary from '../Home/hooks/useHomeMarketSummary';
 import styles from './PortfolioScreen.styles';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const PortfolioScreen = () => {
   const navigation = useNavigation();
@@ -53,7 +54,7 @@ const PortfolioScreen = () => {
   }, [tabIndex]);
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
   // Variant-facing user name + tickers for the alphanomy `_AppHeader`.
   const userName = userDetails?.name || user?.displayName || '';
   const { tickers } = useHomeMarketSummary();

@@ -34,6 +34,7 @@ import {
   sdkConnectBroker,
   sdkDualWriteSafely,
 } from '../../sdk/brokerSdkBridge';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -72,7 +73,7 @@ const GrowwConnectModal = ({
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
 
   const advisorSubdomain =
     configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain();

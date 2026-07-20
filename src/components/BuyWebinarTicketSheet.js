@@ -33,6 +33,7 @@ import {
   CFThemeBuilder,
 } from 'cashfree-pg-api-contract';
 import { getAuth } from '@react-native-firebase/auth';
+import {getAccountEmail} from '../utils/accountEmail';
 import liveKitService from '../FunctionCall/services/LiveKitService';
 import {
   getCashfreeEnvironment,
@@ -92,7 +93,7 @@ export default function BuyWebinarTicketSheet({ visible, onClose, lesson, onPurc
   // signed-in users so they can't accidentally type a different address
   // and trip EMAIL_MISMATCH.
   const signedInEmail = (() => {
-    try { return getAuth().currentUser?.email || ''; } catch (_) { return ''; }
+    try { return getAccountEmail() || ''; } catch (_) { return ''; }
   })();
   const isSignedInEmail = !!signedInEmail;
 

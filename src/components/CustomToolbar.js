@@ -57,6 +57,7 @@ import MarketIndices from './HomeScreenComponents/MarketIndices';
 import ProfileModal from './ProfileModal';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {getAccountEmail, getAccountDisplayName} from '../utils/accountEmail';
 const {width, height} = Dimensions.get('window');
 
 const CustomToolbar = React.memo(({count, currentRoute}) => {
@@ -97,11 +98,14 @@ const CustomToolbar = React.memo(({count, currentRoute}) => {
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
   const insets = useSafeAreaInsets();
 
   // Use Firebase displayName as fallback if userDetails not loaded yet
-  const name = userDetails?.name || user?.displayName || user?.email?.split('@')[0];
+  // getAccountDisplayName refuses the legacy 'Apple User' placeholder (which
+  // was persisted server-side, so userDetails.name can literally BE it) and
+  // falls back to the resolved account email's local part.
+  const name = getAccountDisplayName(userDetails?.name, user?.displayName);
 
   const [modalVisible, setModalVisible] = useState(false);
 

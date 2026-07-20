@@ -143,6 +143,7 @@ import RebalanceReviewScreen from '../screens/Rebalance/RebalanceReviewScreen';
 import ExecutionStatusScreen from '../screens/Rebalance/ExecutionStatusScreen';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import { useWebSocketInitializer } from '../utils/websocketInitializer';
+import {getAccountEmail} from '../utils/accountEmail';
 
 
 const auth = getAuth();
@@ -261,7 +262,7 @@ const MainTabNavigator = () => {
     configData,
     userDetails,
   } = useTrade();
-  const migrationUserEmail = userDetails?.email;
+  const migrationUserEmail = getAccountEmail();
   const insets = useSafeAreaInsets();
   const bottomSheetPosition = getBottomSheetPosition(insets);
   const translateY = useRef(new Animated.Value(screenHeight)).current;
@@ -509,7 +510,10 @@ const CustomDrawerContent = props => {
   }
   useEffect(() => {
     if (auth.currentUser) {
-      setUserEmail(auth.currentUser.email);
+      // Apple users have no usable currentUser.email — without the resolver
+      // this stayed null and fetchUserProfile() below returned early, leaving
+      // the drawer profile blank. See utils/accountEmail.
+      setUserEmail(getAccountEmail());
     }
 
     // Fetch the user profile when the drawer opens

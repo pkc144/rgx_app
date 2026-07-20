@@ -29,6 +29,7 @@ import {
   getSubscriptionStatus,
   ACCEPTABLE_DATE_FORMATS,
 } from '../../utils/subscriptionStatus';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const {width: screenWidth} = Dimensions.get('window');
 const Alpha100 = require('../../assets/alpha-100.png');
@@ -54,7 +55,7 @@ const MySubscriptionsScreen = () => {
   const navigation = useNavigation();
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

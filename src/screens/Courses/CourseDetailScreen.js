@@ -34,6 +34,7 @@ import { useConfig } from '../../context/ConfigContext';
 import { useDesign } from '../../design/useDesign';
 import gumletService from '../../FunctionCall/services/GumletService';
 import CoursePurchaseSheet from '../../components/CoursePurchaseSheet';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 function GumletPlayerLazy(props) {
   const design = useDesign();
@@ -141,7 +142,7 @@ export default function CourseDetailScreen() {
   // Enrollment lookup — mirrors web courseDetailsPage.fetchClientCourseDetails.
   // 404 = not enrolled (expected). Anything else: stay un-purchased.
   const fetchClientCourse = useCallback(async () => {
-    const userEmail = user?.email;
+    const userEmail = getAccountEmail();
     if (!userEmail || !course?._id) return;
     try {
       const res = await gumletService.getClientCourseDetails(userEmail, course._id);
@@ -162,7 +163,7 @@ export default function CourseDetailScreen() {
       // un-purchased; the user can still tap "Get free access" to enroll.
       setIsPurchased(false);
     }
-  }, [user?.email, course?._id, course?.modules]);
+  }, [course?._id, course?.modules]);
 
   useEffect(() => { fetchClientCourse(); }, [fetchClientCourse]);
 

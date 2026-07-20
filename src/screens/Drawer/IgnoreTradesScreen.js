@@ -49,6 +49,7 @@ import {useConfig} from '../../context/ConfigContext';
 import { computeTradeVariant } from '../../utils/tradeVariant';
 import {getAdvisorSubdomain} from '../../utils/variantHelper';
 import useSdkClient from '../../sdk/useSdkClient';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const isSdkExecuteAdviceEnabled = () => {
   const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
@@ -67,7 +68,7 @@ const IgnoreTradesScreen = () => {
   const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user && user.email;
+  const userEmail = getAccountEmail();
 
   const {showAddToCartModal} = useModal();
   const {setCartCount} = useCart();

@@ -17,6 +17,7 @@ import {
   sdkConnectBroker,
   sdkDualWriteSafely,
 } from '../../sdk/brokerSdkBridge';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const HDFCconnectModal = ({
   isVisible,
@@ -36,7 +37,7 @@ const HDFCconnectModal = ({
   const [authUrl, setAuthUrl] = useState('');
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
   const [isPasswordVisibleup, setIsPasswordVisibleup] = useState(false);
   const sheet = useRef(null);
   const scrollViewRef = useRef(null);

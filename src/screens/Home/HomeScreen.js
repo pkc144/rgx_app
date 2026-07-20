@@ -81,6 +81,7 @@ import AlphaQuarkBanner from '../../components/HomeScreenComponents/AlphaQuarkBa
 import KnowledgeHub from '../../components/HomeScreenComponents/KnowledgeHub';
 import ModelPortfolioScreen from '../Drawer/ModelPortfolioScreen';
 import UpdateAppModal, {checkForAppUpdate} from '../../UpdateAppModal';
+import {getAccountEmail, getAccountDisplayName} from '../../utils/accountEmail';
 
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 const selectedVariant = Config?.APP_VARIANT || 'rgxresearch';
@@ -140,13 +141,13 @@ const HomeScreen = ({ }) => {
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
   // Resolve a displayable user name (alphanomy variant uses this for the
   // header greeting). Backend-stored `userDetails.name` is preferred (full
   // legal name); Firebase `user.displayName` is the fallback (Google /
   // Apple sign-in surface). Email-derived first-name remains the final
   // fallback, handled inside the variant presentation.
-  const userName = userDetails?.name || user?.displayName || '';
+  const userName = getAccountDisplayName(userDetails?.name, user?.displayName);
   const [isLoading, setIsLoading] = useState(true);
   // Phase E prep (2026-05-01): tab + 7-overlay state consolidated behind a
   // single hook with backward-compat boolean shims; modal visibility
@@ -325,7 +326,10 @@ const HomeScreen = ({ }) => {
       if (fcmToken) {
         // Define the payload
         const payload = {
-          email: user.email,
+          // getAccountEmail(), not user.email: an Apple user's Firebase email
+          // is null, which registered the device token against no account and
+          // silently disabled push notifications for them.
+          email: getAccountEmail(),
           fcm_token: fcmToken.toString(),
         };
         console.log(' Fcm token:', fcmToken);
@@ -359,7 +363,7 @@ const HomeScreen = ({ }) => {
           await axios.post(
             `${server.server.baseUrl}api/devices/register`,
             {
-              user_email: user.email,
+              user_email: getAccountEmail(),
               app: 'alphab2b',
               platform: Platform.OS, // 'ios' | 'android'
               device_token: fcmToken.toString(),

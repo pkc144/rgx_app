@@ -26,6 +26,7 @@ import {
   markBrokerExpired,
 } from '../../utils/reauthHelpers';
 import { isBrokerSessionExpired } from '../../utils/brokerStateUtils';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 // Backend `connected_brokers[].broker` → ModalManager switch key. Keep in
 // sync with src/GlobalUIModals/ModalManager.js. Brokers not listed here
@@ -87,7 +88,7 @@ const ManageConnectionsModal = ({
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
 
   const fetchConnections = async () => {
     if (!userEmail || fetchingRef.current) return;

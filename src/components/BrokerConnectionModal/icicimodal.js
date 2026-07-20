@@ -17,6 +17,7 @@ import {
   sdkConnectBroker,
   sdkDualWriteSafely,
 } from '../../sdk/brokerSdkBridge';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const ICICIUPModal = ({
   isVisible,
@@ -44,7 +45,7 @@ const ICICIUPModal = ({
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
 
   const checkValidApiAnSecretdecrypt = details => {
     const bytesKey = CryptoJS.AES.decrypt(details, 'ApiKeySecret');

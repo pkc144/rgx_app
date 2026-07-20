@@ -56,6 +56,7 @@ import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
 import CartFullAmountText from './DynamicText/CartFullAmountText';
 import TotalAmountText from './DynamicText/totalAmount';
 import useSdkClient from '../../sdk/useSdkClient';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const isSdkExecuteAdviceEnabled = () => {
   const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
@@ -100,7 +101,7 @@ const AddToCartModal = ({
   const {setCartCount} = useCart();
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
   const [cartItemCount, setCartItemCount] = useState();
   //const [brokerStatus, setBrokerStatus] = useState();
 

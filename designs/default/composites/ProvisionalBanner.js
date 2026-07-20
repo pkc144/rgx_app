@@ -18,6 +18,7 @@ import { getAuth } from '@react-native-firebase/auth';
 import server from '../../../src/utils/serverConfig';
 import { generateToken } from '../../../src/utils/SecurityTokenManager';
 import { useTrade } from '../../../src/screens/TradeContext';
+import {useAccountEmail} from '../../../src/utils/accountEmail';
 
 const fmtDate = d => {
     const dt = new Date(d);
@@ -31,7 +32,9 @@ const fmtDate = d => {
 
 const ProvisionalBanner = () => {
     const { configData } = useTrade();
-    const email = getAuth().currentUser?.email;
+    // Reactive: gates a fetch on `email` and carries it in the effect deps
+    // below, so it must re-render when the Apple typed identity resolves.
+    const email = useAccountEmail();
     const [pending, setPending] = useState(null);
     const [dismissed, setDismissed] = useState(false);
 

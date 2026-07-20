@@ -41,6 +41,7 @@ import useTokens from '../../theme/useTokens';
 import { useComponent } from '../../design/useDesign';
 import useHomeMarketSummary from '../Home/hooks/useHomeMarketSummary';
 import { shapeMpPlan, shapeBespokePlan } from '../../utils/alphanomyPlanShape';
+import {useAccountEmail} from '../../utils/accountEmail';
 
 const {width, width: ScreenWidth} = Dimensions.get('window');
 
@@ -65,7 +66,11 @@ const ModelPortfolioScreen = ({type = '', onDataLoaded}) => {
   const [showPaymentFail, setShowPaymentFail] = useState(false);
   const navigation = useNavigation();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  // Reactive: the fetch gate below must re-render when the Apple typed
+  // account email. getAccountEmail() applies that precedence; reading
+  // synchronously here would capture null on cold start and leave
+  // the fetch gate below never opened. See src/utils/accountEmail.js.
+  const userEmail = useAccountEmail();
 
   // Variant-facing user name for the alphanomy `_AppHeader` greeting.
   // Declared AFTER `user` so we don't TDZ-read an undeclared binding.

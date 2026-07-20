@@ -17,6 +17,7 @@ import server from '../../utils/serverConfig';
 import { generateToken } from '../../utils/SecurityTokenManager';
 import { useTrade } from '../TradeContext';
 import { useConfig } from '../../context/ConfigContext';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 // The backend serializes BSON dates as a naive UTC wall-clock (no offset).
 // JS parses an offset-less ISO string as *local* time, which would show the
@@ -79,7 +80,7 @@ const RecommendationMessagesScreen = () => {
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
 
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);

@@ -44,6 +44,7 @@ import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import { useTrade } from '../../screens/TradeContext';
 import eventEmitter from '../EventEmitter';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const wrapCredential = (value) =>
   CryptoJS.AES.encrypt(String(value || ''), 'ApiKeySecret').toString();
@@ -56,7 +57,7 @@ const ArihantConnectModal = ({
   const { configData } = useTrade();
   const showAlert = useModalStore((s) => s.showAlert);
   const auth = getAuth();
-  const userEmail = auth.currentUser?.email;
+  const userEmail = getAccountEmail();
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');

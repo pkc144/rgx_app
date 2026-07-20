@@ -33,6 +33,7 @@ import { getApiBrokerName, BROKER_AUTH_TYPE } from '../../config/brokerRegistry'
 import { getBrokerCallbackUrl } from '../../utils/brokerAuth';
 import useModalStore from '../../GlobalUIModals/modalStore';
 import BrokerWalkthroughPlayer from '../../components/BrokerConnectionModal/BrokerWalkthroughPlayer';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const getHeaders = () => ({
   'Content-Type': 'application/json',
@@ -48,7 +49,7 @@ const BrokerCredentialScreen = () => {
   const { brokerConfig, onSuccess } = route.params || {};
 
   const auth = getAuth();
-  const userEmail = auth.currentUser?.email;
+  const userEmail = getAccountEmail();
   const showAlert = useModalStore((state) => state.showAlert);
 
   const [formValues, setFormValues] = useState({});

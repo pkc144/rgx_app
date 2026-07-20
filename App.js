@@ -28,6 +28,11 @@ import DesignProvider from './src/design/DesignProvider';
 import useTokens from './src/theme/useTokens';
 import server from './src/utils/serverConfig';
 import {TradeProvider} from './src/screens/TradeContext';
+import eventEmitter from './src/components/EventEmitter';
+import {
+  getAccountEmailAsync,
+  ACCOUNT_EMAIL_EVENT,
+} from './src/utils/accountEmail';
 import {ConfigProvider} from './src/context/ConfigContext';
 import SupportWidget from './src/components/SupportWidget/SupportWidget';
 import {GstConfigProvider} from './src/context/GstConfigContext';
@@ -87,21 +92,41 @@ const App = () => {
 
   useEffect(() => {
     const auth = getAuth();
-    // Handle user state changes
+    // App-root identity. This value feeds SdkProviderRoot's `userRef` (the
+    // SDK session-mint identity), SupportWidget and the user fetch below —
+    // so reading `user.email` directly left Apple "Hide My Email" users with
+    // NO SDK session at all (every SDK-gated broker Connect button stays
+    // disabled on !ready) and no support/user context. getAccountEmailAsync
+    // applies the Apple-aware precedence. See src/utils/accountEmail.js.
+    const resolveIdentity = async user => {
+      if (!user) {
+        setUserEmail(null);
+        return;
+      }
+      try {
+        setUserEmail((await getAccountEmailAsync()) || null);
+      } catch {
+        setUserEmail(user.email || null);
+      }
+    };
+
     const unsubscribe = onAuthStateChanged(auth, user => {
       setUser(user);
-      if (user?.email) {
-        //console.log('got the emaiiilll:',user?.email);
-        setUserEmail(user.email);
-      } else {
-        setUserEmail(null);
-      }
+      resolveIdentity(user);
       if (initializing) {
         setInitializing(false);
       }
     });
-    // Cleanup subscription
-    return unsubscribe;
+
+    // The auth listener fires BEFORE an Apple user submits the email screen,
+    // so the identity can resolve after this effect has already run.
+    const onResolved = email => setUserEmail(email || null);
+    eventEmitter.on(ACCOUNT_EMAIL_EVENT, onResolved);
+
+    return () => {
+      unsubscribe();
+      eventEmitter.off(ACCOUNT_EMAIL_EVENT, onResolved);
+    };
   }, [initializing]);
 
   useEffect(() => {

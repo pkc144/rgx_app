@@ -21,6 +21,7 @@ import {generateToken} from '../utils/SecurityTokenManager';
 import Config from 'react-native-config';
 import {useTrade} from '../screens/TradeContext';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
+import {getAccountEmail} from '../utils/accountEmail';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
 const commonHeight = screenHeight * 0.06; // Common height
@@ -44,7 +45,7 @@ const IIFLProceedModal = ({
   const [isLoading, setIsLoading] = useState(false); // State for loading indicator
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
 
   useEffect(() => {
     if (isVisible && userEmail) {

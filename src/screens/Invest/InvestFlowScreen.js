@@ -54,6 +54,7 @@ import {
   PaymentType,
 } from '../../FunctionCall/services/PendingPaymentManager';
 import { logPayment } from '../../utils/Logging';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const getHeaders = () => ({
   'Content-Type': 'application/json',
@@ -124,7 +125,7 @@ const InvestFlowScreen = () => {
   const showAlert = useModalStore((state) => state.showAlert);
 
   const auth = getAuth();
-  const userEmail = auth.currentUser?.email;
+  const userEmail = getAccountEmail();
 
   // ── Step tracking ──
   const [currentStep, setCurrentStep] = useState(0);

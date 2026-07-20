@@ -61,6 +61,7 @@ import {AngleOneTpinModal} from '../../components/DdpiModal';
 import {FyersTpinModal} from '../../components/DdpiModal';
 import {OtherBrokerModel} from '../../components/DdpiModal';
 import {FileText} from 'lucide-react-native';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const Alpha100 = require('../../assets/alpha-100.png');
 const screenWidth = Dimensions.get('window').width;
@@ -95,7 +96,7 @@ const MPPerformanceScreen = ({route}) => {
   const auth = getAuth();
   const user = auth.currentUser;
   const {fileName} = useParams();
-  const userEmail = user && user.email;
+  const userEmail = getAccountEmail();
 
   // State
   const [confirmOrder, setConfirmOrder] = useState(false);

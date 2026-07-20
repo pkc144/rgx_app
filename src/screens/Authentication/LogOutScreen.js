@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTrade } from '../TradeContext';
 import { useConfig } from '../../context/ConfigContext';
 import { useComponent } from '../../design/useDesign';
+import { clearAccountEmail } from '../../utils/accountEmail';
 
 const LogoutScreen = ({ navigation }) => {
     const config = useConfig();
@@ -53,7 +54,11 @@ const LogoutScreen = ({ navigation }) => {
                 await signOut(auth);
                 await AsyncStorage.removeItem('cartItems');
                 // Apple sign-in identity fallback — must not leak across accounts.
-                await AsyncStorage.removeItem('aq_account_email');
+                // clearAccountEmail() clears the persisted key AND the
+                // in-memory cache that utils/accountEmail.getAccountEmail()
+                // serves synchronously — a raw AsyncStorage.removeItem leaves
+                // the cache stale and the next screen still sees the old email.
+                await clearAccountEmail();
                 setUserDetails(null);
                 setHasFetchedTrades(false);
                 setIsProfileCompleted(false);

@@ -38,6 +38,7 @@ import {
   normalizeOrderStatus,
   getOrderStatusDisplay,
 } from '../../utils/orderStatusUtils';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const {width} = Dimensions.get('window');
 
@@ -153,7 +154,7 @@ const PlaceOrdersScreen = ({
   onRefreshComplete,
   navigation,
 }) => {
-  const userEmail = userDetails?.email;
+  const userEmail = getAccountEmail();
 
   // State
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());

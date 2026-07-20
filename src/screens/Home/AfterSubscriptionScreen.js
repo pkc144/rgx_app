@@ -39,6 +39,7 @@ import DistributionGrid from '../Drawer/DistributionRowGrid';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
 import useTokens from '../../theme/useTokens';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const screenWidth = Dimensions.get('window').width;
 const ScreenHeight = Dimensions.get('window').height;
@@ -160,7 +161,7 @@ const AfterSubscriptionScreen = ({route}) => {
   const {fileName} = route.params;
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user && user.email;
+  const userEmail = getAccountEmail();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);

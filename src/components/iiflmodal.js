@@ -32,6 +32,7 @@ import {
   sdkConnectBroker,
   sdkDualWriteSafely,
 } from '../sdk/brokerSdkBridge';
+import {getAccountEmail} from '../utils/accountEmail';
 
 const {height: screenHeight} = Dimensions.get('window');
 // The live backend still exposes the retired v1 partner endpoint and does
@@ -52,7 +53,7 @@ const IIFLModal = ({isVisible, onClose, fetchBrokerStatusModal}) => {
 
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
   const accent =
     colors?.brand?.primary ||
     runtimeConfig?.mainColor ||

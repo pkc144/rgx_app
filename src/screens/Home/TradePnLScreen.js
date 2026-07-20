@@ -21,6 +21,7 @@ import {generateToken} from '../../utils/SecurityTokenManager';
 import {useTrade} from '../TradeContext';
 import {useConfig} from '../../context/ConfigContext';
 import formatCurrency from '../../utils/formatCurrency';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const TradePnLScreen = () => {
   const {configData} = useTrade();
@@ -31,7 +32,7 @@ const TradePnLScreen = () => {
 
   const navigation = useNavigation();
   const auth = getAuth();
-  const userEmail = auth.currentUser?.email;
+  const userEmail = getAccountEmail();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

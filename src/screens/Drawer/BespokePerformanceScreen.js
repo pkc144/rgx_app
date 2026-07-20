@@ -27,6 +27,7 @@ import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import { useComponent } from '../../design/useDesign';
 import { getSubscriptionStatusString } from '../../utils/subscriptionStatus';
 import { useConfig } from '../../context/ConfigContext';
+import { getAccountEmail } from '../../utils/accountEmail';
 
 const screenWidth = Dimensions.get('window').width;
 const ScreenHeight = Dimensions.get('window').height;
@@ -48,7 +49,7 @@ const BespokePerformanceScreen = ({ route }) => {
     const auth = getAuth();
     const user = auth.currentUser;
     const { fileName } = useParams();
-    const userEmail = user && user.email;
+    const userEmail = getAccountEmail();
 
     // State
     const [confirmOrder, setConfirmOrder] = useState(false);

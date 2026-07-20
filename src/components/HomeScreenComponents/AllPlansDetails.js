@@ -26,6 +26,7 @@ import { withGst, gstLabel } from '../../utils/gstHelpers';
 import RenderHTML from 'react-native-render-html';
 import { useWindowDimensions } from 'react-native';
 import PlanCard from './PlanCard';
+import {useAccountEmail} from '../../utils/accountEmail';
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.8;
 const CARD_SPACING = 16;
@@ -46,7 +47,10 @@ const AllPlanDetails = ({ type }) => {
   const auth = getAuth();
   const navigation = useNavigation();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  // Reactive: the fetch below was built with a null email whenever this
+  // mounted before the Apple typed identity resolved. See
+  // src/utils/accountEmail.js.
+  const userEmail = useAccountEmail();
 
   const subscribed = !planList;
 

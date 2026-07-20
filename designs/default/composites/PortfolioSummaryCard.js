@@ -43,6 +43,7 @@ import { useConfig } from '../../../src/context/ConfigContext';
 import useTokens from '../../../src/theme/useTokens';
 import PortfolioSummaryService from '../../../src/FunctionCall/services/PortfolioSummaryService';
 import { useTrade } from '../../../src/screens/TradeContext';
+import {useAccountEmail} from '../../../src/utils/accountEmail';
 
 // ── formatters (mirror web's `inr` / `pct`) ────────────────────────────────
 const inr = v => {
@@ -86,7 +87,8 @@ function PortfolioSummaryInner() {
   const config = useConfig();
   const tokens = useTokens();
   const enabled = !!(config && config.performanceSummaryEnabled);
-  const email = getAuth().currentUser?.email || null;
+  // Reactive: must re-render when the Apple typed identity resolves.
+  const email = useAccountEmail();
   const {
     modelPortfolioStrategyfinal,
     modelPortfolioEntitlementsLoaded,

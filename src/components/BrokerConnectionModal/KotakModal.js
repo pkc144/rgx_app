@@ -17,6 +17,7 @@ import {
   sdkConnectBroker,
   sdkDualWriteSafely,
 } from '../../sdk/brokerSdkBridge';
+import {getAccountEmail} from '../../utils/accountEmail';
 
 const KotakModal = ({
   isVisible,
@@ -33,7 +34,7 @@ const KotakModal = ({
   const scrollViewRef = useRef(null);
   const auth = getAuth();
   const user = auth.currentUser;
-  const userEmail = user?.email;
+  const userEmail = getAccountEmail();
   const [apiKey, setApiKey] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [ucc, setucc] = useState('');

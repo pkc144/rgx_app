@@ -12,6 +12,7 @@ import {generateToken} from '../utils/SecurityTokenManager';
 import {SvgUri} from 'react-native-svg';
 import {useConfig} from '../context/ConfigContext';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
+import {getAccountEmailAsync} from '../utils/accountEmail';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {getRaId, getUserData, storeLoginData, tryResolveAdvisor, updateRACodeAndConfig} from '../utils/storageUtils';
 export default function SplashScreen() {
@@ -61,9 +62,23 @@ export default function SplashScreen() {
 
   useEffect(() => {
     const unsubscribe = auth().onAuthStateChanged(user => {
-      if (user && user.email) {
+      // NOT `user.email` — an Apple "Hide My Email" user has none, which made
+      // this cold-start gate fail closed: checkUserStatus never ran, so the
+      // app never routed to Home or fetched advisor config on relaunch. The
+      // identity is resolved inside (async) via getAccountEmailAsync().
+      if (user) {
         const checkUserStatus = async () => {
-          const email = user.email;
+          const email = await getAccountEmailAsync();
+          if (!email) {
+            // Signed in but no resolvable identity yet (Apple user who hasn't
+            // completed the email screen). Let the normal navigation flow
+            // take them there rather than hanging on the splash.
+            console.warn(
+              '[SplashScreen] signed-in user has no resolvable account email — routing to auth flow',
+            );
+            setTimeout(() => navigation.replace('Login'), 1000);
+            return;
+          }
           try {
             // First, check if we have a cached RA ID from AsyncStorage
             const cachedRaId = await getRaId();

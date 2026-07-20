@@ -34,6 +34,7 @@ import { isOrderPending, isOrderRejected } from '../../utils/orderStatusUtils';
 import useModalStore from '../../GlobalUIModals/modalStore';
 import { useComponent } from '../../design/useDesign';
 import useHomeMarketSummary from './hooks/useHomeMarketSummary';
+import {useAccountEmail} from '../../utils/accountEmail';
 
 const getOrderTimestamp = (order) =>
     new Date(order?.exitDate || order?.purchaseDate || order?.date || order?.created_at);
@@ -79,7 +80,10 @@ export default function OrderScreen() {
     const openModal = useModalStore((state) => state.openModal);
 
     const auth = getAuth();
-    const userEmail = auth.currentUser?.email;
+    // Reactive: this screen gates its fetch on userEmail, so it must
+    // re-render when the Apple typed identity resolves. See
+    // src/utils/accountEmail.js.
+    const userEmail = useAccountEmail();
 
     const [allOrders, setAllOrders] = useState([]);
     const [loading, setLoading] = useState(false);

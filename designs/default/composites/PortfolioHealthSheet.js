@@ -40,6 +40,7 @@ import {
     computeHealthSubScores,
     DEFAULT_ENABLED,
 } from '../../../src/utils/nba/portfolioHealth';
+import {useAccountEmail} from '../../../src/utils/accountEmail';
 
 const CONSENT_KEY = 'aq_health_holdings_consent';
 
@@ -77,7 +78,8 @@ const extractHoldings = blob => {
 const PortfolioHealthSheet = () => {
     const config = useConfig();
     const { allHoldingsData, configData } = useTrade();
-    const email = getAuth().currentUser?.email;
+    // Reactive: must re-render when the Apple typed identity resolves.
+    const email = useAccountEmail();
 
     const [open, setOpen] = useState(false);
     const [phase, setPhase] = useState('idle'); // idle | consent | analyzing | done | empty
