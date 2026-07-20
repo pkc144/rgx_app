@@ -26,6 +26,7 @@ import appleAuth from '@invertase/react-native-apple-authentication';
 import axios from 'axios';
 import server from '../../utils/serverConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import eventEmitter from '../../components/EventEmitter';
 import moment from 'moment';
 import { useTrade } from '../TradeContext';
 import { generateToken } from '../../utils/SecurityTokenManager';
@@ -324,9 +325,32 @@ const LoginScreen = () => {
             }
             displayName = displayName || 'Apple User';
 
+            // The PASSED userEmail wins over Firebase's user.email: for
+            // Apple "Hide My Email" flows user.email is a
+            // @privaterelay.appleid.com alias (or null) and userEmail is
+            // the real address the user typed on EmailScreenAppleLogin —
+            // creating the record under the relay alias orphans the user
+            // from their subscription/plans (2026-07-20).
+            const effectiveEmail = String(userEmail || user.email).trim().toLowerCase();
+
+            // Persist the resolved account identity: TradeContext (and any
+            // other consumer) cannot rely on auth.currentUser.email for
+            // Apple sign-ins — it stays null / relay-aliased for the life
+            // of the Firebase user. See resolveStoredAccountEmail().
+            try {
+                await AsyncStorage.setItem('aq_account_email', effectiveEmail);
+            } catch (persistErr) {
+                console.warn('aq_account_email persist failed (non-fatal):', persistErr?.message);
+            }
+            // TradeContext's auth listener fired BEFORE this point (at
+            // signInWithCredential) and read an empty key — tell it the
+            // identity is now resolved so its fallback hydrates without
+            // waiting for another auth-state change.
+            eventEmitter.emit('aq:accountEmailResolved', effectiveEmail);
+
             await axios.post(
                 `${server.server.baseUrl}api/user/`,
-                { email: userEmail, name: displayName, imageUrl: user.photoURL || null },
+                { email: effectiveEmail, name: displayName, imageUrl: user.photoURL || null },
                 {
                     headers: {
                         'Content-Type': 'application/json',
@@ -337,7 +361,7 @@ const LoginScreen = () => {
             );
 
             const userDetails = await axios.get(
-                `${server.server.baseUrl}api/user/getUser/${userEmail}?includeAdvisorConfig=true`,
+                `${server.server.baseUrl}api/user/getUser/${effectiveEmail}?includeAdvisorConfig=true`,
                 {
                     headers: {
                         'Content-Type': 'application/json',
@@ -348,10 +372,10 @@ const LoginScreen = () => {
             );
 
             const subdomain = config?.subdomain || config?.advisorRaCode?.toLowerCase();
-            trackAppUser({ email: userEmail, firebase_id: user.uid, name: displayName, login_method: 'apple', advisor_subdomain: subdomain });
-            logLoginAttempt({ email: userEmail, firebase_id: user.uid, status: 'success', login_method: 'apple', advisor_subdomain: subdomain });
+            trackAppUser({ email: effectiveEmail, firebase_id: user.uid, name: displayName, login_method: 'apple', advisor_subdomain: subdomain });
+            logLoginAttempt({ email: effectiveEmail, firebase_id: user.uid, status: 'success', login_method: 'apple', advisor_subdomain: subdomain });
 
-            await handlePostLoginNavigation(userDetails, userEmail);
+            await handlePostLoginNavigation(userDetails, effectiveEmail);
         } catch (e) {
             console.error('Error completing Apple Sign-In:', e);
             setError(e.message || 'Failed to complete sign in');
@@ -382,7 +406,19 @@ const LoginScreen = () => {
 
             if (response) {
                 const user = response.user;
-                let userEmail = appleEmail || user.email;
+                // Usable email = a REAL address. Apple's "Hide My Email"
+                // gives Firebase a @privaterelay.appleid.com alias — it is
+                // non-null but is NOT the identity the user's subscription /
+                // plans / clientlist rows live under (backend keys everything
+                // by the real email), so treat it like "no email" and collect
+                // the real one. appleEmail only lands on the very first
+                // authorization and can be a relay alias too.
+                const isPrivateRelayEmail = (e) =>
+                    /@privaterelay\.appleid\.com$/i.test(String(e || ''));
+                const userEmail =
+                    [user.email, appleEmail].find(
+                        (e) => e && !isPrivateRelayEmail(e),
+                    ) || null;
                 if (!userEmail) {
                     setLoading(false);
                     navigation.navigate('EmailScreenAppleLogin', {
