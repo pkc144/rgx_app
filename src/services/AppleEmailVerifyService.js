@@ -72,7 +72,7 @@ export const requestEmailOtp = async (email) => {
  */
 export const verifyEmailOtp = async (email, otp) => {
   try {
-    await axios.post(
+    const res = await axios.post(
       `${NODE_BASE}api/auth/apple/verify-email-otp`,
       {
         email: String(email || '').trim().toLowerCase(),
@@ -91,7 +91,14 @@ export const verifyEmailOtp = async (email, otp) => {
     } catch (_) {
       // Non-fatal: the binding succeeded server-side regardless.
     }
-    return { ok: true };
+    // `relinked` means the backend merged this throwaway Apple user into the
+    // account that already owned the email — the local session now points at
+    // a DELETED uid, so the caller must sign out and re-run Apple sign-in.
+    return {
+      ok: true,
+      relinked: !!res?.data?.relinked,
+      reauthRequired: !!res?.data?.reauthRequired,
+    };
   } catch (e) {
     const body = e?.response?.data || {};
     return {

@@ -22,7 +22,10 @@
  */
 
 import React, { useCallback, useState } from 'react';
+import { Alert } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { getAuth } from '@react-native-firebase/auth';
+import { clearAccountEmail } from '../../utils/accountEmail';
 import { useNavigation } from '@react-navigation/native';
 import { useConfig } from '../../context/ConfigContext';
 import { useComponent } from '../../design/useDesign';
@@ -92,6 +95,37 @@ const EmailScreenAppleLogin = ({ route }) => {
             }
             return;
         }
+
+        // The backend merged this throwaway Apple user into the account that
+        // already owned the email. The local Firebase session now points at a
+        // DELETED uid, so we must NOT continue the sign-in with it — tear it
+        // down and let the user re-run Apple sign-in, which now resolves to
+        // their real account (Apple is a linked provider on it).
+        if (res.reauthRequired) {
+            Alert.alert(
+                'Account linked',
+                `${email.trim().toLowerCase()} already had an account. We've linked Apple sign-in to it — please sign in with Apple once more to continue.`,
+                [
+                    {
+                        text: 'OK',
+                        onPress: async () => {
+                            try {
+                                await clearAccountEmail();
+                                await getAuth().signOut();
+                            } catch (_) {
+                                // Signing out is best-effort; the dead session
+                                // fails closed on its next call regardless.
+                            }
+                            if (onSubmit) onSubmit(null);
+                            navigation.goBack();
+                        },
+                    },
+                ],
+                { cancelable: false },
+            );
+            return;
+        }
+
         if (onSubmit) onSubmit(email.trim().toLowerCase());
         navigation.goBack();
     }, [otp, email, onSubmit, navigation, fail]);
