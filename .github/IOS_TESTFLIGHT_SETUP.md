@@ -108,3 +108,22 @@ Store Connect. On success, the build appears in App Store Connect → TestFlight
 - The `.p8` key is downloadable **once** — store it in your password manager.
 - If the versioning step errors *"No app found on App Store Connect for bundleId …"*, the bundle id in
   `ios-build.yml` doesn't match a registered ASC app — fix one of them.
+
+## Common build failures (learned onboarding rgx — pre-check these, they fail one run at a time)
+Each of these is a distinct build failure; validate all of them up front to pass in one run.
+
+1. **SDK step "SDK_REPO_TOKEN not set" / clone 403** — the workflow clones the PRIVATE
+   `alphaquark-mobile-sdk`. Grab the token from `~/.git-credentials` (the one that cloned it
+   locally) and test: `git ls-remote https://x-access-token:$T@github.com/alpha112233/alphaquark-mobile-sdk.git HEAD`.
+2. **Versioning step `401 NOT_AUTHORIZED`** — the ASC API key is revoked or the `.p8` / Key-ID /
+   Issuer-ID aren't a matched set. Key-ID must equal the `.p8` filename. Pre-validate: build an
+   ES256 JWT and call `GET /v1/apps?filter[bundleId]=<bundle>` — expect HTTP 200 + the app.
+3. **CocoaPods "could not find compatible versions for razorpay-pod"** — the Podfile pins an old
+   `razorpay-pod '1.3.9'`; `react-native-razorpay 2.3.x` needs `1.5.0`. Copy arfs's Podfile:
+   `razorpay-pod '1.5.0'`, `platform :ios '15.1'`, `fabric/new_arch=false`, and the
+   `ENABLE_USER_SCRIPT_SANDBOXING='NO'` post_install (also prevents an Archive **code 65** rsync failure).
+4. **Archive "provisioning profile doesn't include signing certificate Apple Distribution…"** —
+   the profile is a **Development** profile, not **App Store**. Regenerate at developer.apple.com →
+   Profiles → + → **Distribution → App Store** for the bundle id, selecting the **Distribution**
+   certificate (the one in your `.p12`). Verify the new profile has `get-task-allow=false`, no
+   `ProvisionedDevices`, and its cert SHA-1 matches the `.p12` cert.
