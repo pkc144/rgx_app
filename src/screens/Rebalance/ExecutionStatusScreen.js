@@ -26,6 +26,7 @@ import { getAdvisorSubdomain } from '../../utils/variantHelper';
 import useModalStore from '../../GlobalUIModals/modalStore';
 import eventEmitter from '../../components/EventEmitter';
 import useSdkClient from '../../sdk/useSdkClient';
+import { useConfig } from '../../context/ConfigContext';
 
 const isSdkExecuteAdviceEnabled = () => {
   const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
@@ -54,16 +55,24 @@ const ExecutionStatusScreen = () => {
   const {
     portfolio, userEmail, broker, brokerCredentials,
     orders, modelId, modelName, advisor, uniqueId, caPendingInfo,
+    planId, planVersion,
   } = route.params || {};
 
   const showAlert = useModalStore((state) => state.showAlert);
   const sdkClient = useSdkClient();
   const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
+  const appConfig = useConfig();
 
   // States: confirm, executing, done, error
   const [state, setState] = useState('confirm');
   const [results, setResults] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
+  // Frozen-plan 409 (PLAN_DRIFTED / expired / ALREADY_CONSUMED — see
+  // REBALANCE_PLAN_FREEZE_PLAN.md §4.4): the plan_id we hold is dead, so a
+  // plain "Retry" would just resubmit the same stale plan_id and 409 again.
+  // When true, the error CTA routes back to RebalanceReviewScreen for a
+  // fresh calculate instead of offering Retry.
+  const [needsRecompute, setNeedsRecompute] = useState(false);
   const executing = state === 'executing';
 
   const isDummyBroker = broker === 'DummyBroker' || !broker;
@@ -73,6 +82,7 @@ const ExecutionStatusScreen = () => {
     setState('executing');
     setResults([]);
     setErrorMsg(null);
+    setNeedsRecompute(false);
 
     try {
       const trades = orders.map((o) => ({
@@ -83,6 +93,18 @@ const ExecutionStatusScreen = () => {
         price: o.price,
       }));
 
+      // Phase 1 plan freeze (docs/REBALANCE_PLAN_FREEZE_PLAN.md §4.4/§4.5):
+      // forward the frozen plan_id/plan_version RebalanceReviewScreen's
+      // calculate minted so ccxt executes the server-frozen, re-validated
+      // plan instead of these client-built `trades`. We still send `trades`
+      // (backend ignores them on the frozen path) so nothing breaks if the
+      // backend flag is off / plan missing. Flag off / no planId ⇒ fields
+      // absent ⇒ byte-identical legacy payload.
+      const freezeOn = appConfig?.rebalanceFreezePlan === true;
+      const frozenPlanFields = freezeOn && planId
+        ? { plan_id: planId, plan_version: planVersion }
+        : {};
+
       const body = {
         user_broker: broker || 'DummyBroker',
         user_email: userEmail,
@@ -92,6 +114,7 @@ const ExecutionStatusScreen = () => {
         advisor,
         unique_id: uniqueId,
         caPendingInfo: caPendingInfo || [],
+        ...frozenPlanFields,
       };
 
       // Add broker credentials
@@ -176,10 +199,22 @@ const ExecutionStatusScreen = () => {
       setState('done');
     } catch (e) {
       console.error('[Execution] error:', e);
-      setErrorMsg(e.response?.data?.message || e.message || 'Order placement failed');
+      if (e?.response?.status === 409 && e?.response?.data?.recompute) {
+        setNeedsRecompute(true);
+        setErrorMsg(e.response.data.message || 'The rebalance plan changed and needs to be recalculated.');
+      } else {
+        setErrorMsg(e.response?.data?.message || e.message || 'Order placement failed');
+      }
       setState('error');
     }
-  }, [orders, userEmail, broker, brokerCredentials, modelId, modelName, advisor, uniqueId, caPendingInfo, isDummyBroker, sdkExecuteAdviceEnabled, sdkClient]);
+  }, [orders, userEmail, broker, brokerCredentials, modelId, modelName, advisor, uniqueId, caPendingInfo, isDummyBroker, sdkExecuteAdviceEnabled, sdkClient, planId, planVersion, appConfig?.rebalanceFreezePlan]);
+
+  // Frozen-plan recompute recovery: tell RebalanceReviewScreen (still mounted
+  // underneath in the stack) to re-run calculateRebalance, then pop back to it.
+  const handleRecomputeNavigate = () => {
+    eventEmitter.emit('rebalancePlanRecompute');
+    navigation.goBack();
+  };
 
   const normalizeStatus = (raw) => {
     const s = (raw || '').toLowerCase();
@@ -289,14 +324,22 @@ const ExecutionStatusScreen = () => {
         )}
 
         {state === 'error' && (
-          <>
-            <TouchableOpacity style={styles.retryBtn} onPress={executeOrders}>
-              <Text style={styles.retryBtnText}>Retry</Text>
+          needsRecompute ? (
+            // Do NOT offer a plain Retry here — it would resubmit the same
+            // now-dead plan_id and 409 again. Route back to a fresh calculate.
+            <TouchableOpacity style={styles.retryBtn} onPress={handleRecomputeNavigate}>
+              <Text style={styles.retryBtnText}>Recalculate</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.goBackBtn} onPress={() => navigation.goBack()}>
-              <Text style={styles.goBackBtnText}>Go Back</Text>
-            </TouchableOpacity>
-          </>
+          ) : (
+            <>
+              <TouchableOpacity style={styles.retryBtn} onPress={executeOrders}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.goBackBtn} onPress={() => navigation.goBack()}>
+                <Text style={styles.goBackBtnText}>Go Back</Text>
+              </TouchableOpacity>
+            </>
+          )
         )}
       </View>
     </View>

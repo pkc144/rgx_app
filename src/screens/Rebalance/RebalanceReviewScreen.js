@@ -37,6 +37,7 @@ import {
   checkPortfolioShortfall,
 } from '../../utils/rebalanceHelpers';
 import useModalStore from '../../GlobalUIModals/modalStore';
+import eventEmitter from '../../components/EventEmitter';
 
 const getHeaders = () => ({
   'Content-Type': 'application/json',
@@ -62,6 +63,11 @@ const RebalanceReviewScreen = () => {
   const [sellOrders, setSellOrders] = useState([]);
   const [uniqueId, setUniqueId] = useState(null);
   const [caPendingInfo, setCaPendingInfo] = useState([]);
+  // Rebalance plan freeze (docs/REBALANCE_PLAN_FREEZE_PLAN.md §4.2/§4.4):
+  // additive fields on the calculate response. Forwarded on Accept
+  // (ExecutionStatusScreen) only when rebalanceFreezePlan is on.
+  const [planId, setPlanId] = useState(null);
+  const [planVersion, setPlanVersion] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [alreadyAligned, setAlreadyAligned] = useState(false);
@@ -149,6 +155,9 @@ const RebalanceReviewScreen = () => {
       setSellOrders(filteredSell);
       setUniqueId(data?.uniqueId || data?.unique_id);
       setCaPendingInfo(data?.caPendingInfo || []);
+      // Additive plan-freeze fields (absent when the backend flag is off).
+      setPlanId(data?.plan_id || null);
+      setPlanVersion(data?.plan_version || null);
     } catch (e) {
       setErrorMsg(e.response?.data?.message || e.message || 'Failed to calculate rebalance');
     }
@@ -160,6 +169,21 @@ const RebalanceReviewScreen = () => {
     if (rebalanceFlag !== null) {
       calculateRebalance(rebalanceFlag);
     }
+  }, [rebalanceFlag, calculateRebalance]);
+
+  // ── Frozen-plan 409 recovery (docs/REBALANCE_PLAN_FREEZE_PLAN.md §4.4) ──
+  // ExecutionStatusScreen emits this before navigating back when
+  // process-trade 409s with `recompute:true` — the plan_id it held is dead
+  // (drifted/expired/consumed). Re-run calculate to mint a fresh plan,
+  // mirroring web's "Continue re-runs calculateRebalance" recovery.
+  useEffect(() => {
+    const onRecompute = () => {
+      if (rebalanceFlag !== null) {
+        calculateRebalance(rebalanceFlag);
+      }
+    };
+    eventEmitter.on('rebalancePlanRecompute', onRecompute);
+    return () => eventEmitter.removeListener('rebalancePlanRecompute', onRecompute);
   }, [rebalanceFlag, calculateRebalance]);
 
   // ── Execute: navigate to ExecutionStatusScreen ──
@@ -186,6 +210,8 @@ const RebalanceReviewScreen = () => {
       advisor,
       uniqueId,
       caPendingInfo,
+      planId,
+      planVersion,
     });
   };
 

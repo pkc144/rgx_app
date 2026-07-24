@@ -88,9 +88,43 @@ const MPReviewTradeModal = ({
   const openBrokerModal = useModalStore(state => state.openModal);
   // For trade `variant` computation at submit. See
   // docs/APP_ARCHITECTURE.md § 4.5.2 Trade variant field.
-  const { allowAfterHoursOrders } = useConfig() || {};
+  const { allowAfterHoursOrders, rebalanceFreezePlan } = useConfig() || {};
   const sdkClient = useSdkClient();
   const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
+
+  // Phase 1 plan freeze (prod-alphaquark-github docs/REBALANCE_PLAN_FREEZE_PLAN.md
+  // §4.4/§4.5; this repo's docs/WEB_TO_APP_PORT_PLAN_2026-07.md rebalance-freeze
+  // entry): forward the frozen plan_id/plan_version rebalance/calculate
+  // returned so ccxt executes the server-frozen, re-validated plan instead of
+  // the client-posted `trades`. This modal has no repair-mode branch (no
+  // `modelPortfolioRepairTrades` prop) — every plan_id it ever holds came from
+  // THIS calculate, so there is no repair-vs-fresh ambiguity to guard. Flag
+  // off / no plan_id ⇒ fields absent ⇒ byte-identical legacy payload.
+  const frozenPlanFields = rebalanceFreezePlan === true && calculatedPortfolioData?.plan_id
+    ? { plan_id: calculatedPortfolioData.plan_id, plan_version: calculatedPortfolioData.plan_version }
+    : {};
+
+  // Frozen-plan 409 (PLAN_DRIFTED / expired / ALREADY_CONSUMED — see
+  // REBALANCE_PLAN_FREEZE_PLAN.md §4.4): the plan_id we hold is dead, so
+  // re-submitting would 409 forever. Close the review step and re-run
+  // calculateRebalance (mints a fresh plan) — mirrors web's recompute
+  // handling. Returns true if it handled the error (caller should stop).
+  const handleFrozenPlanRecompute = (error) => {
+    if (error?.response?.status === 409 && error?.response?.data?.recompute) {
+      Toast.show({
+        type: 'error',
+        text1: 'Rebalance Plan Changed',
+        text2: error?.response?.data?.message || 'Please review and confirm again.',
+        visibilityTime: 6000,
+      });
+      onCloseReviewTrade();
+      if (typeof calculateRebalance === 'function') {
+        calculateRebalance();
+      }
+      return true;
+    }
+    return false;
+  };
   console.log('MPBROKER:', broker);
   const {width} = useWindowDimensions();
 
@@ -360,6 +394,7 @@ const MPReviewTradeModal = ({
       advisor: strategyDetails?.advisor,
       model_id: latestRebalance?.model_Id,
       unique_id: calculatedPortfolioData?.uniqueId,
+      ...frozenPlanFields,
       user_broker: broker,
       user_email: userEmail,
       trades: tradesWithVariant,
@@ -667,6 +702,10 @@ const MPReviewTradeModal = ({
       console.log('[OrderPlacement] Error:', error?.response?.data || error.message);
       setLoading(false);
 
+      if (handleFrozenPlanRecompute(error)) {
+        return;
+      }
+
       const responseData = error?.response?.data;
       const orderErrors = responseData?.orderErrors || [];
 
@@ -745,6 +784,7 @@ const MPReviewTradeModal = ({
     advisor: strategyDetails?.advisor,
     model_id: latestRebalance.model_Id,
     unique_id: calculatedPortfolioData?.uniqueId,
+    ...frozenPlanFields,
     broker: broker,
   });
 
@@ -1450,6 +1490,7 @@ const MPReviewTradeModal = ({
         advisor: strategyDetails?.advisor,
         model_id: latestRebalance?.model_Id,
         unique_id: calculatedPortfolioData?.uniqueId,
+        ...frozenPlanFields,
         returnDateTime: istDatetime,
         trades: fyersTrades,
       };
@@ -1685,6 +1726,10 @@ const MPReviewTradeModal = ({
     } catch (error) {
       setLoading(false);
       console.error('[FyersPublisher] Error:', error);
+
+      if (handleFrozenPlanRecompute(error)) {
+        return;
+      }
 
       const responseData = error?.response?.data;
       const orderErrors = responseData?.orderErrors || [];

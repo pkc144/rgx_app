@@ -214,6 +214,43 @@ const UserStrategySubscribeModal = ({
   const [calculatedPortfolioData, setCaluculatedPortfolioData] = useState([]);
   const [calculatedLoading, setCalculateLoading] = useState(false);
 
+  // Phase 1 plan freeze (prod-alphaquark-github docs/REBALANCE_PLAN_FREEZE_PLAN.md
+  // §4.4/§4.5; this repo's docs/WEB_TO_APP_PORT_PLAN_2026-07.md rebalance-freeze
+  // entry): forward the frozen plan_id/plan_version `rebalance/calculate` returned
+  // so ccxt executes the server-frozen, re-validated plan instead of the
+  // client-posted `trades` — mirrors web's UserStrategySubscribeModal.placeOrder
+  // (commit a4cb3c23). This modal has no live repair path (the `matchingRepairTrade`
+  // branch in `getAdditionalPayload` below is dead code — that function is never
+  // called), so there is no repair-vs-fresh-calc "approve what you see" ambiguity
+  // to guard here: every plan_id this modal ever holds came from THIS calculate.
+  // Flag off / no plan_id ⇒ fields absent ⇒ byte-identical legacy payload.
+  const freezeOn = appConfig?.rebalanceFreezePlan === true;
+  const frozenPlanFields = freezeOn && calculatedPortfolioData?.plan_id
+    ? {
+        plan_id: calculatedPortfolioData.plan_id,
+        plan_version: calculatedPortfolioData.plan_version,
+      }
+    : {};
+
+  // Frozen-plan 409 (PLAN_DRIFTED / expired / ALREADY_CONSUMED — see
+  // REBALANCE_PLAN_FREEZE_PLAN.md §4.4): the plan_id we hold is dead, so
+  // re-sliding "Place Order" would 409 forever. Drop back to the pre-confirm
+  // step (`setConfirmOrder(false)`) whose "Confirm Details" button re-runs
+  // calculateRebalance, minting a fresh plan. Mirrors web's recompute handling.
+  const handleFrozenPlanRecompute = (error) => {
+    if (error?.response?.status === 409 && error?.response?.data?.recompute) {
+      setConfirmOrder(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Rebalance Plan Changed',
+        text2: error?.response?.data?.message || 'Please review and confirm again.',
+        visibilityTime: 5000,
+      });
+      return true;
+    }
+    return false;
+  };
+
   const calculateRebalance = () => {
     console.log('hereeeeee', broker, funds?.status);
     setCalculateLoading(true);
@@ -532,6 +569,7 @@ const UserStrategySubscribeModal = ({
         advisor: strategyDetails?.advisor,
         model_id: latestRebalance?.model_Id,
         unique_id: calculatedPortfolioData?.uniqueId,
+        ...frozenPlanFields,
         returnDateTime: istDatetime,
         trades: stockDetails.map(s => ({ ...s, variant: fyersVariant })),
       };
@@ -679,6 +717,10 @@ const UserStrategySubscribeModal = ({
       setLoading(false);
       console.error('[FyersPublisher] Error:', error);
 
+      if (handleFrozenPlanRecompute(error)) {
+        return;
+      }
+
       let errorMessage;
       if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
         errorMessage =
@@ -727,6 +769,7 @@ const UserStrategySubscribeModal = ({
       advisor: strategyDetails?.advisor,
       model_id: latestRebalance.model_Id,
       unique_id: calculatedPortfolioData?.uniqueId,
+      ...frozenPlanFields,
       user_broker: broker,
       user_email: userEmail,
       trades: tradesWithVariant,
@@ -912,6 +955,7 @@ const UserStrategySubscribeModal = ({
       .catch(error => {
         console.error('Error in placeOrder:', error);
         setLoading(false);
+        handleFrozenPlanRecompute(error);
         // Consider adding error handling here, e.g., showing an error modal
       });
   };
@@ -921,6 +965,7 @@ const UserStrategySubscribeModal = ({
     advisor: strategyDetails?.advisor,
     model_id: latestRebalance.model_Id,
     unique_id: calculatedPortfolioData?.uniqueId,
+    ...frozenPlanFields,
     broker: broker,
   });
 
@@ -1197,6 +1242,17 @@ const UserStrategySubscribeModal = ({
           advisor: zerodhaAdditionalPayload.advisor,
           model_id: zerodhaAdditionalPayload.model_id,
           unique_id: zerodhaAdditionalPayload.unique_id,
+          // Carried through from the persisted `additionalPayload` (built by
+          // the top-level getBasePayload() above, which already applies the
+          // same frozenPlanFields gate) — present only when rebalanceFreezePlan
+          // is on and the calculate that ran before this WebView redirect
+          // minted a plan_id.
+          ...(zerodhaAdditionalPayload.plan_id
+            ? {
+                plan_id: zerodhaAdditionalPayload.plan_id,
+                plan_version: zerodhaAdditionalPayload.plan_version,
+              }
+            : {}),
           returnDateTime: istDatetime,
           trades: zerodhaStockDetails,
         });
@@ -1318,6 +1374,12 @@ const UserStrategySubscribeModal = ({
         setflag(false);
       } catch (error) {
         console.log('Something went wrong');
+        if (handleFrozenPlanRecompute(error)) {
+          // Clear the stale persisted plan-tied payload so a stray re-fire
+          // of the WebView-completion effect can't resubmit a dead plan_id.
+          AsyncStorage.removeItem('stockDetailsZerodhaOrder');
+          AsyncStorage.removeItem('zerodhaAdditionalPayload');
+        }
       }
     }
   };

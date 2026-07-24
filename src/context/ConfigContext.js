@@ -153,6 +153,18 @@ export const ConfigProvider = ({ children }) => {
                             // (+ per-customer egress IP whitelist). Mirrors web's
                             // loginRoutes.js /frontend-config + AppConfigContext gate.
                             useSharedAngelOneKey:    d.useSharedAngelOneKey === false ? false : true,
+                            // Rebalance plan freeze (docs/REBALANCE_PLAN_FREEZE_PLAN.md).
+                            // DEFAULT OFF — a missing key must never enable it. Mirrors
+                            // web's AppConfigContext.rebalanceFreezePlan `=== true` gate
+                            // (Routes/Admin/loginRoutes.js /frontend-config, verified
+                            // 2026-07-24). When true AND a `/rebalance/calculate` response
+                            // carries plan_id, the Accept payload forwards plan_id/
+                            // plan_version so ccxt executes the server-frozen plan.
+                            rebalanceFreezePlan:     d.rebalanceFreezePlan === true,
+                            // Phase 3 (P3.1) — frozen REPAIR attempts. Own flag, pilots
+                            // independently of rebalanceFreezePlan. DEFAULT OFF. Mirrors
+                            // web's AppConfigContext.repairFreezePlan `=== true` gate.
+                            repairFreezePlan:        d.repairFreezePlan === true,
                         };
                     } catch (e) {
                         console.warn('[ConfigContext] frontend-config flags unavailable, defaulting OFF:', e?.message);
@@ -306,6 +318,11 @@ export const ConfigProvider = ({ children }) => {
                         // failed frontend-config fetch (parityFlags == {}) keeps the
                         // working legacy shared-key OAuth, never breaks connect.
                         useSharedAngelOneKey:    parityFlags.useSharedAngelOneKey ?? true,
+                        // Rebalance plan freeze flags — DEFAULT OFF. A failed
+                        // frontend-config fetch (parityFlags == {}) leaves both OFF,
+                        // so process-trade payloads stay byte-identical to legacy.
+                        rebalanceFreezePlan:     parityFlags.rebalanceFreezePlan ?? false,
+                        repairFreezePlan:        parityFlags.repairFreezePlan ?? false,
 
                         // ============================================================================
                         // PAYMENT CONFIGURATION
@@ -568,6 +585,8 @@ export const ConfigProvider = ({ children }) => {
                                     kycBlockingEnabled: newConfig.kycBlockingEnabled,
                                     useSharedAngelOneKey: newConfig.useSharedAngelOneKey,
                                     phoneFirstLoginEnabled: newConfig.phoneFirstLoginEnabled,
+                                    rebalanceFreezePlan: newConfig.rebalanceFreezePlan,
+                                    repairFreezePlan: newConfig.repairFreezePlan,
                                 },
                             };
                             await AsyncStorage.setItem('@app:advisorConfig', JSON.stringify(updatedStored));

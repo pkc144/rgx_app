@@ -104,7 +104,7 @@ const RebalanceModal = ({
   // (used by the `marketGateOpen` review-trade gate) — that's been removed
   // since both refer to the same value. See docs/APP_ARCHITECTURE.md
   // § 4.5.2 Trade variant field.
-  const { allowAfterHoursOrders } = useConfig() || {};
+  const { allowAfterHoursOrders, rebalanceFreezePlan, repairFreezePlan } = useConfig() || {};
   const sdkClient = useSdkClient();
   const sdkExecuteAdviceEnabled = isSdkExecuteAdviceEnabled() && !!sdkClient;
   const advisorTag = configData?.config?.REACT_APP_ADVISOR_SPECIFIC_TAG;
@@ -610,6 +610,16 @@ const RebalanceModal = ({
     </html>`;
   };
 
+  // Phase 1 plan freeze (prod-alphaquark-github docs/REBALANCE_PLAN_FREEZE_PLAN.md
+  // §4.4/§4.5; this repo's docs/WEB_TO_APP_PORT_PLAN_2026-07.md rebalance-freeze
+  // entry) + Phase 3 P3.1 frozen REPAIR attempts. Mirrors web's
+  // UpdateRebalanceModal frozenPlanFields "approve what you see" guard: a
+  // repair-built branch's plan_id (matchingRepairTrade.planId, camelCase —
+  // stamped by ccxt's /rebalance/get-repair) must never ride with a fresh
+  // calculate's legs, and vice versa — the branch below already decides
+  // repair-vs-fresh via `matchingRepairTrade`, so the plan_id choice follows
+  // the same branch. Flag off / no plan_id present ⇒ fields absent ⇒
+  // byte-identical legacy payload.
   const getAdditionalPayload = () => {
     const matchingRepairTrade =
       modelPortfolioRepairTrades &&
@@ -623,6 +633,9 @@ const RebalanceModal = ({
         unique_id: matchingRepairTrade?.uniqueId,
         model_id: modelPortfolioModelId,
         broker: broker,
+        ...(repairFreezePlan === true && matchingRepairTrade?.planId
+          ? { plan_id: matchingRepairTrade.planId, plan_version: matchingRepairTrade.planVersion }
+          : {}),
       };
     } else {
       return {
@@ -631,6 +644,9 @@ const RebalanceModal = ({
         unique_id: calculatedPortfolioData?.uniqueId,
         model_id: modelPortfolioModelId,
         broker: broker,
+        ...(rebalanceFreezePlan === true && calculatedPortfolioData?.plan_id
+          ? { plan_id: calculatedPortfolioData.plan_id, plan_version: calculatedPortfolioData.plan_version }
+          : {}),
       };
     }
   };
@@ -1056,6 +1072,9 @@ const RebalanceModal = ({
         advisor: additionalPayload.advisor,
         model_id: additionalPayload.model_id || modelPortfolioModelId,
         unique_id: additionalPayload.unique_id,
+        ...(additionalPayload.plan_id
+          ? { plan_id: additionalPayload.plan_id, plan_version: additionalPayload.plan_version }
+          : {}),
         returnDateTime: istDatetime,
         trades: stockDetails.map(stock => ({ ...stock, variant: fyersVariant })),
         caPendingInfo: calculatedPortfolioData?.caPendingInfo || [],
@@ -1255,6 +1274,23 @@ const RebalanceModal = ({
       setLoading(false);
       console.error('[FyersPublisher] Error:', error);
 
+      // Frozen-plan 409 (PLAN_DRIFTED / expired / ALREADY_CONSUMED — see
+      // REBALANCE_PLAN_FREEZE_PLAN.md §4.4): the plan_id we hold is dead.
+      // Refresh repair/strategy data (mints a fresh calculate/repair plan on
+      // next open) instead of just toasting a generic failure.
+      if (error?.response?.status === 409 && error?.response?.data?.recompute) {
+        setOpenRebalanceModal(false);
+        Toast.show({
+          type: 'error',
+          text1: 'Rebalance Plan Changed',
+          text2: error?.response?.data?.message || 'Please reopen and review the rebalance again.',
+          visibilityTime: 6000,
+        });
+        getRebalanceRepair();
+        getModelPortfolioStrategyDetails();
+        return;
+      }
+
       let errorMessage;
       if (error?.code === 'ERR_NETWORK' || error?.code === 'ECONNABORTED') {
         errorMessage =
@@ -1429,18 +1465,28 @@ const RebalanceModal = ({
       }
     };
 
+    // Same frozen-plan "approve what you see" guard as the module-level
+    // getAdditionalPayload() above — repair branch forwards
+    // matchingRepairTrade.planId (gated on repairFreezePlan), fresh branch
+    // forwards calculatedPortfolioData.plan_id (gated on rebalanceFreezePlan).
     const getAdditionalPayload = () => {
       if (matchingRepairTrade) {
         return {
           modelName: matchingRepairTrade.modelName,
           advisor: advisorTag,
           unique_id: matchingRepairTrade?.uniqueId,
+          ...(repairFreezePlan === true && matchingRepairTrade?.planId
+            ? { plan_id: matchingRepairTrade.planId, plan_version: matchingRepairTrade.planVersion }
+            : {}),
         };
       } else {
         return {
           modelName: filteredData[0]['model_name'],
           advisor: advisorTag,
           unique_id: calculatedPortfolioData?.uniqueId,
+          ...(rebalanceFreezePlan === true && calculatedPortfolioData?.plan_id
+            ? { plan_id: calculatedPortfolioData.plan_id, plan_version: calculatedPortfolioData.plan_version }
+            : {}),
         };
       }
     };
@@ -1893,6 +1939,24 @@ const RebalanceModal = ({
       })
       .catch(error => {
         setLoading(false);
+
+        // Frozen-plan 409 (PLAN_DRIFTED / expired / ALREADY_CONSUMED — see
+        // REBALANCE_PLAN_FREEZE_PLAN.md §4.4): the plan_id we hold is dead,
+        // so re-sliding "Place Order" would 409 forever. Close the modal and
+        // refresh repair/strategy data so the next open mints a fresh plan —
+        // mirrors web's recompute handling.
+        if (error?.response?.status === 409 && error?.response?.data?.recompute) {
+          setOpenRebalanceModal(false);
+          Toast.show({
+            type: 'error',
+            text1: 'Rebalance Plan Changed',
+            text2: error?.response?.data?.message || 'Please reopen and review the rebalance again.',
+            visibilityTime: 6000,
+          });
+          getRebalanceRepair();
+          getModelPortfolioStrategyDetails();
+          return;
+        }
 
         // Determine a user-friendly error message
         let errorMessage;
