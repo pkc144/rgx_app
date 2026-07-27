@@ -4,6 +4,16 @@ All notable changes to the AlphaQuark B2B Mobile App are documented here.
 
 ---
 
+## [unreleased] - 2026-07-27 — fix(digio): use backend-authoritative tenant policy
+
+- Digio is enabled only when nested backend config explicitly returns boolean
+  `true`; defaults, cached values, checkout, and recovery now share that rule.
+- Removed tenant/build-environment gating from shared checkout code.
+- RGX Research remains explicitly `true / beforePayment`; deployed backend
+  commit `eb6fe6d` rejects unsigned payment creation with `DIGIO_REQUIRED`.
+
+---
+
 ## [unreleased] - 2026-07-18 — fix(android): app crashed at launch — native/JS component name mismatch
 
 `MainActivity.kt`'s `getMainComponentName()` returned `"EquityPro by RGX
@@ -8159,4 +8169,3 @@ Each entry follows:
 ### Removed (removed features)
 ### Security (security-related changes)
 ```
-
