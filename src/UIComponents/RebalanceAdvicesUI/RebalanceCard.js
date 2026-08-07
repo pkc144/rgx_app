@@ -491,8 +491,16 @@ const RebalanceCard = ({
     }
   };
 
-  // If there's no execution record for this broker, don't show rebalance actions.
-  // Prevents undefined status from incorrectly triggering repair flows.
+  // Whether the server sent an execution row for this subscriber on the latest
+  // rebalance. This must NOT gate the Accept button: `subscriberExecutions` is a
+  // one-shot snapshot taken at rebalance-push time and never reconciled, so a
+  // subscriber added to `subscribed_by` after the push — or one who switched
+  // broker — legitimately has no row while the rebalance is genuinely pending.
+  // Gating on it rendered a DISABLED "No rebalance pending" over a live
+  // rebalance that the WEB card happily executed (Markup RA, 2026-08-08; 14
+  // stranded subscribers, 147 rows fleet-wide). Web has no such gate — it reads
+  // `userExecution?.status` and lets a missing row fall through to "Accept
+  // Rebalance". We now match that. See MODEL_PORTFOLIO_ARCHITECTURE.md §17.
   const hasExecutionRecord = !!userExecution;
   // If the user executed with a different broker than the currently connected one,
   // treat it as not executed so they can re-execute with the new broker
@@ -502,6 +510,13 @@ const RebalanceCard = ({
   const isRebalanceExecuted = hasExecutionRecord && userExecution?.status === 'executed' && brokerMatchesExecution;
   const isPartiallyExecuted = hasExecutionRecord && userExecution?.status === 'partial' && brokerMatchesExecution;
   const isPendingVerification = hasExecutionRecord && userExecution?.status === 'pending' && brokerMatchesExecution;
+  // Repair mode DOES require a real execution record. With no row at all,
+  // `userExecution?.status` is `undefined` and `undefined !== 'toExecute'` is
+  // TRUE — which would route a never-executed subscriber straight into the
+  // repair flow. That hazard is what the old blanket button gate was really
+  // protecting against, so it is preserved here rather than dropped with it.
+  const isRepairMode =
+    !!repair && hasExecutionRecord && userExecution?.status !== 'toExecute';
 
   const handleAcceptClick = async () => {
     try {
@@ -511,7 +526,7 @@ const RebalanceCard = ({
       }
       setmatchfailed(matchingFailedTrades || null);
       // When skipRepairRef is set, bypass repair path for fresh rebalance (matching web)
-      if (repair && userExecution?.status !== 'toExecute' && !skipRepairRef.current) {
+      if (isRepairMode && !skipRepairRef.current) {
         setStoreModalName(modelName);
         setCurrentStep(2);
         setLoading(true);
@@ -665,7 +680,7 @@ const RebalanceCard = ({
                 ? ['#2a2a2a', '#DE8846']
                 : isPendingVerification
                   ? ['#2a2a2a', '#D4A843']
-                  : repair && userExecution?.status !== 'toExecute'
+                  : isRepairMode
                     ? ['#2a2a2a', '#DE8846']
                     : [gradient1, gradient2]
           }
@@ -681,7 +696,7 @@ const RebalanceCard = ({
                     styles.subText,
                     {
                       color:
-                        repair && userExecution?.status !== 'toExecute'
+                        isRepairMode
                           ? '#fff'
                           : '#fff',
                     },
@@ -718,7 +733,7 @@ const RebalanceCard = ({
               style={{
                 borderWidth: 1,
                 borderColor:
-                  repair && userExecution?.status !== 'toExecute'
+                  isRepairMode
                     ? '#fff'
                     : "#fff",
                 alignContent: 'center',
@@ -812,7 +827,7 @@ const RebalanceCard = ({
             </TouchableOpacity>
             <TouchableOpacity
               onPress={isPendingVerification ? handlePendingRefresh : handleChangeCheck}
-              disabled={pendingRefreshLoading || isRebalanceExecuted || !hasExecutionRecord}
+              disabled={pendingRefreshLoading || isRebalanceExecuted}
               style={[
                 styles.button,
                 isPendingVerification && {borderWidth: 1, borderColor: '#EAB308'},
@@ -830,15 +845,13 @@ const RebalanceCard = ({
                     alignSelf: 'center',
                   }}>
                   <Text style={[styles.buttonText, {color: isRebalanceExecuted ? '#6B7280' : gradient2}]}>
-                    {!hasExecutionRecord
-                      ? 'No rebalance pending'
-                      : isRebalanceExecuted
+                    {isRebalanceExecuted
                       ? 'Rebalance Accepted'
                       : isPartiallyExecuted
                         ? 'Retry Rebalance'
                         : isPendingVerification
                           ? 'Check Order Status'
-                          : repair && userExecution?.status !== 'toExecute'
+                          : isRepairMode
                             ? 'Repair Portfolio'
                             : 'Accept Rebalance'}
                   </Text>
