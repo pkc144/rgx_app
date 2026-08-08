@@ -87,3 +87,4 @@ android/app/*.keystore.bak
 
 # Claude-local navigation index (per codes/CLAUDE.md convention)
 docs/CLAUDE_NAV.md
+.gstack/

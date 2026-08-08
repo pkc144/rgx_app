@@ -198,6 +198,39 @@ export const handleSmartReauth = async ({
   configData,
   brokerConnectRedirectURL,
 }) => {
+  // DefinEdge sessions expire roughly every eight hours, but the API token
+  // and secret remain valid. The backend's reauth-url branch now reuses the
+  // STORED creds server-side (fires ccxt /definedge/login with the
+  // customer's egress IP identity) and returns { requiresOtp, otp_token } —
+  // so the app never touches the api_secret on reconnect. We open the OTP
+  // step directly with the returned otp_token (no credential form, no
+  // Static-IP / video / guide — that is one-time onboarding only).
+  if (brokerName === 'DefinEdge Securities') {
+    const response = await fetchReauthUrl(
+      brokerName,
+      userEmail,
+      brokerConnectRedirectURL,
+      configData,
+    );
+    console.log('[smartReauth] DefinEdge reauth-url response:', response);
+    if (!response?.requiresOtp || !response.otp_token) {
+      return {
+        handled: false,
+        reason: 'definedge-reauth-unavailable',
+      };
+    }
+    return {
+      handled: true,
+      modalKey: 'DefinEdge Securities',
+      payload: {
+        reauthConfig: {
+          definedgeOtpToken: response.otp_token,
+          message: response.message,
+        },
+      },
+    };
+  }
+
   // Silent refresh path — Groww. Backend uses stored Base32 TOTP seed
   // to mint a fresh JWT; no user interaction required. On success the
   // caller closes ManageConnectionsModal without opening any per-broker

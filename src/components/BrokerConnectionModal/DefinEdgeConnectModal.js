@@ -16,13 +16,21 @@
  *     api_secret (→ secretKey), actid (→ clientCode) on the user doc and
  *     `connected_brokers[DefinEdge Securities]`.
  *
+ *   Reconnect mode (reauthConfig.definedgeOtpToken): an 8h session has
+ *   expired but the stored api_token/api_secret never do. The backend's
+ *   reauth-url branch reuses the STORED creds server-side and hands back a
+ *   fresh otp_token — so reconnect renders ONLY the OTP step (no credential
+ *   form / MyAccount info box, which are one-time onboarding) and verifies
+ *   via PUT /api/definedge/connect-broker with reuseStoredCreds: true (no
+ *   creds in the payload). Mirrors web DefinEdgeConnection.js reconnectMode.
+ *
  *   No resend-otp endpoint — if OTP isn't received the user re-runs
  *   initiate-login.
  *
- * Credentials wrapped with the same AES `ApiKeySecret` envelope as
- * Arihant / Kotak / AliceBlue.
+ *   Credentials wrapped with the same AES `ApiKeySecret` envelope as
+ *   Arihant / Kotak / AliceBlue.
  *
- * Cross-ref: docs/BROKER_CONNECTION.md § DefinEdge Securities.
+ *   Cross-ref: docs/BROKER_CONNECTION.md § DefinEdge Securities.
  */
 import React, { useState, useEffect } from 'react';
 import {
@@ -57,17 +65,22 @@ const DefinEdgeConnectModal = ({
   isVisible,
   onClose,
   fetchBrokerStatusModal,
+  reauthConfig,
 }) => {
   const { configData } = useTrade();
   const showAlert = useModalStore((s) => s.showAlert);
   const auth = getAuth();
   const userEmail = getAccountEmail();
 
+  // Reconnect (reauthConfig.definedgeOtpToken) starts directly on the OTP
+  // step — the backend already fired initiate-login with stored creds and
+  // returned the otp_token. Full connect (no token) starts on the creds step.
+  const reconnectMode = !!reauthConfig?.definedgeOtpToken;
   const [apiKey, setApiKey] = useState('');        // api_token
   const [secretKey, setSecretKey] = useState('');  // api_secret
   const [otp, setOtp] = useState('');
-  const [otpToken, setOtpToken] = useState('');
-  const [step, setStep] = useState('creds'); // creds | otp
+  const [otpToken, setOtpToken] = useState(reconnectMode ? reauthConfig.definedgeOtpToken : '');
+  const [step, setStep] = useState(reconnectMode ? 'otp' : 'creds'); // creds | otp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showSecret, setShowSecret] = useState(false);
@@ -85,11 +98,18 @@ const DefinEdgeConnectModal = ({
 
   useEffect(() => {
     if (!isVisible) return;
-    setStep('creds');
+    // Reconnect mode: keep the otp_token handed back by reauth-url and land
+    // straight on the OTP step. Full connect: reset to the creds step.
+    if (reauthConfig?.definedgeOtpToken) {
+      setOtpToken(reauthConfig.definedgeOtpToken);
+      setStep('otp');
+    } else {
+      setStep('creds');
+    }
     setOtp('');
-    setOtpToken('');
     setError('');
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVisible]);
 
   useEffect(() => {
@@ -174,13 +194,17 @@ const DefinEdgeConnectModal = ({
     try {
       await axios.put(
         `${server.server.baseUrl}api/definedge/connect-broker`,
-        {
-          uid,
-          otpToken,
-          otp,
-          apiKey: wrapCredential(apiKey.trim()),
-          apiSecret: wrapCredential(secretKey.trim()),
-        },
+        reconnectMode
+          ? // Reconnect: backend reuses the STORED creds server-side — the
+            // app never touches the api_secret on a session refresh.
+            { uid, otpToken, otp, reuseStoredCreds: true }
+          : {
+              uid,
+              otpToken,
+              otp,
+              apiKey: wrapCredential(apiKey.trim()),
+              apiSecret: wrapCredential(secretKey.trim()),
+            },
         { headers: headers() },
       );
       if (showAlert) {
@@ -213,7 +237,9 @@ const DefinEdgeConnectModal = ({
       >
         <View style={styles.sheet}>
           <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>Connect DefinEdge</Text>
+            <Text style={styles.headerTitle}>
+              {reconnectMode ? 'Reconnect DefinEdge' : 'Connect DefinEdge'}
+            </Text>
             {!loading && (
               <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                 <Text style={styles.closeX}>×</Text>
@@ -228,22 +254,24 @@ const DefinEdgeConnectModal = ({
                 : 'Enter the OTP DefinEdge sent to your registered mobile/email.'}
             </Text>
 
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                Log in at{' '}
-                <Text
-                  style={styles.link}
-                  onPress={() =>
-                    Linking.openURL('https://myaccount.definedgesecurities.com/')
-                  }
-                >
-                  myaccount.definedgesecurities.com
-                </Text>{' '}
-                → API Config to generate your api_token + api_secret. Sessions
-                last ~8 hours — re-OTP after expiry. Note: tokens regenerate
-                when you change your DefinEdge password.
-              </Text>
-            </View>
+            {!reconnectMode && (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>
+                  Log in at{' '}
+                  <Text
+                    style={styles.link}
+                    onPress={() =>
+                      Linking.openURL('https://myaccount.definedgesecurities.com/')
+                    }
+                  >
+                    myaccount.definedgesecurities.com
+                  </Text>{' '}
+                  → API Config to generate your api_token + api_secret. Sessions
+                  last ~8 hours — re-OTP after expiry. Note: tokens regenerate
+                  when you change your DefinEdge password.
+                </Text>
+              </View>
+            )}
 
             {step === 'creds' ? (
               <>
@@ -326,7 +354,11 @@ const DefinEdgeConnectModal = ({
                 <ActivityIndicator color="#ffffff" />
               ) : (
                 <Text style={styles.submitBtnText}>
-                  {step === 'creds' ? 'Send OTP' : 'Connect DefinEdge'}
+                  {step === 'creds'
+                    ? 'Send OTP'
+                    : reconnectMode
+                      ? 'Verify & Reconnect'
+                      : 'Connect DefinEdge'}
                 </Text>
               )}
             </TouchableOpacity>
