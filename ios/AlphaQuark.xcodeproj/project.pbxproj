@@ -688,7 +688,7 @@
 				CODE_SIGN_ENTITLEMENTS = AlphaQuark/AlphaQuark.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 4AK2LVPBUS;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = AlphaQuark/Info.plist;
@@ -723,7 +723,7 @@
 				CODE_SIGN_ENTITLEMENTS = AlphaQuark/AlphaQuark.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 4AK2LVPBUS;
 				INFOPLIST_FILE = AlphaQuark/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "EquityPro by RGX Research";
