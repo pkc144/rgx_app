@@ -38,7 +38,6 @@ import {
 import useModalStore from '../../GlobalUIModals/modalStore';
 const { height: screenHeight } = Dimensions.get('window');
 import StepProgressBar from '../../UIComponents/RebalanceAdvicesUI/StepProgressBar';
-import TotalAmountTextRebalance from './DynamicText/totalAmountRebalance';
 import { useTrade } from '../../screens/TradeContext';
 import Toast from 'react-native-toast-message';
 import debounce from 'lodash.debounce';
@@ -205,6 +204,19 @@ const RebalanceModal = ({
     });
     return total < 0 ? 0 : total;
   };
+  // Authoritative rebalance total from the /rebalance/calculate response.
+  // The client-side sum (calculateRequiredFund / TotalAmountTextRebalance)
+  // relies on LIVE LTPs that load asynchronously into the store — on a fresh
+  // modal only ~1 symbol has a price yet, so the "You will require a balance
+  // of ₹X" note undercounted to ~1 stock's worth (₹20,413 instead of the
+  // ~₹4,81,920 deployment; markup MQ-FlexiCap, 2026-08-11). Mirrors web
+  // parity UpdateRebalanceModal which renders calculatedPortfolioData.totalValue.
+  const getRequiredFund = () => {
+    const tv = calculatedPortfolioData?.totalValue;
+    if (typeof tv === 'number' && tv > 0) return tv;
+    return calculateRequiredFund();
+  };
+
 
   // NEW: State for DummyBroker modal
   const [showDummyBrokerModal, setShowDummyBrokerModal] = useState(false);
@@ -2641,19 +2653,9 @@ const RebalanceModal = ({
               <Text style={styles.noteTitle}>Note:</Text>
               <Text style={styles.noteText}>
                 You will require a balance of{' '}
-                {isBrokerDisconnected ? (
-                  `₹${calculateRequiredFund().toFixed(2)}`
-                ) : (
-                  <TotalAmountTextRebalance
-                    stockDetails={dataArray}
-                    type={'reviewTrade'}
-                    textStyle={{
-                      fontFamily: 'Poppins-Regular',
-                      fontSize: 12,
-                      color: '#333',
-                    }}
-                  />
-                )}{' '}
+                <Text style={{ fontWeight: '600' }}>
+                  ₹{getRequiredFund().toFixed(2)}
+                </Text>{' '}
                 in your broker. Please execute these transactions. If you confirm,
                 we will record these transactions as EXECUTED.
               </Text>
@@ -2673,7 +2675,7 @@ const RebalanceModal = ({
                       <View style={styles.fundItem}>
                         <Text style={styles.fundLabel}>Required Fund</Text>
                         <Text style={styles.fundValue}>
-                          ₹{calculateRequiredFund().toFixed(2)}
+                          ₹{getRequiredFund().toFixed(2)}
                         </Text>
                       </View>
                     </View>
