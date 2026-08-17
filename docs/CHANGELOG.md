@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-17 — standalone manual placement
+
+- Active / rejected / failed standalone (single-stock) recommendation cards
+  now offer **I placed this trade manually**, recording the broker's actual
+  filled quantity, average price, order ID and execution time via
+  `POST /api/recommendation/customer/manual-placement`. Ported from upstream
+  Alphab2bapp.
+
+# Changelog
+
 ## [unreleased] - 2026-08-13 — feat(notifications): distinct trade-alert ring on trade advice
 
 - Trade advice pushes (bespoke / New Rebalance / trade_modified /
