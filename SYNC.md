@@ -10,6 +10,13 @@ you're new here.
 - **Repo**: `https://github.com/.../Alphab2bapp` (local clone at
   `/home/pk/Alphaquark_docs/AlphaQuark/codes/github/Alphab2bapp`)
 - **Tracked branch**: `feature/sdk-plus-config_forkv2`
+- **Trade-alert ring port (2026-08-13)**: `index.js` + `src/screens/Home/HomeScreen.js`
+  route trade advice (bespoke / New Rebalance / trade_modified / reco_message)
+  through a new `src/FunctionCall/services/TradeAlertChannel.js` channel
+  `trade_alerts` with a bundled `trade_alert.wav` (Android `res/raw/` + iOS
+  `AlphaQuark/trade_alert.wav` in the Xcode Resources phase). Ported directly
+  from upstream Alphab2bapp (client req #1); the same files will also arrive
+  on the next upstream merge (expected clean no-op).
 - **Last sync**: 2026-05-10 — Phase 0 + Phase 1 of the byte-identical
   src/ migration (see `docs/SYNC_PLAN.md` for the full plan).
 

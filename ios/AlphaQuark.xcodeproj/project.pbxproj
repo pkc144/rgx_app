@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00E356F31AD99517003FC87E /* AlphaQuarkTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 00E356F21AD99517003FC87E /* AlphaQuarkTests.m */; };
+		4162289BD7D714AB6984206D /* trade_alert.wav in Resources */ = {isa = PBXBuildFile; fileRef = CE90FE06EB3745B3DE3660F5 /* trade_alert.wav */; };
 		02369DE6B7344E4AAB3D74C7 /* ObviouslyNarrow-Black.otf in Resources */ = {isa = PBXBuildFile; fileRef = AC373AEB257F40038D0DDDCD /* ObviouslyNarrow-Black.otf */; };
 		02CFD144B50B478BACF9C566 /* Satoshi-Medium.otf in Resources */ = {isa = PBXBuildFile; fileRef = 498FDE1853CF4EA4A80C01E2 /* Satoshi-Medium.otf */; };
 		0A84F0EB1692421D93930E0D /* Poppins-MediumItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C9706FB3E26448E58613E234 /* Poppins-MediumItalic.ttf */; };
@@ -121,6 +122,7 @@
 		D898037B2D7CD57B0049FDFF /* FontAwesome.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = FontAwesome.ttf; sourceTree = "<group>"; };
 		D8DDBE9E2D96FAFF00F55270 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		D8DDBEA02D96FC2200F55270 /* AlphaQuark.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = AlphaQuark.entitlements; path = AlphaQuark/AlphaQuark.entitlements; sourceTree = "<group>"; };
+		CE90FE06EB3745B3DE3660F5 /* trade_alert.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; name = "trade_alert.wav"; path = "AlphaQuark/trade_alert.wav"; sourceTree = "<group>"; };
 		E17748BDD6104BFAB2A1A884 /* Poppins-Italic.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-Italic.ttf"; path = "../src/assets/fonts/Poppins-Italic.ttf"; sourceTree = "<group>"; };
 		EC96E0AE3FA64E308D35B377 /* Poppins-BlackItalic.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-BlackItalic.ttf"; path = "../src/assets/fonts/Poppins-BlackItalic.ttf"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -215,6 +217,7 @@
 			isa = PBXGroup;
 			children = (
 				D8DDBEA02D96FC2200F55270 /* AlphaQuark.entitlements */,
+				CE90FE06EB3745B3DE3660F5 /* trade_alert.wav */,
 				13B07FAF1A68108700A75B9A /* AppDelegate.h */,
 				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
@@ -391,6 +394,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
+				4162289BD7D714AB6984206D /* trade_alert.wav in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				9087DE2C038D4220A217927B /* Poppins-Black.ttf in Resources */,
 				2CEF13E2D9204ACAA62D3161 /* Poppins-BlackItalic.ttf in Resources */,

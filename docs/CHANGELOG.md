@@ -1,5 +1,27 @@
 # Changelog
 
+## [unreleased] - 2026-08-13 — feat(notifications): distinct trade-alert ring on trade advice
+
+- Trade advice pushes (bespoke / New Rebalance / trade_modified /
+  reco_message) now ring with a bundled `trade_alert` sound instead of the
+  default notification sound (client req #1). Port of the Alphab2bapp
+  upstream change.
+- New `src/FunctionCall/services/TradeAlertChannel.js` creates a dedicated
+  notifee channel `trade_alerts` bound to `res/raw/trade_alert.wav`
+  (Android) and exposes `tradeAlertAndroidBlock()`; `index.js` background
+  handler + `HomeScreen.js` foreground handlers route trade notifications
+  through it; iOS gets `ios.sound = 'trade_alert.wav'`.
+- Android raw resource + iOS bundle file (`AlphaQuark/trade_alert.wav`,
+  added to the Xcode Resources build phase).
+
+**Files:** `index.js`, `src/FunctionCall/services/TradeAlertChannel.js`,
+`src/screens/Home/HomeScreen.js`,
+`android/app/src/main/res/raw/trade_alert.wav`,
+`ios/AlphaQuark/trade_alert.wav`,
+`ios/AlphaQuark.xcodeproj/project.pbxproj`
+
+
+
 All notable changes to the AlphaQuark B2B Mobile App are documented here.
 
 ---

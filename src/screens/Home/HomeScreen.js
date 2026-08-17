@@ -59,6 +59,7 @@ import notifee, {
   AndroidStyle,
 } from '@notifee/react-native';
 import WebinarReminderHandler from '../../FunctionCall/services/WebinarReminderHandler';
+import { tradeAlertAndroidBlock } from '../../FunctionCall/services/TradeAlertChannel';
 import { ActivityIndicator } from 'react-native';
 
 import server from '../../utils/serverConfig';
@@ -684,15 +685,28 @@ const HomeScreen = ({ }) => {
     if (!title || !body) return;
 
     console.log('General Notification:', title, body);
+    // Trade advice (bespoke / rebalance / trade_modified / reco_message)
+    // rings with the bundled trade_alert.wav via the dedicated channel
+    // (client req 2026-08-13 #1); everything else keeps the default sound.
+    const tradeAlert = [
+      'bespoke',
+      'New Rebalance',
+      'trade_modified',
+      'reco_message',
+    ].includes(notificationType);
+    const android = tradeAlert
+      ? await tradeAlertAndroidBlock({ pressAction: { id: 'default' }, color: '#E8210C' })
+      : {
+          channelId: 'default',
+          importance: AndroidImportance.HIGH,
+          pressAction: { id: 'default' },
+          color: '#E8210C',
+        };
     await notifee.displayNotification({
       title,
       body,
-      android: {
-        channelId: 'default',
-        importance: AndroidImportance.HIGH,
-        pressAction: { id: 'default' },
-        color: '#E8210C',
-      },
+      android,
+      ios: tradeAlert ? { sound: 'trade_alert.wav' } : undefined,
     });
   };
 
@@ -713,12 +727,11 @@ const HomeScreen = ({ }) => {
     const notificationConfig = {
       title: `${title}`,
       body: `${symbol} - ${type}`,
-      android: {
-        channelId: 'default',
-        importance: AndroidImportance.HIGH,
+      android: await tradeAlertAndroidBlock({
         pressAction: { id: 'default' },
         color: '#E8210C',
-      },
+      }),
+      ios: { sound: 'trade_alert.wav' },
     };
 
     await notifee.displayNotification(notificationConfig);
@@ -734,12 +747,11 @@ const HomeScreen = ({ }) => {
         body:
           body ||
           'You have received a new rebalance from your manager. Tap to review.',
-        android: {
-          channelId: 'default',
-          importance: AndroidImportance.HIGH,
+        android: await tradeAlertAndroidBlock({
           pressAction: { id: 'default' },
           color: '#E8210C',
-        },
+        }),
+        ios: { sound: 'trade_alert.wav' },
       });
 
       // Optionally refresh trades if needed

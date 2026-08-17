@@ -5,21 +5,45 @@ import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
 import NatificationServiceNav from './src/components/NatificationServiceNav';
 import messaging from '@react-native-firebase/messaging';
 import WebinarReminderHandler from './src/FunctionCall/services/WebinarReminderHandler';
+import {
+  ensureTradeAlertChannel,
+} from './src/FunctionCall/services/TradeAlertChannel';
 
 let notificationDisplayed = false;
 
+// Trade-advice notification types that get the distinct ring (client req
+// 2026-08-13 #1). Mirrors the foreground switch in HomeScreen.js.
+const TRADE_ALERT_TYPES = new Set([
+  'bespoke',
+  'New Rebalance',
+  'trade_modified',
+  'reco_message',
+]);
+
+const isTradeAlert = (remoteMessage) => {
+  const type = remoteMessage?.data?.notificationType
+    || remoteMessage?.notification?.data?.notificationType;
+  return !!type && TRADE_ALERT_TYPES.has(type);
+};
+
 // Display the notification function
-const displayNotification = async (title, body) => {
+const displayNotification = async (title, body, tradeAlert = false) => {
   try {
     await notifee.requestPermission();
-    const channelId = await notifee.createChannel({
-      id: 'default',
-      name: 'Default Channel',
-      vibration: true,
-      sound: 'default',
-      importance: AndroidImportance.HIGH,
-      vibrationPattern: [300, 500],
-    });
+    // Trade advice rings with the bundled `trade_alert.wav` via the dedicated
+    // channel; everything else keeps the default sound. The FCM payload
+    // already carries android.channel_id = trade_alerts, but the in-app
+    // foreground render path (this function) still needs the same channel.
+    const channelId = tradeAlert
+      ? await ensureTradeAlertChannel()
+      : await notifee.createChannel({
+          id: 'default',
+          name: 'Default Channel',
+          vibration: true,
+          sound: 'default',
+          importance: AndroidImportance.HIGH,
+          vibrationPattern: [300, 500],
+        });
 
     // Display notification only if the app is not in the foreground and notification hasn't been shown
     if (AppState.currentState !== 'active' && !notificationDisplayed) {
@@ -54,7 +78,8 @@ messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   }
   if (remoteMessage.notification) {
     const { title, body } = remoteMessage.notification;
-    await displayNotification(title, body);
+    const tradeAlert = isTradeAlert(remoteMessage);
+    await displayNotification(title, body, tradeAlert);
     console.log('Notification received in background');
   }
 });
@@ -69,7 +94,7 @@ messaging().getInitialNotification().then(async (remoteMessage) => {
   }
   if (remoteMessage.notification) {
     const { title, body } = remoteMessage.notification;
-    await displayNotification(title, body);
+    await displayNotification(title, body, isTradeAlert(remoteMessage));
     console.log('Notification received when app was closed');
   }
 });
