@@ -2516,7 +2516,9 @@ const RebalanceModal = ({
                     marginTop: 40,
                     paddingHorizontal: 24,
                   }}>
-                  {calculatedPortfolioData?.status === 1 && calculatedPortfolioData?.message ? (
+                  {(hasSkippedStocks ||
+                    (calculatedPortfolioData?.status === 1 &&
+                      calculatedPortfolioData?.message)) ? (
                     <>
                       {/* Error/warning icon */}
                       <View
@@ -2539,7 +2541,9 @@ const RebalanceModal = ({
                           textAlign: 'center',
                           marginBottom: 12,
                         }}>
-                        Unable to Rebalance
+                        {hasSkippedStocks
+                          ? 'Investment Amount Needs Review'
+                          : 'Unable to Rebalance'}
                       </Text>
                       <Text
                         style={{
@@ -2551,7 +2555,9 @@ const RebalanceModal = ({
                           lineHeight: 22,
                           paddingHorizontal: 10,
                         }}>
-                        {calculatedPortfolioData.message}
+                        {hasSkippedStocks
+                          ? `This amount cannot buy any of the portfolio positions at their target weights right now. Increase the investment amount and retry; this is not an “already aligned” result.${minInvestment ? ` The latest reference minimum is ₹${parseFloat(minInvestment).toLocaleString('en-IN')}.` : ''}`
+                          : calculatedPortfolioData.message}
                       </Text>
                       <TouchableOpacity
                         onPress={handleClose}
