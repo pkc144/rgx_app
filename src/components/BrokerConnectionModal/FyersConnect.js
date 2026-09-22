@@ -3,6 +3,12 @@ import { StyleSheet, Dimensions } from 'react-native';
 
 import { getAuth } from '@react-native-firebase/auth';
 import server from '../../utils/serverConfig';
+import {
+  isValidFyersAppId,
+  fyersAppIdFieldError,
+  normalizeFyersAppId,
+  FYERS_APP_ID_ENTERED_MESSAGE,
+} from '../../utils/fyersAppId';
 import CryptoJS from 'react-native-crypto-js';
 import axios from 'axios';
 import Config from 'react-native-config';
@@ -169,7 +175,7 @@ const FyersConnect = ({
         uid: userId,
         user_broker: 'Fyers',
         jwtToken: fyersAccessToken,
-        clientCode: secretKey,
+        clientCode: normalizeFyersAppId(secretKey),
         secretKey: checkValidApiAnSecret(apiKey),
       };
       let config = {
@@ -285,6 +291,14 @@ const FyersConnect = ({
   };
 
   const updateSecretKey = () => {
+    // Fyers places orders only from an activated Algo-trading app whose
+    // App ID ends in -200; any other app connects and reads funds fine,
+    // then rejects every order (-50) and every eDIS call (-96). Catch it
+    // here so the customer is told now, not at their first SELL.
+    if (!isValidFyersAppId(secretKey)) {
+      showAlert('error', 'Check your Fyers App ID', FYERS_APP_ID_ENTERED_MESSAGE);
+      return;
+    }
     if (!egressReady) {
       setUnmetAck(true);
       return;
@@ -293,7 +307,7 @@ const FyersConnect = ({
     let data = JSON.stringify({
       uid: userId,
       redirect_url: brokerConnectRedirectURL,
-      clientCode: secretKey,
+      clientCode: normalizeFyersAppId(secretKey),
       secretKey: checkValidApiAnSecret(apiKey),
     });
     let config = {
