@@ -52,6 +52,7 @@ import { validateBrokerSession } from '../../utils/brokerSessionUtils';
 import { isZerodhaSellAuthorized } from '../../utils/zerodhaDdpiGate';
 import useModalStore from '../../GlobalUIModals/modalStore';
 import useSdkClient from '../../sdk/useSdkClient';
+import {throwIfSdkNotSent} from '../../utils/sdkNotSent';
 
 const isSdkExecuteAdviceEnabled = () => {
   const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
@@ -238,6 +239,20 @@ const UserStrategySubscribeModal = ({
   // step (`setConfirmOrder(false)`) whose "Confirm Details" button re-runs
   // calculateRebalance, minting a fresh plan. Mirrors web's recompute handling.
   const handleFrozenPlanRecompute = (error) => {
+    // Refused before anything reached the broker (market closed, expired
+    // session, ...). Never a sell-authorization problem: say why and stop,
+    // before the caller's TPIN branch can treat it as a rejected SELL.
+    const refusedData = error?.response?.data || {};
+    if (error?.response?.status === 409 && !refusedData.recompute &&
+        (refusedData.dispatchState === 'NOT_SENT' || refusedData.notSent === true ||
+         refusedData.code === 'MARKET_CLOSED')) {
+      Alert.alert(
+        'Orders not placed',
+        refusedData.message || 'Nothing was sent to your broker. Please try again later.',
+      );
+      setConfirmOrder(false);
+      return true;
+    }
     if (error?.response?.status === 409 && error?.response?.data?.recompute) {
       setConfirmOrder(false);
       Toast.show({
@@ -588,6 +603,7 @@ const UserStrategySubscribeModal = ({
             trades: payload.trades,
             subscriptionId: latestRebalance?._id || '',
           });
+          throwIfSdkNotSent(sdkResult);
           const mappedRows = (sdkResult?.rows || []).map(row => ({
             ...row,
             orderStatus: row.status,
@@ -870,6 +886,7 @@ const UserStrategySubscribeModal = ({
           trades: payload.trades,
           subscriptionId: latestRebalance?._id || '',
         });
+        throwIfSdkNotSent(sdkResult);
         const mappedRows = (sdkResult?.rows || []).map(row => ({
           ...row,
           orderStatus: row.status,
@@ -1289,6 +1306,7 @@ const UserStrategySubscribeModal = ({
               trades: zerodhaStockDetails,
               subscriptionId: latestRebalance?._id || '',
             });
+            throwIfSdkNotSent(sdkResult);
             const mappedRows = (sdkResult?.rows || []).map(row => ({
               ...row,
               orderStatus: row.status,
