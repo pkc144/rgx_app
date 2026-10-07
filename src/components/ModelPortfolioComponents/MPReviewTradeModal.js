@@ -11,6 +11,7 @@ import {
   Pressable,
   FlatList,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {useWindowDimensions} from 'react-native';
 import {XIcon, Trash2Icon, CandlestickChartIcon, AlertTriangleIcon} from 'lucide-react-native';
@@ -43,6 +44,7 @@ import { computeTradeVariant } from '../../utils/tradeVariant';
 import useSdkClient from '../../sdk/useSdkClient';
 import portfolioEvents, { PORTFOLIO_EVENTS } from '../../utils/portfolioEvents';
 import { isZerodhaSellAuthorized } from '../../utils/zerodhaDdpiGate';
+import {planRefusalMessage} from '../../utils/planRefusalMessage';
 
 const isSdkExecuteAdviceEnabled = () => {
   const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
@@ -111,12 +113,12 @@ const MPReviewTradeModal = ({
   // handling. Returns true if it handled the error (caller should stop).
   const handleFrozenPlanRecompute = (error) => {
     if (error?.response?.status === 409 && error?.response?.data?.recompute) {
-      Toast.show({
-        type: 'error',
-        text1: 'Rebalance Plan Changed',
-        text2: error?.response?.data?.message || 'Please review and confirm again.',
-        visibilityTime: 6000,
-      });
+      const refusal = planRefusalMessage(
+        error?.response?.data?.code,
+        broker,
+        error?.response?.data?.message,
+      );
+      Alert.alert(refusal.title, refusal.message);
       onCloseReviewTrade();
       if (typeof calculateRebalance === 'function') {
         calculateRebalance();

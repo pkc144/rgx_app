@@ -51,6 +51,7 @@ import { convertResponse } from '../../utils/tradeUtils';
 import { isZerodhaSellAuthorized } from '../../utils/zerodhaDdpiGate';
 import useWebSocketCurrentPrice from '../../FunctionCall/useWebSocketCurrentPrice';
 import useSdkClient from '../../sdk/useSdkClient';
+import {planRefusalMessage} from '../../utils/planRefusalMessage';
 
 const isSdkExecuteAdviceEnabled = () => {
   const v = String(Config?.REACT_APP_USE_SDK_EXECUTE_ADVICE || '').trim().toLowerCase();
@@ -1302,12 +1303,12 @@ const RebalanceModal = ({
       // next open) instead of just toasting a generic failure.
       if (error?.response?.status === 409 && error?.response?.data?.recompute) {
         setOpenRebalanceModal(false);
-        Toast.show({
-          type: 'error',
-          text1: 'Rebalance Plan Changed',
-          text2: error?.response?.data?.message || 'Please reopen and review the rebalance again.',
-          visibilityTime: 6000,
-        });
+        const refusal = planRefusalMessage(
+          error?.response?.data?.code,
+          broker,
+          error?.response?.data?.message,
+        );
+        Alert.alert(refusal.title, refusal.message);
         getRebalanceRepair();
         getModelPortfolioStrategyDetails();
         return;
@@ -2021,12 +2022,12 @@ const RebalanceModal = ({
         // mirrors web's recompute handling.
         if (error?.response?.status === 409 && error?.response?.data?.recompute) {
           setOpenRebalanceModal(false);
-          Toast.show({
-            type: 'error',
-            text1: 'Rebalance Plan Changed',
-            text2: error?.response?.data?.message || 'Please reopen and review the rebalance again.',
-            visibilityTime: 6000,
-          });
+          const refusal = planRefusalMessage(
+            error?.response?.data?.code,
+            broker,
+            error?.response?.data?.message,
+          );
+          Alert.alert(refusal.title, refusal.message);
           getRebalanceRepair();
           getModelPortfolioStrategyDetails();
           return;
