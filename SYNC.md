@@ -9,7 +9,7 @@ you're new here.
 
 - **Repo**: `https://github.com/.../Alphab2bapp` (local clone at
   `/home/pk/Alphaquark_docs/AlphaQuark/codes/github/Alphab2bapp`)
-- **Tracked branch**: `feature/sdk-plus-config_forkv2`
+- **Tracked branch**: `release/deploy_5.1` (was `feature/sdk-plus-config_forkv2`, retired 2026-09-29)
 - **Trade-alert ring port (2026-08-13)**: `index.js` + `src/screens/Home/HomeScreen.js`
   route trade advice (bespoke / New Rebalance / trade_modified / reco_message)
   through a new `src/FunctionCall/services/TradeAlertChannel.js` channel
@@ -17,7 +17,18 @@ you're new here.
   `AlphaQuark/trade_alert.wav` in the Xcode Resources phase). Ported directly
   from upstream Alphab2bapp (client req #1); the same files will also arrive
   on the next upstream merge (expected clean no-op).
-- **Last sync**: 2026-05-10 — Phase 0 + Phase 1 of the byte-identical
+- **Last sync**: 2026-10-17 — full content sync to Alphab2bapp `release/deploy_5.1`
+  `222267d5`; this completes SYNC_PLAN phases 2–8. Every shared `src/` /
+  `designs/default/` file now equals upstream except `index.js` +
+  `src/utils/executionBundleSafety.js` (no signed OTA for this app: bundled
+  entry point, store-update prompt) and `designs/registry.js` (no
+  `moneyman_app` variant). Dead fork-only files removed (ProcessTrades,
+  SubscribedPF*, PlaceOrdersScreen, orderService, AumPerformanceCard).
+  `RegionGate`/`LocationService` kept but unused (nothing imports them).
+  Native ports: Crashlytics, react-native-keychain, ModalSoftInput module,
+  ICICI Root R46 network config, PhonePe return path, MainActivity
+  onCreate(null), bottom-tabs 7.10.1 patch, `whitelabel/content.js`.
+- **Previous sync**: 2026-05-10 — Phase 0 + Phase 1 of the byte-identical
   src/ migration (see `docs/SYNC_PLAN.md` for the full plan).
 
 ## ⚠️ This fork has unrelated git history with upstream

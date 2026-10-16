@@ -32,8 +32,6 @@ const InactivityProvider = ({ children, onAppForeground }) => {
   }, [onAppForeground]);
 
   const handleLogout = () => {
-    // clearAccountEmail() clears the persisted key AND the in-memory cache
-    // that utils/accountEmail.getAccountEmail() serves synchronously.
     clearAccountEmail().catch(() => {});
     auth().signOut().then(() => {
       Alert.alert('Logged out', 'You have been logged out due to inactivity.');

@@ -25,6 +25,10 @@ import { useTrade } from '../screens/TradeContext';
 import { getAdvisorSubdomain } from '../utils/variantHelper';
 import SliderButton from './SliderButton';
 import { useComponent } from '../design/useDesign';
+import useAngelOneSurveillance from '../hooks/useAngelOneSurveillance';
+import SurveillanceWarning from './SurveillanceWarning';
+
+import { designColor } from '../design/literalTokens';
 
 const BasketTradeModal = ({
     visible,
@@ -41,7 +45,17 @@ const BasketTradeModal = ({
     broker,
 }) => {
     const Presentation = useComponent('composites.BasketTradeModal');
+
     const { configData } = useTrade();
+    // Angel One pre-trade surveillance (web parity: BasketModal). Warn-only
+    // and fail-open — see hooks/useAngelOneSurveillance. Passed through the
+    // view model because the banner is a rendered, brand-styled surface.
+    const { surveillanceStocks } = useAngelOneSurveillance({
+        broker,
+        stocks: stockDetails,
+        enabled: visible,
+        configData,
+    });
     const [isBasket, setisBasket] = useState(false);
     const isBasketp = stockDetails.some((item) => item.source === 'BasketStock');
 
@@ -315,10 +329,10 @@ const BasketTradeModal = ({
                 style={{
                     paddingVertical: 5,
                     paddingHorizontal: 10,
-                    borderTopColor: '#e4e4e4',
+                    borderTopColor: designColor('e4e4e4'),
                     borderTopWidth: 0.5,
                     elevation: 1,
-                    backgroundColor: '#fff',
+                    backgroundColor: designColor('fff'),
                 }}
             >
                 <SliderButton
@@ -352,6 +366,7 @@ const BasketTradeModal = ({
         loading,
         totalQuantity,
         stockDetails: enrichedStockDetails,
+        surveillanceStocks,
         selectedOption,
         inputFixSizeValue,
     };
@@ -377,7 +392,13 @@ const BasketTradeModal = ({
         renderSliderButton,
     };
 
-    return <Presentation viewModel={viewModel} actions={actions} />;
+    return (
+        <Presentation
+            viewModel={viewModel}
+            actions={actions}
+            slots={{ SurveillanceWarning }}
+        />
+    );
 };
 
 export default BasketTradeModal;

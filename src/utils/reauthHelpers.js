@@ -10,7 +10,7 @@ import axios from 'axios';
 import Config from 'react-native-config';
 import server from './serverConfig';
 import { generateToken } from './SecurityTokenManager';
-import { getAdvisorSubdomain } from './variantHelper';
+import {getAdvisorSubdomain, getTenantSubdomain} from './variantHelper';
 import { getStoredBrokerCreds } from './brokerCredentials';
 import useModalStore from '../GlobalUIModals/modalStore';
 
@@ -47,8 +47,7 @@ const BROKER_MODAL_KEY_MAP = {
 
 const buildHeaders = (configData) => ({
   'Content-Type': 'application/json',
-  'X-Advisor-Subdomain':
-    configData?.config?.REACT_APP_HEADER_NAME || getAdvisorSubdomain(),
+  'X-Advisor-Subdomain': getTenantSubdomain(configData),
   'aq-encrypted-key': generateToken(
     Config.REACT_APP_AQ_KEYS,
     Config.REACT_APP_AQ_SECRET,
@@ -56,9 +55,10 @@ const buildHeaders = (configData) => ({
 });
 
 /**
- * Flip primary_broker on the backend. Called before re-auth so that if
- * the user backs out of the OAuth step the new primary still sticks —
- * matches web subscription.js:161.
+ * Flip primary_broker on the backend. Since 2026-10-14 the app calls this
+ * only AFTER a reconnect is confirmed live without a login screen (Groww
+ * silent refresh, DefinEdge already-connected); a real login makes the
+ * broker primary server-side. (Web subscription.js still flips up-front.)
  */
 export const flipPrimaryBroker = async (brokerName, userEmail, configData) => {
   try {
@@ -79,7 +79,9 @@ export const flipPrimaryBroker = async (brokerName, userEmail, configData) => {
 
 /**
  * Mark a broker's connected_brokers[] entry as `status='expired'` on
- * the backend. Called when the user taps "Reconnect" — the act of
+ * the backend. NOT called on a Reconnect tap since 2026-10-14 (a backed-out
+ * login labelled a live session expired); kept for callers with positive
+ * evidence. Historical note — it was called when the user tapped "Reconnect" — the act of
  * tapping reconnect IS the user's signal that the current session is
  * bad and needs refresh. UI then shows "Re-auth needed" / "Session
  * Expired" badge.
@@ -213,6 +215,14 @@ export const handleSmartReauth = async ({
       configData,
     );
     console.log('[smartReauth] DefinEdge reauth-url response:', response);
+    if (response?.alreadyConnected) {
+      return {
+        handled: true,
+        silent: true,
+        alreadyConnected: true,
+        message: response.message,
+      };
+    }
     if (!response?.requiresOtp || !response.otp_token) {
       return {
         handled: false,

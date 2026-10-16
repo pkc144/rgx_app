@@ -20,37 +20,21 @@ import {isSdkIntegrationEnabled} from '../sdk/SdkProviderRoot';
 // of this file — re-use that one for SDK env vars.
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {
-  createBottomTabNavigator,
-  BottomTabBar,
-} from '@react-navigation/bottom-tabs';
-import {
-  createDrawerNavigator,
-  DrawerContentScrollView,
-  DrawerItemList,
-  useDrawerStatus,
-  DrawerItem,
-} from '@react-navigation/drawer'; // Import Drawer Navigator
+import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {
   FolderClock,
   LogOut,
   Shield,
-  FileText,
   DollarSign,
   Activity,
   History,
-  Newspaper,
-  Briefcase,
   XIcon,
   CreditCard,
   Ban,
   BanIcon,
   GitFork,
-  Home,
   ChevronRight,
   AlignEndHorizontal,
-  Clipboard,
-  User,
   Video,
   BookOpen,
   MessageSquare,
@@ -80,12 +64,10 @@ import WishSearch from '../screens/Home/WishSearch';
 import CustomToolbar from './CustomToolbar';
 import NatificationServiceNav from './NatificationServiceNav';
 import {useConfig} from '../context/ConfigContext';
-import HistoryScreen from '../screens/Home/HistoryScreen';
 import AdviceScreen from '../screens/Home/HomeScreen';
 import PaymentHistoryScreen from '../screens/Drawer/PaymentHistoryScreen';
 import AdviceCartScreen from './AdviceScreenComponents/AdviceCartScreen';
 import PortfolioScreen from '../screens/PortfolioScreen/PortfolioScreen';
-import IgnoreTradesScreen from '../screens/Drawer/IgnoreTradesScreen';
 import ProductCatalogScreen from '../screens/Drawer/ProductCatalogScreen';
 import PrivacyPolicyScreen from '../screens/Drawer/PrivacyPolicyScreen'; // New screen
 import {
@@ -114,6 +96,7 @@ import ReviewScreen from '../screens/Drawer/ReviewScreen';
 import AfterSubscriptionScreen from '../screens/Home/AfterSubscriptionScreen';
 import MySubscriptionsScreen from '../screens/Home/MySubscriptionsScreen';
 import NewsScreen from '../screens/Home/NewsScreen/NewsScreen';
+import {useNavigationLayout} from '../navigation/useNavigationLayout';
 import SplashScreen from './SplashScreen';
 import {useTrade} from '../screens/TradeContext';
 import Config from '../utils/safeConfig';
@@ -127,6 +110,7 @@ import SignUpRADetails from '../screens/Authentication/SignUpRADetails';
 import EmailScreenAppleLogin from '../screens/Authentication/EmailScreenAppleLogin';
 import UpdateEmailScreen from '../screens/Home/UpdateEmailScreen';
 import AccountSettingsScreen from '../screens/Home/AccountSettingsScreen';
+import DeleteAccountScreen from '../screens/Home/DeleteAccountScreen';
 import KnowledgeHub from './HomeScreenComponents/KnowledgeHub';
 import BespokePerformanceScreen from '../screens/Drawer/BespokePerformanceScreen';
 import ChangeAdvisor from '../screens/AccountSettingScreen/ChangeAdvisor';
@@ -144,13 +128,72 @@ import ExecutionStatusScreen from '../screens/Rebalance/ExecutionStatusScreen';
 import {getAdvisorSubdomain} from '../utils/variantHelper';
 import { useWebSocketInitializer } from '../utils/websocketInitializer';
 import {getAccountEmail} from '../utils/accountEmail';
+import {useComponent} from '../design/useDesign';
+
+
+import { designColor } from '../design/literalTokens';
 
 
 const auth = getAuth();
 const user = auth.currentUser;
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-const Drawer = createDrawerNavigator();
+
+const DesignVisualLauncher = ({navigation}) => {
+  const surfaces = [
+    ['Open Home', 'Home'],
+    ['Open News', 'DesignVisualNews'],
+    ['Open Portfolio', 'DesignVisualPortfolio'],
+    ['Open Subscriptions', 'DesignVisualSubscriptions'],
+    ['Open Model Portfolio', 'Model Portfolio'],
+  ];
+
+  return (
+    <SafeAreaView accessibilityLabel="Design visual surfaces">
+      <Text>Design visual surfaces</Text>
+      {surfaces.map(([label, route]) => (
+        <TouchableOpacity key={route} onPress={() => navigation.navigate(route)}>
+          <Text>{label}</Text>
+        </TouchableOpacity>
+      ))}
+    </SafeAreaView>
+  );
+};
+
+// A stable, presentation-only fixture keeps screenshot CI independent of the
+// subscriptions API. The launcher that reaches it is itself protected by both
+// visual-build gates below, so production startup can never enter this path.
+const DesignVisualSubscriptions = () => {
+  const Presentation = useComponent('screens.MySubscriptionsScreen');
+
+  return (
+    <Presentation
+      viewModel={{
+        gradient1: designColor('002651'),
+        gradient2: designColor('0076fb'),
+        mainColor: designColor('0056b7'),
+        activeColor: designColor('29a400'),
+        cardElevation: 3,
+        cardBorderWidth: 0,
+        cardVerticalMargin: 12,
+        bespokePlanLabel: 'Bespoke Plans',
+        activeSubTab: 'mp',
+        mpCount: 0,
+        bespokeCount: 0,
+        loading: false,
+        refreshing: false,
+        planCards: [],
+      }}
+      actions={{
+        onBack: () => {},
+        onOpenPlan: () => {},
+        onTabChange: () => {},
+        onBrowsePlans: () => {},
+        onRefresh: () => {},
+      }}
+    />
+  );
+};
 const {height: screenHeight} = Dimensions.get('window');
 
 // Cart bottom-sheet geometry — place the sheet FULLY above the tab bar so
@@ -158,14 +201,15 @@ const {height: screenHeight} = Dimensions.get('window');
 // bar height (60 + safe-area), leaving ~70px of the 100px sheet tucked
 // behind the tab bar's zIndex:99 — the sheet was "opening" but almost
 // entirely obscured, which read as "cart not opening" to the user.
-const TAB_BAR_HEIGHT = 60;
+// Tab-bar height now comes from the navigation manifest (`chrome.tabBarHeight`,
+// default 60) so a variant with a taller bar keeps the sheet clear of it.
 const CART_SHEET_HEIGHT = 100;
 const BOTTOM_SHEET_PADDING = 10;
-const getBottomSheetPosition = (insets) => {
+const getBottomSheetPosition = (insets, tabBarHeight = 60) => {
   const safeBottom = insets?.bottom || 0;
   return (
     screenHeight -
-    TAB_BAR_HEIGHT -
+    tabBarHeight -
     safeBottom -
     CART_SHEET_HEIGHT -
     BOTTOM_SHEET_PADDING
@@ -190,63 +234,71 @@ const {
   placeholderText,
   tabIconColor,
 } = APP_VARIANTS[validVariant];
-const CustomTabBarIcon = ({name, focused}) => {
-  // Bottom-nav icons mirror the alphanomy-improved.html mockup's app
-  // chrome: house / file / briefcase / clipboard / user. The legacy
-  // mapping (Notebook / BookmarkPlus / Newspaper) predates the rebrand.
-  let IconComponent;
-  if (name === 'Home') {
-    IconComponent = Home;
-  } else if (name === 'More') {
-    IconComponent = User;
-  } else if (name === 'Orders') {
-    IconComponent = FileText;
-  } else if (name === 'Portfolio') {
-    IconComponent = Briefcase;
-  } else if (name === 'News') {
-    IconComponent = Newspaper;
-  } else if (name === 'Plans') {
-    IconComponent = Clipboard;
-  }
-  return (
-    <View
-      style={{
-        alignItems: 'center', // Centers children horizontally
-        flexDirection: 'column', // Stacks the icon and text vertically
-        height: '100%', // Takes full height of parent
-        alignContent: 'center',
-        alignSelf: 'center',
-        paddingTop: 8,
-      }}>
-      <View>
-        <IconComponent size={22} color={focused ? tabIconColor : 'gray'} />
-      </View>
+const PlansTabWrapper = () => <ModelPortfolioScreen type="tab" />;
 
-      <View
-        style={{
-          alignContent: 'center',
-          alignItems: 'center',
-          alignSelf: 'center',
-          justifyContent: 'center',
-        }}>
-        <Text
-          style={{
-            color: focused ? tabIconColor : 'gray', // Changes color based on focus
-            fontSize: 10, // Sets font size for text
-            marginTop: 2,
-            textAlign: 'center',
-            width: '100%', // Adds space between icon and text
-            fontFamily: 'Satoshi-Medium', // Sets font style
-            // Allows the text to wrap if needed
-          }}>
-          {name}
-        </Text>
-      </View>
-    </View>
-  );
+// Tab key → screen component. Keys + route names live in the pure catalog
+// (src/navigation/screenCatalog.js); variants choose tabs by key in
+// designs/<variant>/navigation.js. `more` is an action tab (see below).
+const TAB_COMPONENTS = {
+  advice: AdviceScreen,
+  orders: OrderScreen,
+  portfolio: PortfolioScreen,
+  plans: PlansTabWrapper,
+  news: NewsScreen,
+  watchlist: WatchlistScreen,
+  more: View, // placeholder — tabPress is intercepted and opens the More stack screen
 };
 
-const PlansTabWrapper = () => <ModelPortfolioScreen type="tab" />;
+const DesignTabBar = ({state, descriptors, navigation, insets, height}) => {
+  const Presentation = useComponent('shell.MainTabBar');
+  const items = state.routes.map((route, index) => {
+    const options = descriptors[route.key]?.options || {};
+    const label = typeof options.tabBarLabel === 'string'
+      ? options.tabBarLabel
+      : typeof options.title === 'string'
+        ? options.title
+        : route.name;
+    return {
+      key: route.key,
+      name: route.name,
+      label,
+      focused: state.index === index,
+      params: route.params,
+      accessibilityLabel: options.tabBarAccessibilityLabel,
+      testID: options.tabBarButtonTestID,
+      icon: options.aqIcon,
+    };
+  });
+
+  const onSelect = item => {
+    const event = navigation.emit({
+      type: 'tabPress',
+      target: item.key,
+      canPreventDefault: true,
+    });
+    if (!item.focused && !event.defaultPrevented) {
+      navigation.navigate(item.name, item.params);
+    }
+  };
+  const onLongPress = item => navigation.emit({
+    type: 'tabLongPress',
+    target: item.key,
+  });
+
+  return (
+    <Presentation
+      viewModel={{
+        items,
+        activeColor: tabIconColor,
+        backgroundColor: bottomTabbg,
+        borderTopWidth: bottomTabBorderTopWidth,
+        bottomInset: insets?.bottom || 0,
+        height,
+      }}
+      actions={{onSelect, onLongPress}}
+    />
+  );
+};
 
 const MainTabNavigator = () => {
   const {
@@ -264,10 +316,15 @@ const MainTabNavigator = () => {
   } = useTrade();
   const migrationUserEmail = getAccountEmail();
   const insets = useSafeAreaInsets();
-  const bottomSheetPosition = getBottomSheetPosition(insets);
+  const navLayout = useNavigationLayout();
+  const bottomSheetPosition = getBottomSheetPosition(
+    insets,
+    navLayout.chrome.tabBarHeight,
+  );
   const translateY = useRef(new Animated.Value(screenHeight)).current;
   const [cartCount, setCartCount1] = useState(0);
   const navigation = useNavigation();
+  const AppHeader = useComponent('shell.AppHeader');
   // console.log('cartOpentdd');
   // Load cart items and count from AsyncStorage when the modal is opened
   useEffect(() => {
@@ -377,83 +434,65 @@ const currentName = currentTabRoute?.name || "";
   // it to avoid the duplicate-header look. Variants that only theme the
   // legacy chrome (moneyman_app — green paint, no bespoke header) opt into
   // showing it. Default keeps showing it.
+  //
+  // The manifest's `chrome.legacyToolbar` is the variant-facing switch. The
+  // DESIGN_VARIANT allow-list is kept as a transitional gate so a fork that
+  // sets DESIGN_VARIANT to a variant not registered here (it resolves to
+  // default) keeps today's hidden toolbar. Remove once every fork declares
+  // `chrome.legacyToolbar` in its own manifest (P4).
   const HEADER_VARIANTS = new Set(['default', 'moneyman_app']);
   const showLegacyToolbar =
-    !Config?.DESIGN_VARIANT || HEADER_VARIANTS.has(Config.DESIGN_VARIANT);
+    navLayout.chrome.legacyToolbar &&
+    (!Config?.DESIGN_VARIANT || HEADER_VARIANTS.has(Config.DESIGN_VARIANT));
 
   return (
     <SafeAreaView style={{flex: 1}}>
-      {showLegacyToolbar && <CustomToolbar currentRoute={currentName} />}
+      <AppHeader
+        viewModel={{visible: showLegacyToolbar, currentRoute: currentName}}
+        slots={{Toolbar: CustomToolbar}}
+      />
       <Tab.Navigator
-        initialRouteName="Home"
-        screenOptions={({route}) => ({
-          tabBarIcon: ({focused}) => (
-            <CustomTabBarIcon name={route.name} focused={focused} />
-          ),
-          tabBarStyle: {
-            borderTopLeftRadius: 15,
-            borderTopRightRadius: 15,
-            backgroundColor: bottomTabbg,
-            height: 60 + insets.bottom,
-            zIndex: 99,
-            elevation: 99,
-            marginBottom: 0,
-            paddingBottom: insets.bottom,
-            borderTopColor: '#e9e9e9',
-            borderTopWidth: bottomTabBorderTopWidth,
-          },
-          tabBarItemStyle: {
-            padding: 0,
-            margin: 0,
-          },
-          tabBarShowLabel: false,
-        })}>
-        <Tab.Screen
-          key="home-screen"
-          name="Home"
-          options={{headerShown: false}}
-          component={AdviceScreen}
-        />
-        <Tab.Screen
-          key="orders-screen"
-          name="Orders"
-          component={OrderScreen}
-          options={{headerShown: false}}
-        />
-        <Tab.Screen
-          key="portfolio-screen"
-          name="Portfolio"
-          component={PortfolioScreen}
-          options={{headerShown: false}}
-        />
-        {selectedVariant === 'arfs' ? (
-          <Tab.Screen
-            key="news-screen"
-            name="News"
-            component={NewsScreen}
-            options={{headerShown: false}}
-          />
-        ) : (
-          <Tab.Screen
-            key="plans-screen"
-            name="Plans"
-            options={{headerShown: false}}
-            component={PlansTabWrapper}
-          />
+        initialRouteName={navLayout.initialRouteName}
+        tabBar={props => (
+          <DesignTabBar {...props} height={navLayout.chrome.tabBarHeight} />
         )}
-        <Tab.Screen
-          name="More"
-          component={View} // just a placeholder
-          listeners={{
-            tabPress: e => {
-              e.preventDefault(); // prevent default tab behavior
-              navigation.navigate('More'); // navigate to stack screen
-            },
-          }}
-          options={{headerShown: false}}
-        />
+        screenOptions={() => ({
+          // Keep the tab bar visible and avoid installing an irrelevant
+          // keyboard listener while broker OTP inputs are active on a stack
+          // screen above this still-mounted tab navigator.
+          tabBarHideOnKeyboard: false,
+          // Account-wide context responses should not rerender every hidden
+          // tab scene while the user is navigating on a slower device.
+          freezeOnBlur: true,
+        })}>
+        {/* Tabs come from the variant's navigation manifest
+            (designs/<variant>/navigation.js, resolved against
+            src/navigation/screenCatalog.js). Route names stay the legacy
+            ones (Home/Orders/Portfolio/Plans/News/More). */}
+        {navLayout.tabs.map(tab =>
+          tab.kind === 'action' ? (
+            <Tab.Screen
+              key={`${tab.key}-tab`}
+              name={tab.routeName}
+              component={TAB_COMPONENTS[tab.key] || View}
+              listeners={{
+                tabPress: e => {
+                  e.preventDefault(); // prevent default tab behavior
+                  navigation.navigate(tab.routeName); // navigate to stack screen
+                },
+              }}
+              options={{headerShown: false, title: tab.label, aqIcon: tab.icon}}
+            />
+          ) : (
+            <Tab.Screen
+              key={`${tab.key}-screen`}
+              name={tab.routeName}
+              component={TAB_COMPONENTS[tab.key]}
+              options={{headerShown: false, title: tab.label, aqIcon: tab.icon}}
+            />
+          ),
+        )}
       </Tab.Navigator>
-
       {isModalVisible && (
         <Animated.View
           style={{
@@ -464,7 +503,7 @@ const currentName = currentTabRoute?.name || "";
             height: 100,
             elevation: 98,
             shadowColor: 'black',
-            borderColor: '#eee',
+            borderColor: designColor('eee'),
             borderWidth: 1.6,
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
@@ -493,656 +532,28 @@ const currentName = currentTabRoute?.name || "";
   );
 };
 
-const CustomDrawerContent = props => {
-  const {configData} = useTrade();
-  const appConfig = useConfig();
-  const coursesEnabled = !!appConfig?.coursesEnabled;
-  const webinarsEnabled = !!appConfig?.webinarsEnabled;
-  const navigation = useNavigation();
-  const [userName, setUserName] = useState('');
-  const [userEmail, setUserEmail] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [currentStep, setCurrentStep] = useState(0);
-  const isDrawerOpen = useDrawerStatus(); // Use hook to determine drawer status
-  const wasEverOpenedRef = useRef(false);
-  if (isDrawerOpen === 'open') {
-    wasEverOpenedRef.current = true;
-  }
-  useEffect(() => {
-    if (auth.currentUser) {
-      // Apple users have no usable currentUser.email — without the resolver
-      // this stayed null and fetchUserProfile() below returned early, leaving
-      // the drawer profile blank. See utils/accountEmail.
-      setUserEmail(getAccountEmail());
-    }
-
-    // Fetch the user profile when the drawer opens
-    if (isDrawerOpen === 'open') {
-      fetchUserProfile();
-    }
-  }, [isDrawerOpen]); // Dependency array includes drawer status
-  const [complete, setcomplete] = useState(0);
-  const fetchUserProfile = async () => {
-    if (!userEmail || !server.server.baseUrl) {
-      return;
-    }
-    console.log(
-      'Profile Pictu:',
-      `${server.server.baseUrl}api/user/getUser/${userEmail}`,
-    );
-    try {
-      const response = await axios.get(
-        `${server.server.baseUrl}api/user/getUser/${userEmail}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': getAdvisorSubdomain(),
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        },
-      );
-      if (response.data && response.data.User) {
-        const profile = response.data.User;
-        // console.log('Profie::--------->>>>>>',profile);
-
-        // Set profile data
-        setUserName(profile.name || '');
-        setImageUrl(profile.image_url);
-        // console.log('prlkkkkkkk',profile.name.length);
-        //  setcomplete(profile.profile_completion);
-        // Determine current step
-        let step = 0;
-        if (profile.name.length > 0) step += 1;
-        if (profile.email) step += 1;
-        if (profile.phone_number) step += 1;
-
-        //  if (profile.telegram_id) step = 4;
-        setCurrentStep(step);
-
-        // Calculate completion percentage
-        const completionPercentage = (step / 3) * 100;
-        setcomplete(completionPercentage);
-      }
-    } catch (error) {
-      console.error(
-        'Error fetching profile:',
-        error.response?.data || error.message,
-      );
-    }
-  };
-  const [showModal, setModal] = useState(false);
-  const [showModalHelp, setModalHelp] = useState(false);
-  // console.log('app variant:',APP_VARIANTS);
-  const getInitials = name => {
-    return name.length > 0 ? name[0].toUpperCase() : '';
-  };
-
-  const handleDrawerItemPress = screenName => {
-    if (props.state.routeNames[props.state.index] === screenName) {
-      props.navigation.closeDrawer(); // Just close drawer if already on that screen
-    } else {
-      props.navigation.navigate(screenName); // Otherwise, navigate
-    }
-  };
-
-  const CustomDrawerItem = ({label, isSelected, onPress, IconComponent}) => {
-    return (
-      <TouchableOpacity
-        onPress={onPress}
-        style={{
-          marginBottom: 5,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingVertical: 10,
-          paddingHorizontal: 0,
-          borderBottomWidth: 0.2,
-
-          borderColor: '#c8c8c8',
-          backgroundColor: 'transparent',
-        }}>
-        <View style={{flexDirection: 'row'}}>
-          {/* Left Indicator */}
-          {isSelected ? (
-            <View
-              style={{
-                backgroundColor: 'white',
-                width: 5,
-                height: 25,
-                borderTopRightRadius: 5,
-                borderBottomRightRadius: 5,
-                marginLeft: 0,
-              }}
-            />
-          ) : (
-            <View
-              style={{
-                backgroundColor: 'transparent',
-                width: 5,
-                height: 25,
-                borderTopRightRadius: 5,
-                borderBottomRightRadius: 5,
-                marginLeft: 4,
-              }}
-            />
-          )}
-
-          {/* Icon and Label */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingTop: 10,
-            }}>
-            {/* Dynamic Icon */}
-            {IconComponent && (
-              <IconComponent color="#fff" style={{marginHorizontal: 30}} />
-            )}
-            <Text
-              style={{
-                color: '#fff',
-                fontSize: 12,
-                fontFamily: isSelected ? 'Poppins-Medium' : 'Poppins-Regular',
-              }}>
-              {label}
-            </Text>
-          </View>
-        </View>
-
-        {/* Chevron Icon */}
-        <ChevronRight color="#fff" style={{marginRight: 10}} />
-      </TouchableOpacity>
-    );
-  };
-
-  // Defer rendering the drawer body until the drawer has actually been
-  // opened at least once. React Navigation v7's drawer panel is mounted
-  // even while "closed" and on iOS the off-screen translate can take one
-  // frame to settle — without this guard, the menu flashes visibly on
-  // top of the home tab right after login (`navigation.replace('Home')`).
-  if (!wasEverOpenedRef.current && isDrawerOpen !== 'open') {
-    return null;
-  }
-
-  return (
-    <LinearGradient
-      colors={['#012651', '#0157B8']} // Adjust gradient colors as needed
-      start={{x: 1, y: 0}}
-      end={{x: 0, y: 1}}
-      style={{flex: 1}}>
-      <SafeAreaView style={{flex: 1}}>
-        {/* Scrollable Drawer Content */}
-
-        {selectedVariant === 'magnus' && (
-          <View
-            style={{
-              position: 'absolute',
-              right: -20,
-              top: 40,
-              alignContent: 'flex-start',
-              alignItems: 'flex-start',
-              alignSelf: 'flex-end',
-              width: 200,
-              height: 200,
-            }}>
-            <Text
-              style={{
-                fontFamily:
-                  Platform.OS === 'android'
-                    ? 'Gillies'
-                    : 'GilliesGothicW01-ExtraBold',
-                fontSize: 140,
-                overflow: 'hidden',
-                color: '#fff',
-                opacity: 0.07, // Makes it faded like a watermark
-                textShadowColor: 'rgba(0, 0, 0, 0.1)', // Soft shadow for depth
-                textShadowOffset: {width: 2, height: 2},
-                textShadowRadius: 5,
-              }}>
-              {' '}
-            </Text>
-          </View>
-        )}
-        <TouchableOpacity
-          style={{
-            alignContent: 'flex-end',
-            alignItems: 'flex-end',
-            alignSelf: 'flex-end',
-            paddingHorizontal: 20,
-            marginTop: 40,
-          }}
-          onPress={() => {
-            console.log('Drawer close triggered');
-            props.navigation.closeDrawer();
-          }}>
-          <XIcon size={24} color={'#fff'} />
-        </TouchableOpacity>
-
-        <DrawerContentScrollView
-          ond
-          {...props}
-          contentContainerStyle={{flexGrow: 1}}>
-          {/* Logo and App Name */}
-          <View
-            style={{
-              flexDirection: 'colum',
-              alignContent: 'flex-start',
-              alignItems: 'flex-start',
-              justifyContent: 'flex-start',
-              marginBottom: 0,
-              paddingBottom: 10,
-              marginLeft: 20,
-            }}>
-            <View
-              style={{
-                marginHorizontal: 20,
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginTop: 10,
-              }}>
-              <View
-                style={{
-                  backgroundColor: '#1D1D1F',
-                  width: 40,
-                  height: 40,
-                  borderRadius: 25,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  marginRight: 15,
-                }}>
-                {/* Use initials or profile picture */}
-                {imageUrl ? (
-                  <Image
-                    source={{uri: imageUrl}}
-                    style={{width: 40, height: 40, borderRadius: 25}}
-                  />
-                ) : (
-                  <Text
-                    style={{
-                      color: '#fff',
-                      fontSize: 20,
-                      fontFamily: 'Poppins-Regular',
-                    }}>
-                    {getInitials(userName)}
-                  </Text>
-                )}
-              </View>
-              <View>
-                <Text
-                  style={{
-                    color: '#fff',
-                    fontSize: 13,
-                    fontFamily: 'Poppins-Regular',
-                  }}>
-                  {userName}
-                </Text>
-                <Text
-                  style={{
-                    color: '#fff',
-                    fontSize: 12,
-                    fontFamily: 'Poppins-Regular',
-                  }}>
-                  {userEmail}
-                </Text>
-              </View>
-            </View>
-            <View
-              style={{
-                flexDirection: 'row',
-                marginBottom: 10,
-                marginTop: 20,
-                marginLeft: 20,
-                alignItems: 'center',
-              }}>
-              <ProgressBar
-                steps={3}
-                width={200}
-                height={4}
-                filledBarStyle={{
-                  borderRadius: 10,
-                  backgroundColor: '#F0C419',
-                }}
-                backgroundBarStyle={{
-                  borderRadius: 10,
-                  backgroundColor: '#D9D9D9',
-                }}
-                currentStep={currentStep}
-                stepToStepAnimationDuration={1000}
-                withDots={false}
-              />
-              <Text
-                style={{
-                  color: 'white',
-                  fontFamily: 'Poppins-Regular',
-                  marginLeft: 10,
-                  fontSize: 12,
-                }}>
-                {complete.toFixed(2)}%
-              </Text>
-            </View>
-            <View
-              style={{
-                alignItems: 'center',
-                paddingVertical: 4,
-                marginLeft: 20,
-              }}>
-              <TouchableOpacity
-                onPress={() => setModal(true)}
-                activeOpacity={0.8}
-                style={{
-                  backgroundColor: 'transparent',
-                  padding: 0,
-                  elevation: 0,
-                  alignContent: 'center',
-                  alignItems: 'center',
-                  alignSelf: 'center',
-                }}>
-                <LinearGradient
-                  colors={['#00000040', '#FFFFFF1A']}
-                  start={{x: 0, y: 0}}
-                  end={{x: 0, y: 1}}
-                  style={{
-                    borderRadius: 15,
-                    elevation: 0,
-                    paddingVertical: 0,
-                    paddingHorizontal: 10,
-                    borderColor: '#fff',
-                    borderWidth: 0.5,
-                  }}>
-                  <Text
-                    style={{
-                      color: '#fff',
-                      fontFamily: 'Satoshi-Medium',
-                      fontSize: 10,
-                      paddingVertical: 5,
-                    }}>
-                    Complete Profile
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <CustomDrawerItem
-            label="Home"
-            isSelected={props.state.routeNames[props.state.index] === 'HomeS'}
-            onPress={() => handleDrawerItemPress('HomeS')}
-            IconComponent={({color, style}) => (
-              <Home color={color} style={style} />
-            )}
-          />
-          <CustomDrawerItem
-            label="Broker Setting"
-            isSelected={
-              props.state.routeNames[props.state.index] === 'Broker Setting'
-            }
-            onPress={() => handleDrawerItemPress('Broker Setting')}
-            IconComponent={({color, style}) => (
-              <FolderClock color={color} style={style} />
-            )}
-          />
-
-          <CustomDrawerItem
-            label="Plans"
-            isSelected={
-              props.state.routeNames[props.state.index] === 'Model Portfolio'
-            }
-            onPress={() => handleDrawerItemPress('Model Portfolio')}
-            IconComponent={({color, style}) => (
-              <GitFork color={color} style={style} />
-            )}
-          />
-
-          <CustomDrawerItem
-            label="Research Reports"
-            isSelected={
-              props.state.routeNames[props.state.index] ===
-              'ResearchReportScreen'
-            }
-            onPress={() => handleDrawerItemPress('ResearchReportScreen')}
-            IconComponent={({color, style}) => (
-              <FileText color={color} style={style} />
-            )}
-          />
-
-          <CustomDrawerItem
-            label="Recommendation Messages"
-            isSelected={
-              props.state.routeNames[props.state.index] ===
-              'RecommendationMessages'
-            }
-            onPress={() => handleDrawerItemPress('RecommendationMessages')}
-            IconComponent={({color, style}) => (
-              <MessageSquare color={color} style={style} />
-            )}
-          />
-
-          {/* Courses (2026-05-24) — viewer-only catalog. Gated per-advisor
-              by AppConfigContext.coursesEnabled (mirrors web's
-              AppConfigContext default-false → AdvisorConfig.courses_enabled).
-              Routes resolve to the root Stack.Screen registered in Phase
-              2e; entries hide entirely when the flag is off. */}
-          {coursesEnabled && (
-            <CustomDrawerItem
-              label="Courses"
-              isSelected={
-                props.state.routeNames[props.state.index] === 'MyCourses'
-              }
-              onPress={() => handleDrawerItemPress('MyCourses')}
-              IconComponent={({color, style}) => (
-                <BookOpen color={color} style={style} />
-              )}
-            />
-          )}
-
-          {webinarsEnabled && (
-            <CustomDrawerItem
-              label="Webinars"
-              isSelected={
-                props.state.routeNames[props.state.index] === 'WebinarsList'
-              }
-              onPress={() => handleDrawerItemPress('WebinarsList')}
-              IconComponent={({color, style}) => (
-                <Video color={color} style={style} />
-              )}
-            />
-          )}
-
-          {false && (
-            <CustomDrawerItem
-              label="Ignored Trades"
-              isSelected={
-                props.state.routeNames[props.state.index] === 'Ignored Trades'
-              }
-              onPress={() => handleDrawerItemPress('Ignored Trades')}
-              IconComponent={({color, style}) => (
-                <BanIcon color={color} style={style} />
-              )}
-            />
-          )}
-
-          {selectedVariant === 'arfs' && (
-            <CustomDrawerItem
-              label="Executed Trade History"
-              isSelected={
-                props.state.routeNames[props.state.index] === 'HistoryScreen'
-              }
-              onPress={() => handleDrawerItemPress('HistoryScreen')}
-              IconComponent={({color, style}) => (
-                <CreditCard color={color} style={style} />
-              )}
-            />
-          )}
-
-          <CustomDrawerItem
-            label="Invoices"
-            isSelected={
-              props.state.routeNames[props.state.index] ===
-              'PaymentHistoryScreen'
-            }
-            onPress={() => handleDrawerItemPress('PaymentHistoryScreen')}
-            IconComponent={({color, style}) => (
-              <CreditCard color={color} style={style} />
-            )}
-          />
-
-          <View
-            style={{
-              elevation: 5,
-
-              // iOS
-              shadowColor: '#0000008d',
-              shadowOffset: {
-                width: 0,
-                height: 0,
-              },
-              shadowOpacity: 0,
-              shadowRadius: 0,
-            }}>
-            <CustomDrawerItem
-              label="Privacy Policy"
-              isSelected={
-                props.state.routeNames[props.state.index] === 'Privacy Policy'
-              }
-              onPress={() => handleDrawerItemPress('Privacy Policy')}
-              IconComponent={({color, style}) => (
-                <Shield color={color} style={style} />
-              )}
-            />
-
-            <CustomDrawerItem
-              label="Terms & Conditions"
-              isSelected={
-                props.state.routeNames[props.state.index] ===
-                'Terms & Conditions'
-              }
-              onPress={() => handleDrawerItemPress('Terms & Conditions')}
-              IconComponent={({color, style}) => (
-                <Activity color={color} style={style} />
-              )}
-            />
-            <CustomDrawerItem
-              label="Logout"
-              isSelected={
-                props.state.routeNames[props.state.index] === 'Logout'
-              }
-              onPress={() => handleDrawerItemPress('Logout')}
-              IconComponent={({color, style}) => (
-                <LogOut color={color} style={style} />
-              )}
-            />
-          </View>
-        </DrawerContentScrollView>
-
-        <ProfileModal
-          showModal={showModal}
-          setShowModal={setModal}
-          setModalHelp={setModalHelp}
-          userEmail={userEmail}
-          getUserDeatils={fetchUserProfile}
-        />
-        <ProfileModalHelp
-          showModal={showModalHelp}
-          setShowModal={setModalHelp}
-        />
-
-        {/* Profile Section at the Bottom */}
-      </SafeAreaView>
-    </LinearGradient>
-  );
-};
-
-{
-  /* <Drawer.Navigator
-drawerContent={(props) => <CustomDrawerContent {...props} />}
-screenOptions={{
-  drawerStyle: {
-    width: '100%', // Makes the drawer full-screen width
-    height: '100%', // Makes the drawer full-screen height
-    backgroundColor: 'transparent', // To make the content fully customizable with your background color
-  },
-  drawerType: 'front', // Ensures the drawer slides over the content, covering the full screen
-  overlayColor: 'transparent', // Optional: to remove the background dim when the drawer opens
-}}
->  */
-}
-
-const DrawerNavigator = () => {
-  const {width: windowWidth, height: windowHeight} = Dimensions.get('window');
-  return (
-    <Drawer.Navigator
-      drawerContent={props => <CustomDrawerContent {...props} />}
-      defaultStatus="closed"
-      screenOptions={{
-        // D17 (web-parity): the right drawer was unreachable (swipeEnabled:false + no
-        // openDrawer() caller), so parity surfaces dropped into it (PaymentHistory /
-        // MPPerformance) couldn't be found. Re-enabled via right-edge swipe. Watch for
-        // gesture conflicts with horizontal scroll/tab views (the likely original reason
-        // it was off); the HomeScreen NBA card (P3) remains the primary discovery path.
-        // See docs/WEB_PARITY_MIGRATION_2026-06.md §5.1 (D17).
-        swipeEnabled: true,
-        swipeEdgeWidth: 40,
-        drawerPosition: 'right',
-        drawerStyle: {
-          backgroundColor: 'transparent',
-          width: windowWidth,
-          height: windowHeight,
-        },
-        drawerLabelStyle: {
-          fontSize: 18,
-          fontFamily: 'Poppins-Regular',
-        },
-        drawerType: 'front', // Ensures the drawer slides over the content, covering the full screen
-        overlayColor: 'transparent',
-      }}>
-      <Drawer.Screen
-        name="HomeS"
-        component={MainTabNavigator}
-        options={{headerShown: false}}
-      />
-      <Drawer.Screen
-        name="Broker Setting"
-        component={SubscriptionScreen}
-        options={{headerShown: false}}
-      />
-      <Drawer.Screen
-        name="Product Catalog"
-        component={ProductCatalogScreen}
-        options={{headerShown: false}}
-      />
-      <Drawer.Screen
-        name="Model Portfolio"
-        component={ModelPortfolioScreen}
-        options={{headerShown: false}}
-      />
-      <Drawer.Screen
-        name="Ignored Trades"
-        component={IgnoreTradesScreen}
-        options={{headerShown: false}}
-      />
-      <Drawer.Screen
-        name="Privacy Policy"
-        component={PrivacyPolicyScreen}
-        options={{headerShown: false}}
-      />
-      <Drawer.Screen
-        name="Terms & Conditions"
-        component={TermandConditions}
-        options={{headerShown: false}}
-      />
-      <Drawer.Screen
-        name="Logout"
-        component={LogOutScreen}
-        options={{headerShown: false}}
-      />
-    </Drawer.Navigator>
-  );
-};
+// The right-side drawer was RETIRED 2026-08-01.
+//
+// It was a second, never-migrated copy of the More menu: `CustomDrawerContent`
+// hardcoded `colors={['#012651','#0157B8']}` (AlphaQuark blue) and ignored the
+// tenant brand tokens entirely, so on a white-label build an edge-swipe opened a
+// visibly foreign screen next to the themed More tab.
+//
+// It had been deliberately unreachable for a long time (swipeEnabled:false, no
+// openDrawer() caller). D17 re-enabled the right-edge swipe to make PaymentHistory /
+// MPPerformance discoverable — which exposed the unthemed surface AND reintroduced
+// the gesture conflict with horizontal card rows that the same commit warned about.
+//
+// Every Drawer.Screen it registered (HomeS, Broker Setting, Product Catalog,
+// Model Portfolio, Ignored Trades, Privacy Policy, Terms & Conditions, Logout) was
+// ALREADY registered on the Stack, so nothing lost a route. The three menu rows that
+// had no other caller anywhere — Recommendation Messages, Executed Trade History,
+// Ignored Trades — were adopted into AccountSettingsScreen's Insights section.
+//
+// `Home` and `HomeS` now mount MainTabNavigator directly.
 const Navigation = ({userEmail, isAuthenticated}) => {
   const auth = getAuth();
+  const navLayout = useNavigationLayout();
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -1156,9 +567,20 @@ const Navigation = ({userEmail, isAuthenticated}) => {
   const sdkBrokerTestFirst =
     isSdkIntegrationEnabled() &&
     String(Config?.REACT_APP_SDK_BROKER_TEST_FIRST || '').toLowerCase() === 'true';
+  // Screenshot CI must not depend on a live Firebase customer account. Both
+  // values are required: one comes from the safe visual env file and the other
+  // is injected only by Gradle's explicitly opted-in designVisualTest build.
+  // A normal release .env cannot enable this route by itself.
+  const designVisualTestFirst =
+    String(Config?.B2B_DESIGN_VISUAL_BUILD || '').toLowerCase() === 'true' &&
+    String(Config?.REACT_APP_DESIGN_VISUAL_TEST_FIRST || '').toLowerCase() === 'true';
 
   return (
     <NavigationContainer
+      linking={{
+        prefixes: ['alphaquark://'],
+        config: {screens: {NotificationScreen: 'recommendation/status'}},
+      }}
       ref={(nav) => {
         // Expose the imperative navigator to index.js so notification-tap
         // handlers (FCM background + cold-start + notifee tap events) can
@@ -1168,11 +590,37 @@ const Navigation = ({userEmail, isAuthenticated}) => {
       }}
     >
       <Stack.Navigator
-        initialRouteName={sdkBrokerTestFirst ? 'SdkBrokerTest' : 'Splash'}
+        initialRouteName={
+          designVisualTestFirst
+            ? 'DesignVisualLauncher'
+            : sdkBrokerTestFirst
+              ? 'SdkBrokerTest'
+              : 'Splash'
+        }
         screenOptions={{headerShown: false, animation: 'none'}}>
         <Stack.Screen
           name="Splash"
           component={SplashScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="DesignVisualLauncher"
+          component={DesignVisualLauncher}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="DesignVisualNews"
+          component={NewsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="DesignVisualPortfolio"
+          component={PortfolioScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="DesignVisualSubscriptions"
+          component={DesignVisualSubscriptions}
           options={{headerShown: false}}
         />
         {isSdkIntegrationEnabled() ? (
@@ -1195,12 +643,10 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           options={{headerShown: false}}
         />
         {/*
-          Phone-first login flow (Onboarding video carousel → PhoneLogin
-          capture), gated by config.phoneFirstLoginEnabled (default OFF).
-          Registration here is inert — SplashScreen only navigation.replace()s
-          to 'Onboarding' when the advisor has opted in; otherwise these
-          screens are simply never routed to. See SplashScreen.js +
-          ConfigContext.js.
+          Phone-first login flow (Onboarding carousel → PhoneLogin capture).
+          The default activation is gated by config.phoneFirstLoginEnabled;
+          a tenant manifest may explicitly require its bundled onboarding via
+          preLoginPolicy. See SplashScreen.js + ConfigContext.js.
         */}
         <Stack.Screen
           name="Onboarding"
@@ -1219,7 +665,7 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         />
         <Stack.Screen
           name="Home"
-          component={DrawerNavigator}
+          component={MainTabNavigator}
           options={{headerShown: false}}
         />
         <Stack.Screen
@@ -1278,11 +724,6 @@ const Navigation = ({userEmail, isAuthenticated}) => {
           options={{headerShown: false}}
         />
         <Stack.Screen
-          name="HistoryScreen"
-          component={HistoryScreen}
-          options={{headerShown: false}}
-        />
-        <Stack.Screen
           name="RecommendationMessages"
           component={RecommendationMessagesScreen}
           options={{headerShown: false}}
@@ -1324,7 +765,7 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         />
         <Stack.Screen
           name="HomeS"
-          component={DrawerNavigator}
+          component={MainTabNavigator}
           options={{headerShown: false}}
         />
         <Stack.Screen
@@ -1340,12 +781,12 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="MyCourses"
           component={MyCoursesScreen}
-          options={{headerShown: true, title: 'Courses'}}
+          options={{headerShown: navLayout.chrome.coursesNativeHeader, title: 'Courses'}}
         />
         <Stack.Screen
           name="CourseDetail"
           component={CourseDetailScreen}
-          options={{headerShown: true, title: 'Course'}}
+          options={{headerShown: navLayout.chrome.coursesNativeHeader, title: 'Course'}}
         />
         <Stack.Screen
           name="Broker Setting"
@@ -1355,6 +796,11 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="More"
           component={AccountSettingsScreen}
+          options={{headerShown: false}}
+        />
+        <Stack.Screen
+          name="DeleteAccountScreen"
+          component={DeleteAccountScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen
@@ -1375,11 +821,6 @@ const Navigation = ({userEmail, isAuthenticated}) => {
         <Stack.Screen
           name="Model Portfolio"
           component={ModelPortfolioScreen}
-          options={{headerShown: false}}
-        />
-        <Stack.Screen
-          name="Ignored Trades"
-          component={IgnoreTradesScreen}
           options={{headerShown: false}}
         />
         <Stack.Screen

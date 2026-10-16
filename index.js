@@ -8,6 +8,7 @@ import WebinarReminderHandler from './src/FunctionCall/services/WebinarReminderH
 import {
   ensureTradeAlertChannel,
 } from './src/FunctionCall/services/TradeAlertChannel';
+import {syncTradeLiveActivity} from './src/services/TradeLiveActivity';
 
 let notificationDisplayed = false;
 
@@ -25,6 +26,24 @@ const isTradeAlert = (remoteMessage) => {
     || remoteMessage?.notification?.data?.notificationType;
   return !!type && TRADE_ALERT_TYPES.has(type);
 };
+const routeSdkTradeTap = (message) => {
+  const eventType = message?.data?.event_type || '';
+  if (eventType === 'advice.sent' || eventType.startsWith('order.')) {
+    NatificationServiceNav.navigate('NotificationScreen', {
+      sdkEventId: message?.data?.event_id,
+      sdkEventType: eventType,
+      checkingBroker: eventType === 'order.checking_broker',
+      recommendationKind: message?.data?.recommendation_kind,
+      recommendationTitle: message?.data?.recommendation_title,
+      broker: message?.data?.broker,
+    });
+    return true;
+  }
+  return false;
+};
+const syncLiveActivity = message =>
+  syncTradeLiveActivity(message, message?.data?.live_activity_enabled === 'true')
+    .catch(error => console.warn('[LiveActivity] sync failed:', error?.message || error));
 
 // Display the notification function
 const displayNotification = async (title, body, tradeAlert = false) => {
@@ -69,6 +88,7 @@ const displayNotification = async (title, body, tradeAlert = false) => {
 // Background message handler
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   if (!remoteMessage) return;
+  await syncLiveActivity(remoteMessage);
   // Webinar reminders may arrive data-only (cron sometimes omits the
   // `notification` block) — defend against undefined access and let the
   // handler render via the dedicated channel.
@@ -87,11 +107,13 @@ messaging().setBackgroundMessageHandler(async (remoteMessage) => {
 // Handle notification when the app was closed and opened via notification
 messaging().getInitialNotification().then(async (remoteMessage) => {
   if (!remoteMessage) return;
+  await syncLiveActivity(remoteMessage);
   // Cold-start tap on a webinar reminder — route straight to WebinarDetail.
   if (WebinarReminderHandler.matches(remoteMessage)) {
     WebinarReminderHandler.routeTap(remoteMessage);
     return;
   }
+  if (routeSdkTradeTap(remoteMessage)) return;
   if (remoteMessage.notification) {
     const { title, body } = remoteMessage.notification;
     await displayNotification(title, body, isTradeAlert(remoteMessage));
@@ -104,9 +126,16 @@ messaging().getInitialNotification().then(async (remoteMessage) => {
 // to fall through to the default NotificationScreen route below.
 messaging().onNotificationOpenedApp((remoteMessage) => {
   if (!remoteMessage) return;
+  syncLiveActivity(remoteMessage);
   if (WebinarReminderHandler.matches(remoteMessage)) {
     WebinarReminderHandler.routeTap(remoteMessage);
+    return;
   }
+  routeSdkTradeTap(remoteMessage);
+});
+
+messaging().onMessage(async remoteMessage => {
+  if (remoteMessage) await syncLiveActivity(remoteMessage);
 });
 
 // Handle notification press events when the app is in the foreground
@@ -118,6 +147,7 @@ notifee.onForegroundEvent(async ({ type, detail }) => {
     if (WebinarReminderHandler.routeTap({ notification: detail?.notification })) return;
   }
   console.log('Notification pressed in foreground');
+  if (routeSdkTradeTap({data: detail?.notification?.data || {}})) return;
   // Default route for all other notification types.
   NatificationServiceNav.navigate('NotificationScreen');
 });
@@ -130,8 +160,10 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
     if (WebinarReminderHandler.routeTap({ notification: detail?.notification })) return;
   }
   console.log('Notification pressed in background');
+  if (routeSdkTradeTap({data: detail?.notification?.data || {}})) return;
   NatificationServiceNav.navigate('NotificationScreen');
 });
 
-// Register the app
+// RGX does not have a signed OTA deployment. Keep the bundled app entry
+// point until a tenant-specific deployment and signing key are provisioned.
 AppRegistry.registerComponent(appName, () => App);

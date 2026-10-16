@@ -10,6 +10,14 @@
  * payment state. It renders the step wizard UI and delegates every
  * user interaction back to the container via `actions`.
  *
+ * NOT rendered here: the Digio signing WebView (`DigioModal`). The container
+ * mounts it directly, outside the design contract — it is a third-party
+ * WebView with nothing brandable in it, and routing its wiring through
+ * `viewModel`/`actions` meant a variant fork could silently no-op the
+ * signature-completion path. `DigioSuccessModal` DOES stay here: it is a
+ * branded surface a variant may legitimately restyle.
+ * See docs/DESIGN_SYSTEM_ARCHITECTURE.md § "What does NOT belong in a variant".
+ *
  * Contract:
  *   viewModel = {
  *     // Modal state
@@ -71,13 +79,12 @@
  *     displayAmount,           // function(base) => number
  *
  *     // Sub-modals state
- *     digioModalOpen,          // boolean
  *     digioSuccessModal,       // boolean
+ *     digioAfterPayment,       // boolean — advisor signs AFTER checkout
  *     showTelegramModal,       // boolean
  *     showPayUWebView,         // boolean
  *
  *     // Sub-modal props
- *     authUrl,                 // string — Digio auth URL
  *     payuFormData,            // object — PayU form data
  *     payuIsSI,                // boolean — PayU standing instructions
  *     whiteLabelText,          // string — for DisclaimerModal
@@ -116,10 +123,6 @@
  *     onDigioPayment,          // () => void — triggers the Digio/payment flow
  *
  *     // Sub-modal actions
- *     onDigioModalClose,       // () => void
- *     onDigioVerificationComplete, // () => void
- *     onDigioSuccess,          // (documentId) => void
- *     onDigioError,            // (error) => void
  *     onDigioSuccessModalClose,// () => void
  *     onDigioSuccessPayment,   // () => void
  *     onTelegramModalClose,    // () => void
@@ -148,7 +151,6 @@ import {
   FlatList,
   Alert,
 } from 'react-native';
-import CrossPlatformOverlay from '../../../src/components/CrossPlatformOverlay';
 import {
   ChevronRight,
   XIcon,
@@ -162,12 +164,6 @@ import {
   Loader2,
 } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import DisclaimerModal from '../../../src/components/ModelPortfolioComponents/DisclaimerModal';
-import DigioModal from '../../../src/components/ModelPortfolioComponents/DigioModal';
-import DigioSuccessModal from '../../../src/components/ModelPortfolioComponents/DigioSuccessModal';
-import TelegramCollectionModal from '../../../src/components/ModelPortfolioComponents/TelegramCollectionModal';
-import DatePickerSection from '../../../src/components/ModelPortfolioComponents/DatePickerSection';
-import PayUWebView from '../../../src/components/PayUWebView';
 
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
 
@@ -357,7 +353,14 @@ const StepCard = ({
 // ============================================================================
 // MPInvestNowModal — main presentation component
 // ============================================================================
-const MPInvestNowModal = ({ viewModel, actions }) => {
+const MPInvestNowModal = ({ viewModel, actions, slots }) => {
+  const {
+    DisclaimerModal,
+    DigioSuccessModal,
+    TelegramCollectionModal,
+    DatePickerSection,
+    PayUWebView,
+  } = slots || {};
   const {
     visible = false,
     loading = false,
@@ -409,12 +412,11 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
     gstText = '',
     displayAmount = (v) => v,
 
-    digioModalOpen = false,
     digioSuccessModal = false,
+    digioAfterPayment = false,
     showTelegramModal = false,
     showPayUWebView = false,
 
-    authUrl = '',
     payuFormData = null,
     payuIsSI = false,
     whiteLabelText = '',
@@ -448,10 +450,6 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
 
     onDigioPayment = () => {},
 
-    onDigioModalClose = () => {},
-    onDigioVerificationComplete = () => {},
-    onDigioSuccess = () => {},
-    onDigioError = () => {},
     onDigioSuccessModalClose = () => {},
     onDigioSuccessPayment = () => {},
     onTelegramModalClose = () => {},
@@ -473,6 +471,20 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
   useEffect(() => {
     if (consentChecked) setShowConsentNudge(false);
   }, [consentChecked]);
+  // Resolved plan data — the async detail fetch (`planDetails`) wins, falling
+  // back to the sync list object (`specificPlan`) so the duration cards and
+  // the payment-selection gate can never disagree when the detail fetch is
+  // still in flight or failed (2026-08-17: ankita's "quarterly/yearly not
+  // shown" — the cards rendered from `planDetails.frequency` while the gate
+  // read `specificPlan.frequency`, so a missing detail fetch hid the cards
+  // but still required a selection).
+  const resolvedPlan = planDetails || specificPlan || {};
+  const resolvedFrequency = resolvedPlan.frequency || [];
+  const resolvedPlanType = resolvedPlan.planType;
+  const resolvedOnetimeOptions = resolvedPlan.onetimeOptions || [];
+  const resolvedPricingWithoutGst = resolvedPlan.pricingWithoutGst || {};
+  const resolvedDiscountPercentage = resolvedPlan.discountPercentage;
+
   // Payment-step selection validity.
   //
   // The rule is "if there is anything to choose, you must choose it" — a card
@@ -493,8 +505,8 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
   // feedback instead of silently swallowing the tap, and a plan with no
   // choices proceeds straight through.
   const hasSelectableOptions =
-    (specificPlan?.frequency?.length || 0) > 0 ||
-    (planDetails?.onetimeOptions?.length || 0) > 0;
+    resolvedFrequency.length > 0 ||
+    resolvedOnetimeOptions.length > 0;
   const paymentSelectionValid = !hasSelectableOptions || selectedCard !== null;
   const handleCompleteInvestmentPress = () => {
     // Breadcrumb — a "dead" Complete tap has burned two debugging sessions
@@ -616,6 +628,18 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
             keyboardType="numeric"
             placeholderTextColor="#9ca3af"
           />
+          {/* Inline minimum-investment validation. The Continue button is
+              gated on the same check (isStepValid), but a disabled button
+              swallows the tap with no feedback — this makes the blocker
+              explicit while the user is still on the field. */}
+          {isModelPortfolio &&
+            invetAmount &&
+            Number(invetAmount) < Number(minInvestment || 0) && (
+              <Text style={styles.errorText}>
+                <XIcon size={12} color="#ef4444" /> Minimum investment is ₹
+                {Number(minInvestment || 0).toLocaleString()}
+              </Text>
+            )}
         </View>
       )}
 
@@ -683,7 +707,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
   const renderStep2 = () => {
     // Compute coupon/discount offer details for recurring section
     const offerDetails = appliedCoupon
-      ? planDetails?.offer_plans_details?.find((detail) => {
+      ? resolvedPlan?.offer_plans_details?.find((detail) => {
         return (
           detail.couponId?.toString() === appliedCoupon?.couponId?.toString()
         );
@@ -698,21 +722,21 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
           ? offerDetails.offer_cashfree_plan_ids || {}
           : offerDetails.offer_razorpay_plan_ids || {},
       )
-      : planDetails?.frequency;
+      : resolvedFrequency;
 
     return (
       <View style={styles.stepContentContainer}>
         <View style={styles.planGrid}>
           <View style={{ flexDirection: 'column', gap: 8 }}>
             {/* ONETIME OPTIONS */}
-            {(planDetails?.planType === 'onetime' ||
-              planDetails?.planType === 'combined') &&
-              Array.isArray(planDetails?.onetimeOptions) &&
-              planDetails.onetimeOptions.length > 0 && (
+            {(resolvedPlanType === 'onetime' ||
+              resolvedPlanType === 'combined') &&
+              Array.isArray(resolvedOnetimeOptions) &&
+              resolvedOnetimeOptions.length > 0 && (
                 <>
                   <Text style={styles.sectionTitle}>One-Time Options</Text>
                   <FlatList
-                    data={planDetails.onetimeOptions}
+                    data={resolvedOnetimeOptions}
                     keyExtractor={(item, index) =>
                       `onetime-${item.id || index}`
                     }
@@ -722,7 +746,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
                     renderItem={({ item, index }) => {
                       const originalAmount = Number(item.amountWithoutGst);
                       const discountPercentage =
-                        Number(planDetails.discountPercentage) || 0;
+                        Number(resolvedDiscountPercentage) || 0;
                       const isDiscounted =
                         discountPercentage > 0 && originalAmount > 0;
 
@@ -864,8 +888,8 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
               )}
 
             {/* RECURRING OPTIONS */}
-            {(planDetails?.planType === 'recurring' ||
-              planDetails?.planType === 'combined') &&
+            {(resolvedPlanType === 'recurring' ||
+              resolvedPlanType === 'combined') &&
               frequency &&
               frequency.length > 0 && (
                 <>
@@ -918,7 +942,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
                                       style={styles.lineThroughGray}>
                                       ₹
                                       {displayAmount(
-                                        planDetails.pricingWithoutGst?.[
+                                        resolvedPricingWithoutGst?.[
                                         item
                                         ]
                                       )}
@@ -938,7 +962,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
                                     Coupon Applied
                                   </Text>
                                 </>
-                              ) : planDetails?.discountPercentage > 0 ? (
+                              ) : resolvedDiscountPercentage > 0 ? (
                                 <>
                                   <View
                                     style={{
@@ -951,18 +975,18 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
                                       style={styles.lineThroughGray}>
                                       ₹
                                       {Math.round(
-                                        planDetails.pricingWithoutGst?.[
+                                        resolvedPricingWithoutGst?.[
                                         item
                                         ] *
                                         (1 +
-                                          planDetails.discountPercentage /
+                                          resolvedDiscountPercentage /
                                           100),
                                       )}
                                     </Text>
                                     <Text style={[styles.bluePrice, { color: mainColor }]}>
                                       ₹
                                       {displayAmount(
-                                        planDetails.pricingWithoutGst?.[
+                                        resolvedPricingWithoutGst?.[
                                         item
                                         ]
                                       )}{' '}
@@ -971,7 +995,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
                                   </View>
 
                                   <Text style={[styles.discountText, {color: stepCompletedColor}]}>
-                                    {planDetails.discountPercentage}%
+                                    {resolvedDiscountPercentage}%
                                     OFF
                                   </Text>
                                 </>
@@ -979,7 +1003,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
                                 <Text style={[styles.bluePrice, { color: mainColor }]}>
                                   ₹
                                   {displayAmount(
-                                    planDetails.pricingWithoutGst?.[
+                                    resolvedPricingWithoutGst?.[
                                     item
                                     ]
                                   )}{' '}
@@ -1221,17 +1245,6 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
         </SafeAreaView>
       </Modal>
 
-      {digioModalOpen ? (
-        <DigioModal
-          authenticationUrl={authUrl}
-          digioModalOpen={digioModalOpen}
-          onClose={onDigioModalClose}
-          onVerificationComplete={onDigioVerificationComplete}
-          onSuccess={onDigioSuccess}
-          onError={onDigioError}
-        />
-      ) : null}
-
       {/* PayU WebView Modal */}
       <PayUWebView
         visible={showPayUWebView}
@@ -1248,6 +1261,7 @@ const MPInvestNowModal = ({ viewModel, actions }) => {
           visible={digioSuccessModal}
           onClose={onDigioSuccessModalClose}
           onProceedToPayment={onDigioSuccessPayment}
+          afterPayment={digioAfterPayment}
         />
       )}
 

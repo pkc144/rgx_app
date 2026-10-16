@@ -20,14 +20,23 @@ import {
   Easing,
   Platform,
   AppState,
+  Linking,
 } from 'react-native';
 import {
   User,
   CreditCard,
   Settings,
 } from 'lucide-react-native';
-import * as RNIap from 'react-native-iap';
 import axios from 'axios';
+import {
+  choosePhonePeGroup,
+  dispatchAppCheckout,
+} from '../../FunctionCall/services/AppPaymentGateway';
+import {
+  getPendingPhonePeOrderId,
+  openPhonePeCheckout,
+  pollPhonePeOrder,
+} from '../../FunctionCall/services/PhonePePaymentService';
 import Toast from 'react-native-toast-message';
 import server from '../../utils/serverConfig';
 import Config from 'react-native-config';
@@ -41,6 +50,8 @@ import { useConfig } from '../../context/ConfigContext';
 import useTokens from '../../theme/useTokens';
 import { useGstConfig } from '../../context/GstConfigContext';
 import { withGst, gstLabel } from '../../utils/gstHelpers';
+import usePlanPaymentAmount from '../../hooks/usePlanPaymentAmount';
+import { normalizePaymentPhone } from '../../utils/paymentPhone';
 import FormatDateTime, { FormatDate } from '../../utils/formatDateTime';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CFPaymentGatewayService } from 'react-native-cashfree-pg-sdk';
@@ -71,11 +82,18 @@ import {
   PayUOneTimePayment,
   PayUSIPayment,
 } from '../../FunctionCall/services/PayUService';
+// NB: `pollDigioStatus` / `checkSubscriptionStatus` are deliberately NOT
+// imported here. They read `subscription.digio_status`, which is unreachable
+// in the pre-payment MITC flow (no subscription exists until after payment)
+// and webhook-dependent besides — that is the 2026-08-01 "customer signs but
+// never reaches payment" bug. Digio-completion checks go through
+// checkDigioDocumentStatus / pollDigioDocumentStatus, which ask Digio itself.
+// They remain exported from PaymentStatusService for other callers; do not
+// re-import them into this file.
 import {
-  checkCashfreePaymentStatus,
-  checkSubscriptionStatus,
   pollPaymentStatus,
-  pollDigioStatus,
+  checkDigioDocumentStatus,
+  pollDigioDocumentStatus,
   PaymentStatus,
   DigioStatus,
 } from '../../FunctionCall/services/PaymentStatusService';
@@ -90,8 +108,10 @@ import {
   getPendingDigio,
   updatePendingPayment,
 } from '../../FunctionCall/services/PendingPaymentManager';
+import {createPaymentCompletionCoordinator} from '../../FunctionCall/services/PaymentCompletionCoordinator';
 import {logPayment} from '../../utils/Logging';
 import {isDigioEnabledFromBackend} from '../../utils/digioConfig';
+import { normalizeKraDob } from '../../utils/normalizeKraDob';
 import {
   Digio,
   DigioConfig,
@@ -103,6 +123,16 @@ import moment from 'moment';
 import { encode as btoa } from 'base-64';
 import { addISTOffset } from '../../utils/dateUtils';
 import { useComponent } from '../../design/useDesign';
+// Rendered by the container, not the presentation — see the note at the
+// return statement (third-party WebView surfaces are not design surfaces).
+import DigioModal from './DigioModal';
+import DisclaimerModal from './DisclaimerModal';
+import DigioSuccessModal from './DigioSuccessModal';
+import TelegramCollectionModal from './TelegramCollectionModal';
+import DatePickerSection from './DatePickerSection';
+import PayUWebView from '../PayUWebView';
+
+import { designColor, designFont } from '../../design/literalTokens';
 
 function arrayBufferToBase64(buffer) {
   let binary = '';
@@ -112,6 +142,28 @@ function arrayBufferToBase64(buffer) {
   }
   return btoa(binary);
 }
+
+// A 502/503/504 is returned by the reverse proxy while the API process is
+// reconnecting; the request never reached Cashfree. Retry once with the exact
+// same payload before showing a failure. Do not retry any gateway/API response
+// that was actually processed, as payment creation is not safely repeatable.
+const TRANSIENT_PAYMENT_API_STATUSES = new Set([502, 503, 504]);
+const retryPaymentInitialization = async (request) => {
+  try {
+    return await request();
+  } catch (error) {
+    if (!TRANSIENT_PAYMENT_API_STATUSES.has(error?.response?.status)) {
+      throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    return request();
+  }
+};
+
+const paymentInitializationErrorMessage = error =>
+  TRANSIENT_PAYMENT_API_STATUSES.has(error?.response?.status)
+    ? 'Our payment service is briefly reconnecting. No payment was started; please try again in a moment.'
+    : error?.response?.data?.message || error?.message || 'Failed to initialize payment. Please try again.';
 
 const MPInvestNowModal = ({
   visible,
@@ -154,7 +206,7 @@ const MPInvestNowModal = ({
   const gradient1 = tokens.colors.brand.gradientStart;
   const gradient2 = tokens.colors.brand.gradientEnd;
   const mainColor = gradient2;
-  const stepCompletedColor = config?.paymentModal?.stepCompletedColor || '#29A400';
+  const stepCompletedColor = config?.paymentModal?.stepCompletedColor || designColor('29a400');
 
   // API configuration from your Postman
   const PDF_API_CONFIG = {
@@ -249,6 +301,16 @@ const MPInvestNowModal = ({
   const appStateRef = useRef(AppState.currentState);
   const pollingShouldStopRef = useRef(false);
   const digioPollingShouldStopRef = useRef(false);
+  const paymentRecoveryCheckRef = useRef(null);
+  const cashfreeCheckoutActiveRef = useRef(false);
+  const paymentCompletionCoordinatorRef = useRef(null);
+  if (!paymentCompletionCoordinatorRef.current) {
+    paymentCompletionCoordinatorRef.current = createPaymentCompletionCoordinator();
+  }
+  // Indirection so the background poller (defined above handleDigioSuccess) can
+  // route completion through the exact same handler the WebView callback uses.
+  // Assigned on every render, read only at call time — no TDZ risk.
+  const handleDigioSuccessRef = useRef(null);
 
   // Save Telegram ID function
   const saveTelegramId = async (id) => {
@@ -307,7 +369,12 @@ const MPInvestNowModal = ({
     }
   };
   const [isStepTransitioning, setIsStepTransitioning] = useState(false);
-  const [countryCode, setCountryCode] = useState('+91');
+  const paymentPhone = normalizePaymentPhone(
+    mobileNumber,
+    userDetails?.country_code || userDetails?.countryCode || '+91',
+  );
+  const countryCode = paymentPhone.countryCode;
+  const paymentMobileNumber = paymentPhone.nationalNumber;
   const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   const [birthDate, setBirthDate] = useState(
@@ -321,7 +388,6 @@ const MPInvestNowModal = ({
     userDetails?.DateofBirth || '',
   );
 
-  const isIOS = Platform.OS === 'ios';
   const { gstConfigure: configGst, gstWithTextConfigure: configGstWithText } = useGstConfig();
 
   // Get app variant configuration - use dynamic config colors (gradient2) from API
@@ -422,6 +488,9 @@ const MPInvestNowModal = ({
         nextAppState === 'active'
       ) {
         console.log('[MPInvestNowModal] App came to foreground, checking pending payments...');
+        // The native checkout has returned. Its callback and AppState recovery
+        // can arrive in either order; the completion coordinator joins them.
+        cashfreeCheckoutActiveRef.current = false;
         await checkPendingPaymentRecovery();
       }
       appStateRef.current = nextAppState;
@@ -441,7 +510,23 @@ const MPInvestNowModal = ({
 
   // Check and recover pending payment
   const checkPendingPaymentRecovery = async () => {
-    if (!configData || !visible) return;
+    if (!configData || !visible || cashfreeCheckoutActiveRef.current) return;
+    if (paymentRecoveryCheckRef.current) {
+      return paymentRecoveryCheckRef.current;
+    }
+
+    const recoveryCheck = performPendingPaymentRecovery();
+    paymentRecoveryCheckRef.current = recoveryCheck;
+    try {
+      return await recoveryCheck;
+    } finally {
+      if (paymentRecoveryCheckRef.current === recoveryCheck) {
+        paymentRecoveryCheckRef.current = null;
+      }
+    }
+  };
+
+  const performPendingPaymentRecovery = async () => {
 
     try {
       // First check for pending Digio signature (independent of payment)
@@ -449,28 +534,38 @@ const MPInvestNowModal = ({
       if (pendingDigio) {
         console.log('[MPInvestNowModal] Found pending Digio signature:', pendingDigio.documentId);
 
-        // Check Digio status from backend
-        const subscriptionStatus = await checkSubscriptionStatus(
-          pendingDigio.userEmail || userEmail,
-          pendingDigio.planId || specificPlan?._id,
-          configData,
-        );
+        // Ask Digio directly rather than reading subscription.digio_status —
+        // same reason as startDigioBackgroundPolling: in the beforePayment
+        // flow there is no subscription yet, so the subscription read returned
+        // null and NONE of the branches below ever fired. A customer who
+        // signed and then backgrounded the app got no recovery prompt at all.
+        const digioResult = pendingDigio.documentId
+          ? await checkDigioDocumentStatus(
+              pendingDigio.documentId,
+              pendingDigio.advisorTag || advisorTag,
+              configData,
+            )
+          : {digioStatus: DigioStatus.PENDING};
 
-        if (subscriptionStatus.digioStatus === DigioStatus.COMPLETED) {
-          // Already completed via webhook, clear pending
+        if (digioResult.digioStatus === DigioStatus.COMPLETED) {
+          // Signed. Clear pending and carry the customer forward instead of
+          // silently dropping them — this is the dropped-callback case.
           await clearPendingDigio();
-          console.log('[MPInvestNowModal] Digio already completed, cleared pending');
-        } else if (subscriptionStatus.digioStatus === DigioStatus.FAILED) {
+          console.log('[MPInvestNowModal] Digio already completed, resuming flow');
+          if (handleDigioSuccessRef.current) {
+            await handleDigioSuccessRef.current(pendingDigio.documentId);
+          }
+        } else if (digioResult.digioStatus === DigioStatus.FAILED) {
           // Failed, offer to retry
           Alert.alert(
             'Signature Failed',
-            subscriptionStatus.subscription?.digio_failure_reason || 'E-signature failed. Would you like to try again?',
+            `E-signature ${digioResult.agreementStatus || 'failed'}. Would you like to try again?`,
             [
               { text: 'Later', style: 'cancel', onPress: () => clearPendingDigio() },
               { text: 'Retry', onPress: () => openDigioModal() },
             ],
           );
-        } else if (subscriptionStatus.digioStatus === DigioStatus.PENDING) {
+        } else if (digioResult.digioStatus === DigioStatus.PENDING) {
           // Still pending, offer to complete
           Alert.alert(
             'Complete Signature',
@@ -544,19 +639,21 @@ const MPInvestNowModal = ({
 
   // Handle completion of pending payment that succeeded
   const handlePendingPaymentCompletion = async (recoveryResult) => {
-    const { pendingPayment, status } = recoveryResult;
+    const {pendingPayment} = recoveryResult;
+    const completionId = pendingPayment.paymentType === PaymentType.RECURRING
+      ? pendingPayment.subscriptionId
+      : pendingPayment.orderId;
 
-    try {
-      setLoading(true);
-      setPaymentPollingMessage('Completing your subscription...');
-
-      // Complete the subscription using CashFreeOneTimePayment
-      if (pendingPayment.paymentType === PaymentType.ONE_TIME) {
-        await CashFreeOneTimePayment({
+    return runCashfreeCompletion(
+      `${pendingPayment.paymentType}:${completionId}`,
+      async () => {
+        if (pendingPayment.paymentType === PaymentType.ONE_TIME) {
+          await CashFreeOneTimePayment({
           paymentDetails: pendingPayment.orderId,
           email: pendingPayment.userEmail,
           name: pendingPayment.userDetails?.name || name,
           panNumber: pendingPayment.userDetails?.pan || panNumber,
+          gstNumber: pendingPayment.userDetails?.gstNumber || gstNumber,
           mobileNumber: pendingPayment.userDetails?.phone || mobileNumber,
           countryCode: pendingPayment.userDetails?.countryCode || countryCode,
           formattedName,
@@ -569,34 +666,49 @@ const MPInvestNowModal = ({
           planDetails,
           configData,
           panCategory: '',
-        });
-
-        // Clear pending payment and show success
-        await clearPendingPayment();
-        setLoading(false);
-        setPaymentPollingMessage('');
-        handlePaymentSuccessWithTelegram();
+          });
+        } else if (pendingPayment.paymentType === PaymentType.RECURRING) {
+          await handlePaymentComplete('ACTIVE', pendingPayment.subscriptionId);
+        } else {
+          throw new Error(`Unsupported payment type: ${pendingPayment.paymentType}`);
+        }
 
         await logPayment('PENDING_PAYMENT_RECOVERED_SUCCESS', {
           orderId: pendingPayment.orderId,
+          subscriptionId: pendingPayment.subscriptionId,
           userEmail: pendingPayment.userEmail,
         }, configData);
-      }
-    } catch (error) {
-      console.error('[MPInvestNowModal] Error completing pending payment:', error);
-      setLoading(false);
-      setPaymentPollingMessage('');
-      Alert.alert(
-        'Recovery Error',
-        'Could not complete your subscription. Please contact support.',
-      );
-    }
+      },
+      {loadingMessage: 'Completing your subscription...'},
+    );
   };
 
-  // Background polling for Digio status while modal is open
+  // Background polling for Digio status while the signing WebView is open.
+  //
+  // 2026-08-01: repointed at Digio itself. This used to poll
+  // `pollDigioStatus(userEmail, planId)` → GET /api/subscription-check/user/
+  // :email/plan/:planId → `subscription.digio_status`, which could never
+  // report completion:
+  //   1. that route filters `is_active: true`, and in the beforePayment MITC
+  //      flow no subscription exists yet (payment runs AFTER signing), so it
+  //      always returned `{subscription: null}` → digioStatus null; and
+  //   2. `digio_status` is only ever written by the Digio webhook
+  //      (aq_backend Routes/Digio/DigioWebhook.js), which has been observed
+  //      not to fire reliably.
+  // So the "fallback" was a double no-op: it burned 60 polls and returned.
+  // That left WebView URL-substring matching in DigioModal.js as the ONLY
+  // completion detector — device- and flow-dependent, which is why some
+  // customers reached payment after signing and others were stranded.
+  //
+  // `pollDigioDocumentStatus` asks Digio directly (ccxt
+  // misc/digio/doc-detail/{docId}/{advisorTag}), exactly as the web app has
+  // always done. It is keyed on the Digio document ID, so it is correct for
+  // beforePayment AND afterPayment advisors and needs neither a subscription
+  // row nor a webhook.
   const startDigioBackgroundPolling = async (documentId) => {
-    // Wait 15 seconds before starting polling (give WebView time to respond)
-    await new Promise(resolve => setTimeout(resolve, 15000));
+    // Give the WebView a short head start — its own callback is faster when it
+    // fires. Web uses 5s (DigioModal.js smart-poller start delay); match it.
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     if (digioPollingShouldStopRef.current) {
       console.log('[Digio Polling] Stopped before starting');
@@ -606,16 +718,16 @@ const MPInvestNowModal = ({
     console.log('[Digio Polling] Starting background polling for document:', documentId);
 
     // Poll for up to 5 minutes
-    const pollResult = await pollDigioStatus(
-      userEmail,
-      specificPlan?._id,
+    const pollResult = await pollDigioDocumentStatus(
+      documentId,
+      advisorTag,
       configData,
       {
         maxAttempts: 60, // 5 minutes at 5-second intervals
         intervalMs: 5000,
         shouldStop: () => digioPollingShouldStopRef.current,
         onStatusUpdate: (update) => {
-          console.log('[Digio Polling] Status update:', update.digioStatus, 'attempt:', update.attempt);
+          console.log('[Digio Polling] Status update:', update.agreementStatus, 'attempt:', update.attempt);
         },
       },
     );
@@ -626,55 +738,24 @@ const MPInvestNowModal = ({
       return;
     }
 
-    // Handle poll result
     if (pollResult.digioStatus === DigioStatus.COMPLETED) {
-      console.log('[Digio Polling] Signature completed via webhook!');
+      console.log('[Digio Polling] Signature completed (confirmed by Digio)');
       digioPollingShouldStopRef.current = true;
-
-      // Clear pending Digio
-      await clearPendingDigio();
-
-      // Close Digio modal and trigger success flow
       setDigioModalOpen(false);
-
-      // Update user verification status (same as handleDigioSuccess does)
-      try {
-        await fetch(
-          `${server.server.baseUrl}api/digio/update-user`,
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              email: userEmail,
-              digio_verification: true,
-            }),
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-              'aq-encrypted-key': generateToken(
-                Config.REACT_APP_AQ_KEYS,
-                Config.REACT_APP_AQ_SECRET,
-              ),
-            },
-          },
-        );
-        // Update local state so the same session won't re-ask for Digio
-        setAdvisorSpecificUserDetails(prev => ({
-          ...prev,
-          digio_verification: true,
-        }));
-      } catch (err) {
-        console.error('[Digio Polling] Error updating user:', err);
-      }
-
-      // Show success modal
-      setDigioSuccessModal(true);
 
       await logPayment('DIGIO_COMPLETED_VIA_POLLING', {
         documentId,
         userEmail,
       }, configData);
+
+      // Route through the SAME handler the WebView callback uses so the
+      // update-user write, success modal, pending-Digio clear and signed-doc
+      // download can never drift between the two detection paths.
+      if (handleDigioSuccessRef.current) {
+        await handleDigioSuccessRef.current(documentId);
+      }
     } else if (pollResult.digioStatus === DigioStatus.FAILED) {
-      console.log('[Digio Polling] Signature failed via webhook');
+      console.log('[Digio Polling] Signature failed (confirmed by Digio):', pollResult.agreementStatus);
       digioPollingShouldStopRef.current = true;
 
       // Close modal and show failure
@@ -769,7 +850,7 @@ const MPInvestNowModal = ({
           birthDate &&
           !panError &&
           (specificPlan?.type !== 'model portfolio' ||
-            invetAmount >= specificPlan?.minInvestment)
+            Number(invetAmount) >= Number(specificPlan?.minInvestment || 0))
         );
       case 2:
         return (
@@ -793,10 +874,15 @@ const MPInvestNowModal = ({
   // (prod-alphaquark-github PricingPage.js) and markup_app's parallel fix.
   const configLoadingRef = useRef(config?.configLoading);
   const kycBlockingEnabledRef = useRef(config?.kycBlockingEnabled === true);
+  // Whether /api/admin/frontend-config actually answered. Without this the
+  // gate cannot tell "this advisor has KYC blocking OFF" from "we never found
+  // out" — ConfigContext collapses both to `kycBlockingEnabled: false`.
+  const parityFlagsLoadedRef = useRef(config?.parityFlagsLoaded === true);
   useEffect(() => {
     configLoadingRef.current = config?.configLoading;
     kycBlockingEnabledRef.current = config?.kycBlockingEnabled === true;
-  }, [config?.configLoading, config?.kycBlockingEnabled]);
+    parityFlagsLoadedRef.current = config?.parityFlagsLoaded === true;
+  }, [config?.configLoading, config?.kycBlockingEnabled, config?.parityFlagsLoaded]);
 
   // Waits out a still-in-flight config load (up to 6s, matching the provider's
   // own frontend-config fetch timeout) before trusting `kycBlockingEnabled`.
@@ -805,13 +891,18 @@ const MPInvestNowModal = ({
   // the gate. If config is still loading after the wait, treat the gate as OFF
   // (not a verification failure — most advisors default off anyway, so
   // "unknown" reasonably means "assume default").
+  // Returns 'on' | 'off' | 'unknown'. 'unknown' means the flags fetch never
+  // succeeded, so we genuinely do not know this advisor's policy — the caller
+  // must NOT treat that as 'off'.
   const resolveKycBlockingEnabled = async () => {
-    if (!configLoadingRef.current) return kycBlockingEnabledRef.current === true;
-    const start = Date.now();
-    while (configLoadingRef.current && Date.now() - start < 6000) {
-      await new Promise(r => setTimeout(r, 150));
+    if (configLoadingRef.current) {
+      const start = Date.now();
+      while (configLoadingRef.current && Date.now() - start < 6000) {
+        await new Promise(r => setTimeout(r, 150));
+      }
     }
-    return kycBlockingEnabledRef.current === true;
+    if (!parityFlagsLoadedRef.current) return 'unknown';
+    return kycBlockingEnabledRef.current === true ? 'on' : 'off';
   };
 
   // Checkout-time blocking KYC gate — verify PAN+DoB against the KRA BEFORE
@@ -824,19 +915,34 @@ const MPInvestNowModal = ({
   // all). See the per-outcome comments below for the rationale on each.
   // Mirrors web PricingPage.runKycBlockingGate.
   const runKycBlockingGate = async () => {
-    const gateOn = await resolveKycBlockingEnabled();
-    if (!gateOn) return true;
+    const gateState = await resolveKycBlockingEnabled();
+    if (gateState === 'off') return true;
+    if (gateState === 'unknown') {
+      // BLOCK, retryable. Previously this fell through to `false` and the gate
+      // SKIPPED SILENTLY with no verify-pan call at all — a customer could
+      // reach payment/Digio on an unverified PAN+DoB whenever
+      // /api/admin/frontend-config failed or timed out (6s). That is the same
+      // silent-bypass class fixed on web in 2026-07-16 `b85eccc8`, which the
+      // mobile side never got. Consistent with every other branch of this
+      // gate: no positive signal => do not proceed.
+      console.warn('[MPInvestNow] KYC gate: advisor policy unknown (frontend-config unavailable) — blocking');
+      Alert.alert(
+        'Unable to verify PAN',
+        "We couldn't load your verification settings just now. Please check your connection and try again — if this keeps happening, contact support.",
+      );
+      return false;
+    }
 
     const pan = (panNumber || '').trim().toUpperCase();
     if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) {
       setPanError('Please enter a valid PAN (format ABCDE1234F) to continue.');
       return false;
     }
-    // birthDate is a Date object in this modal; the KRA expects a date string.
-    const dobStr =
-      birthDate instanceof Date
-        ? `${birthDate.getFullYear()}-${String(birthDate.getMonth() + 1).padStart(2, '0')}-${String(birthDate.getDate()).padStart(2, '0')}`
-        : String(birthDate || '').trim();
+    // User data can contain a legacy ISO instant for Indian midnight. Always
+    // submit the intended calendar DOB, never the UTC server day (KRA DOBs are
+    // Indian calendar dates; 2003-07-04T18:30:00.000Z must not become the
+    // previous day).
+    const dobStr = normalizeKraDob(birthDate);
     if (!dobStr) {
       Toast.show({
         type: 'error',
@@ -972,15 +1078,6 @@ const MPInvestNowModal = ({
 
   // Payment functions
 
-  const IOS_PRODUCT_IDS = {
-    growth: 'com.ali.magnus.growth_plan',
-    prime: 'com.ali.magnus.prime_plan',
-    advanced: 'com.ali.magnus.advanced_plan',
-    priorRecommendationPlan: 'com.ali.mangus.priorRecommendationPlan',
-    ipoEdgeSmeMainboard: 'com.ali.mangus.ipoEdgeSmeMainboard',
-    ipoEdge: 'com.ali.mangus.ipoEdge',
-  };
-
   const [amount, setAmount] = useState('');
   const tick = require('../../assets/checked.png');
   const isContinueEnabled = amount >= 70000;
@@ -1055,7 +1152,7 @@ const MPInvestNowModal = ({
   );
 
   // AppAdvisor.digioConfig.digioEnabled is authoritative. Tenant behavior is
-  // configured in the backend, never hardcoded in shared checkout.
+  // configured in the backend, never hardcoded in this shared checkout.
   const isDigioEnabled = isDigioEnabledFromBackend(config?.digioEnabled);
 
   const getInitialAuthMethod = () => {
@@ -1103,16 +1200,23 @@ const MPInvestNowModal = ({
   }, [digioModalOpen, documentId, identifier, tokenId]);
 
   const [razorpayLoader, setRazorpayLoader] = useState(false);
-  const handleDigioSuccess = async () => {
+  // `docIdOverride` lets the recovery path (app relaunched, storeDigioData
+  // lost) drive this handler with the document id persisted by
+  // savePendingDigio. Guarded with a typeof check because this is also passed
+  // straight to onVerificationComplete, which may hand back an event object.
+  const handleDigioSuccess = async (docIdOverride) => {
     // Stop background polling since WebView callback was received
     digioPollingShouldStopRef.current = true;
     console.log('Handle success hit final-------------------------1111111');
+    const effectiveDocId =
+      (typeof docIdOverride === 'string' && docIdOverride) ||
+      storeDigioData?.id;
     try {
       setRazorpayLoader(true);
-      if (storeDigioData?.id) {
+      if (effectiveDocId) {
         let config = {
           method: 'get',
-          url: `${server.ccxtServer.baseUrl}misc/digio/doc-detail/${storeDigioData?.id}/${advisorTag}`,
+          url: `${server.ccxtServer.baseUrl}misc/digio/doc-detail/${effectiveDocId}/${advisorTag}`,
           headers: {
             'Content-Type': 'multipart/form-data',
             'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
@@ -1179,7 +1283,7 @@ const MPInvestNowModal = ({
               // delay the success modal). Errors are swallowed/logged.
               axios
                 .get(
-                  `${server.ccxtServer.baseUrl}misc/digio/download/signed-doc/${storeDigioData?.id}/${advisorTag}`,
+                  `${server.ccxtServer.baseUrl}misc/digio/download/signed-doc/${effectiveDocId}/${advisorTag}`,
                   {
                     headers: {
                       'Content-Type': 'application/json',
@@ -1216,6 +1320,10 @@ const MPInvestNowModal = ({
       setRazorpayLoader(false);
     }
   };
+
+  // Keep the ref current so startDigioBackgroundPolling (declared earlier) can
+  // reach the canonical success handler.
+  handleDigioSuccessRef.current = handleDigioSuccess;
 
   const [authUrl, setAuthUrl] = useState('');
 
@@ -1337,63 +1445,92 @@ const MPInvestNowModal = ({
   console.log('authUrl>>>>>>', authUrl);
 
   const handlePaymentComplete = async (status, subscriptionId) => {
-    if (status === 'ACTIVE') {
+    if (status !== 'ACTIVE') {
+      throw new Error(`Cashfree subscription is not active: ${status || 'unknown'}`);
+    }
+
+    // Get the durable checkout context. This survives Android recreating the
+    // Activity while the Cashfree app is in the foreground.
+    const userInfoString = await AsyncStorage.getItem('userInfo');
+    const specificPlanString = await AsyncStorage.getItem('specificPlan');
+    const singleStrategyString = await AsyncStorage.getItem(
+      'singleStrategyDetails',
+    );
+
+    const userInfo = userInfoString ? JSON.parse(userInfoString) : null;
+    const pendingSpecificDetails = specificPlanString
+      ? JSON.parse(specificPlanString)
+      : null;
+    const singleStrategyDetails = singleStrategyString
+      ? JSON.parse(singleStrategyString)
+      : null;
+
+    if (!subscriptionId || !userInfo || !pendingSpecificDetails) {
+      throw new Error('Recurring payment recovery context is incomplete');
+    }
+
+    await CashFreeRecurringPayment({
+      paymentDetails: subscriptionId,
+      email: userInfo.email,
+      name: userInfo.name,
+      panNumber: userInfo.panNumber,
+      gstNumber: userInfo.gstNumber,
+      mobileNumber: userInfo.mobileNumber,
+      countryCode: userInfo.countryCode,
+      formattedName: userInfo.formattedName,
+      specificPlan: pendingSpecificDetails,
+      whiteLabelText,
+      telegramId: userInfo?.telegramId,
+      advisorTag,
+      birthDate: userInfo?.birthDate,
+      invetAmount: userInfo?.invetAmount,
+      singleStrategyDetails,
+      configData,
+      panCategory: '',
+    });
+  };
+
+  const runCashfreeCompletion = async (
+    completionKey,
+    completionTask,
+    {loadingMessage = 'Confirming your payment...'} = {},
+  ) => paymentCompletionCoordinatorRef.current.run(completionKey, async () => {
+    try {
+      cashfreeCheckoutActiveRef.current = false;
+      setLoading(true);
+      setLoadingmp(true);
+      setPaymentPollingMessage(loadingMessage);
+
+      // Do not clear durable recovery state or show success until every
+      // server-side completion call has succeeded.
+      await completionTask();
+      await clearPendingPayment();
+      setShowPaymentFail(false);
       handlePaymentSuccessWithTelegram();
-
-      try {
-        // Get stored user data using AsyncStorage
-        const userInfoString = await AsyncStorage.getItem('userInfo');
-        const specificPlanString = await AsyncStorage.getItem('specificPlan');
-        const singleStrategyString = await AsyncStorage.getItem(
-          'singleStrategyDetails',
-        );
-
-        const userInfo = userInfoString ? JSON.parse(userInfoString) : null;
-        const pendingSpecificDetails = specificPlanString
-          ? JSON.parse(specificPlanString)
-          : null;
-        const singleStrategyDetails = singleStrategyString
-          ? JSON.parse(singleStrategyString)
-          : null;
-
-        // Process successful payment
-        if (userInfo && pendingSpecificDetails) {
-          await CashFreeRecurringPayment({
-            paymentDetails: subscriptionId,
-            email: userInfo.email,
-            name: userInfo.name,
-            panNumber: userInfo.panNumber,
-            mobileNumber: userInfo.mobileNumber,
-            countryCode: userInfo.countryCode,
-            formattedName: userInfo.formattedName,
-            specificPlan: pendingSpecificDetails,
-            whiteLabelText,
-            telegramId: userInfo?.telegramId,
-            advisorTag,
-            birthDate: userInfo?.birthDate,
-            invetAmount: userInfo?.invetAmount,
-            singleStrategyDetails: singleStrategyDetails,
-            configData,
-            panCategory: '',
-          });
-
-          // Clear pending payment after successful recurring payment completion
-          await clearPendingPayment();
-        }
-      } catch (error) {
-        console.error('Error retrieving payment session data:', error);
-        setPaymentSuccess(false);
-        setShowPaymentFail(true);
-        setLoadingmp(false);
-        onClose();
-      }
-    } else {
+      return true;
+    } catch (error) {
+      console.error('[Cashfree] Post-payment completion failed:', error);
       setPaymentSuccess(false);
       setShowPaymentFail(true);
+      await logPayment('CASHFREE_POST_PAYMENT_COMPLETION_ERROR', {
+        completionKey,
+        message: error?.message,
+        userEmail,
+        advisor: advisorTag,
+        platform: Platform.OS,
+        osVersion: String(Platform.Version),
+      }, configData).catch(() => {});
+      Alert.alert(
+        'Payment received — completion pending',
+        'We could not finish activating your subscription yet. Your payment is saved and the app will retry safely when you return.',
+      );
+      return false;
+    } finally {
+      setLoading(false);
       setLoadingmp(false);
-      onClose();
+      setPaymentPollingMessage('');
     }
-  };
+  });
 
   const onErrorCountRef = useRef(0);
 
@@ -1437,9 +1574,9 @@ const MPInvestNowModal = ({
         {
           amount: onetimeamount,
           plan_id: plandata?._id,
-          customerId: `A-${mobileNumber}`,
+          customerId: `A-${paymentMobileNumber}`,
           user_email: userEmail,
-          mobileNumber: mobileNumber,
+          mobileNumber: paymentMobileNumber,
           advisor: advisorTag,
           name: name,
           panNumber: panNumber,
@@ -1488,7 +1625,12 @@ const MPInvestNowModal = ({
       const paymentSessionId = response?.data?.data?.payment_session_id;
       const subscriptionId = response?.data?.subscription?.id;
       if (!paymentId || !paymentSessionId) {
-        throw new Error('Missing payment session data from server');
+        // Prefer the server's own refusal text (e.g. an existing mandate) over
+        // a generic message — same HTTP-200-with-status-false shape as the
+        // recurring path above.
+        throw new Error(
+          response?.data?.message || 'Missing payment session data from server',
+        );
       }
 
       setCurrentPaymentId(paymentId);
@@ -1527,10 +1669,14 @@ const MPInvestNowModal = ({
           name,
           email: userEmail,
           pan: panNumber,
-          phone: mobileNumber,
+          gstNumber,
+          phone: paymentMobileNumber,
           countryCode,
         },
         digioRequired: isDigioEnabled,
+        couponId: appliedCouponId,
+        couponCode: couponCode || appliedCoupon?.couponCode || appliedCoupon?.code || null,
+        gateway: 'cashfree',
       });
       await savePendingPayment(pendingPaymentData);
       console.log('[OneTime] Saved pending payment for recovery:', paymentId);
@@ -1548,15 +1694,17 @@ const MPInvestNowModal = ({
             clearTimeout(handledOrderIds.timeout);
           }
           pollingShouldStopRef.current = true;
+          cashfreeCheckoutActiveRef.current = false;
           console.log('[OneTime] Payment verified for orderId:', orderId);
-          // Clear pending payment on successful callback
-          await clearPendingPayment();
-          handlePaymentSuccessWithTelegram();
-          setShowPaymentFail(false);
-          setLoading(false);
-          handlePaymentVerification(orderId);
-          CFPaymentGatewayService.removeCallback();
-          CFPaymentGatewayService.removeEventSubscriber();
+          try {
+            await runCashfreeCompletion(
+              `one_time:${orderId}`,
+              () => handlePaymentVerification(orderId),
+            );
+          } finally {
+            CFPaymentGatewayService.removeCallback();
+            CFPaymentGatewayService.removeEventSubscriber();
+          }
         },
         onError: async (error, orderId) => {
           const errorKey =
@@ -1570,6 +1718,7 @@ const MPInvestNowModal = ({
             clearTimeout(handledOrderIds.timeout);
           }
           pollingShouldStopRef.current = true;
+          cashfreeCheckoutActiveRef.current = false;
 
           console.error('[OneTime] Payment Error:', error, 'Order:', orderId);
 
@@ -1637,12 +1786,12 @@ const MPInvestNowModal = ({
         .build();
 
       const theme = new CFThemeBuilder()
-        .setNavigationBarBackgroundColor('#94ee95')
-        .setNavigationBarTextColor('#FFFFFF')
-        .setButtonBackgroundColor('#FFC107')
-        .setButtonTextColor('#FFFFFF')
-        .setPrimaryTextColor('#212121')
-        .setSecondaryTextColor('#757575')
+        .setNavigationBarBackgroundColor(designColor('94ee95'))
+        .setNavigationBarTextColor(designColor('ffffff'))
+        .setButtonBackgroundColor(designColor('ffc107'))
+        .setButtonTextColor(designColor('ffffff'))
+        .setPrimaryTextColor(designColor('212121'))
+        .setSecondaryTextColor(designColor('757575'))
         .build();
 
       const dropPayment = new CFDropCheckoutPayment(
@@ -1683,14 +1832,16 @@ const MPInvestNowModal = ({
         if (pollResult.status === PaymentStatus.SUCCESS) {
           console.log('[OneTime] Payment confirmed via polling');
           pollingShouldStopRef.current = true;
-          await clearPendingPayment();
-          setPaymentPollingMessage('');
-          handlePaymentSuccessWithTelegram();
-          setShowPaymentFail(false);
-          setLoading(false);
-          handlePaymentVerification(paymentId);
-          CFPaymentGatewayService.removeCallback();
-          CFPaymentGatewayService.removeEventSubscriber();
+          cashfreeCheckoutActiveRef.current = false;
+          try {
+            await runCashfreeCompletion(
+              `one_time:${paymentId}`,
+              () => handlePaymentVerification(paymentId),
+            );
+          } finally {
+            CFPaymentGatewayService.removeCallback();
+            CFPaymentGatewayService.removeEventSubscriber();
+          }
         } else if (pollResult.status === PaymentStatus.FAILED) {
           console.log('[OneTime] Payment failed via polling');
           pollingShouldStopRef.current = true;
@@ -1725,6 +1876,7 @@ const MPInvestNowModal = ({
 
       try {
         console.log('[OneTime] Initiating Cashfree payment with environment:', cfEnvironment);
+        cashfreeCheckoutActiveRef.current = true;
         CFPaymentGatewayService.doPayment(dropPayment);
 
         // Start polling in background after initiating payment
@@ -1737,6 +1889,7 @@ const MPInvestNowModal = ({
         // actionable "install from Play Store" message instead of leaving the
         // spinner running for the full ~5-min poll. See utils/cashfreeEnv.js.
         pollingShouldStopRef.current = true;
+        cashfreeCheckoutActiveRef.current = false;
         console.error('[OneTime] SDK doPayment error:', sdkError);
         logPayment('CASHFREE_ONETIME_SDK_ERROR', {
           orderId: paymentId,
@@ -1783,8 +1936,7 @@ const MPInvestNowModal = ({
   // == Deduplicated Payment Verification Handler ==
   const handlePaymentVerification = async orderID => {
     console.log('this hit00000000', orderID);
-    try {
-      const verificationResponse = await axios.get(
+    const verificationResponse = await axios.get(
         `${server.server.baseUrl}api/cashfree`,
         {
           headers: {
@@ -1798,17 +1950,21 @@ const MPInvestNowModal = ({
           params: { orderId: orderID },
         },
       );
-      const checkPaymentStatus = verificationResponse?.data?.data[0];
-      const res = verificationResponse.data?.data[0];
-      console.log('Here pay1');
-      if (res?.payment_status === 'SUCCESS') {
-        let telegramId = '';
-        console.log('this hitting-----');
-        await CashFreeOneTimePayment({
+    const payments = verificationResponse?.data?.data;
+    const paymentAttempts = Array.isArray(payments) ? payments : [payments].filter(Boolean);
+    const res = paymentAttempts.find(
+      payment => ['SUCCESS', 'PAID'].includes(payment?.payment_status),
+    );
+    if (!res) {
+      throw new Error('Cashfree payment has not been confirmed by the server');
+    }
+
+    await CashFreeOneTimePayment({
           paymentDetails: res?.order_id,
           email: userEmail,
           name,
           panNumber,
+          gstNumber,
 
           mobileNumber,
           countryCode,
@@ -1822,19 +1978,8 @@ const MPInvestNowModal = ({
           planDetails,
           configData,
           panCategory: '',
-        });
-        // Clear pending payment on successful completion
-        await clearPendingPayment();
-        setLoading(false);
-        handlePaymentSuccessWithTelegram();
-      } else {
-        setLoading(false);
-        setShowPaymentFail(true);
-      }
-    } catch (error) {
-      console.error('Verification error:', error, error.data, error.message);
-      setShowPaymentFail(true);
-    }
+    });
+    return true;
   };
 
   //CF END
@@ -1845,12 +1990,13 @@ const MPInvestNowModal = ({
     try {
       setLoadingmp(true);
 
-      const response = await axios.post(
-        `${server.server.baseUrl}api/cashfree/subscription/create/payment`,
-        {
+      const response = await retryPaymentInitialization(() =>
+        axios.post(
+          `${server.server.baseUrl}api/cashfree/subscription/create/payment`,
+          {
           plan_id: strategyDetails?._id,
           user_email: userEmail,
-          mobileNumber: mobileNumber,
+          mobileNumber: paymentMobileNumber,
           name: name,
           appliedCouponId,
           panNumber: panNumber,
@@ -1863,8 +2009,8 @@ const MPInvestNowModal = ({
           telegramId: telegramId,
           capital: invetAmount,
           couponId: appliedCouponId,
-        },
-        {
+          },
+          {
           headers: {
             'Content-Type': 'application/json',
             'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
@@ -1873,7 +2019,8 @@ const MPInvestNowModal = ({
               Config.REACT_APP_AQ_SECRET,
             ),
           },
-        },
+          },
+        ),
       );
       setLoadingmp(false);
 
@@ -1886,6 +2033,26 @@ const MPInvestNowModal = ({
       // Cashfree's hosted checkout rendered its raw error page
       // ("payload: <no value> / errorMessage: no referrer…") instead of
       // the payment UI (alphanomy, 2026-06-12).
+      // The server answers HTTP 200 even when it REFUSES (ResponseHelper.apiNew
+      // always does res.status(200).json({status:false, message, ...})), so
+      // axios resolves and nothing here failed loudly. On a refusal there is no
+      // `data.data`, so both ids below are undefined — and handing undefined to
+      // CFSubscriptionSession makes the Cashfree SDK throw "Cannot read property
+      // 'trim' of undefined" from inside its own validation. The customer saw
+      // that instead of the real reason, e.g. "A CashFree mandate for this plan
+      // already exists ... Please contact your advisor."
+      //
+      // Check the refusal FIRST and surface the server's own message.
+      if (response?.data?.status === false || !response?.data?.data) {
+        setLoadingmp(false);
+        Alert.alert(
+          'Unable to start payment',
+          response?.data?.message ||
+            'We could not start this payment. Please try again or contact support.',
+        );
+        return;
+      }
+
       const subsSessionId = response?.data?.data?.subscription_session_id;
       const orderId = response?.data?.data?.order_id;
       const redirectTarget = '_self';
@@ -1894,6 +2061,7 @@ const MPInvestNowModal = ({
         email: userEmail,
         name,
         panNumber,
+        gstNumber,
         mobileNumber,
         countryCode,
         formattedName,
@@ -1923,6 +2091,10 @@ const MPInvestNowModal = ({
         planDetails: strategyDetails,
         userDetails: userInfo,
         digioRequired: isDigioEnabled,
+        couponId: appliedCouponId,
+        couponCode: couponCode || appliedCoupon?.couponCode || appliedCoupon?.code || null,
+        gateway: 'cashfree',
+        frequency: selectedCard,
       });
       await savePendingPayment(pendingPaymentData);
       console.log('[CF Recurring] Saved pending payment for recovery:', orderId);
@@ -1934,11 +2106,16 @@ const MPInvestNowModal = ({
         onVerify: async subscriptionId => {
           console.log('[CF Recurring] Subscription verified:', subscriptionId);
           pollingShouldStopRef.current = true;
-          await clearPendingPayment();
-          handlePaymentSuccessWithTelegram();
-          handlePaymentComplete('ACTIVE', subscriptionId);
-          CFPaymentGatewayService.removeCallback();
-          CFPaymentGatewayService.removeEventSubscriber();
+          cashfreeCheckoutActiveRef.current = false;
+          try {
+            await runCashfreeCompletion(
+              `recurring:${subscriptionId}`,
+              () => handlePaymentComplete('ACTIVE', subscriptionId),
+            );
+          } finally {
+            CFPaymentGatewayService.removeCallback();
+            CFPaymentGatewayService.removeEventSubscriber();
+          }
         },
         onError: async (error, subscriptionId) => {
           console.error('[CF Recurring] Payment error:', error);
@@ -1959,6 +2136,7 @@ const MPInvestNowModal = ({
             advisor: advisorTag,
           }, configData);
           pollingShouldStopRef.current = true;
+          cashfreeCheckoutActiveRef.current = false;
 
           const isCancellation = error?.code === 'CANCELLED' ||
             error?.code === 'USER_CANCELLED' ||
@@ -1969,7 +2147,8 @@ const MPInvestNowModal = ({
           }
 
           setPaymentSuccess(false);
-          handlePaymentComplete('FAIL', subscriptionId);
+          setShowPaymentFail(true);
+          setLoadingmp(false);
           CFPaymentGatewayService.removeCallback();
           CFPaymentGatewayService.removeEventSubscriber();
         },
@@ -1982,6 +2161,17 @@ const MPInvestNowModal = ({
       });
 
       const subscriptionId = response?.data?.data?.subscription_id;
+      // Never construct a Cashfree session from a missing id — that is what
+      // surfaced as the opaque `.trim()` crash.
+      if (!subsSessionId || !subscriptionId) {
+        setLoadingmp(false);
+        Alert.alert(
+          'Unable to start payment',
+          response?.data?.message ||
+            'The payment session could not be created. Please try again or contact support.',
+        );
+        return;
+      }
       console.log('End of this--', subsSessionId, orderId);
       const session = new CFSubscriptionSession(
         subsSessionId,
@@ -1989,14 +2179,22 @@ const MPInvestNowModal = ({
         getCashfreeEnvironment(),
       );
 
+      cashfreeCheckoutActiveRef.current = true;
       CFPaymentGatewayService.doSubscriptionPayment(session);
     } catch (err) {
       // doSubscriptionPayment throws synchronously on the same native
       // install-source block as the one-time path. Surface the actionable
       // Play-Store message rather than a generic "Failed to initialize".
+      cashfreeCheckoutActiveRef.current = false;
       setLoadingmp(false);
       const _d = describeCashfreeDecline(err);
-      Alert.alert(_d.title, _d.message);
+      const message = paymentInitializationErrorMessage(err);
+      Alert.alert(
+        TRANSIENT_PAYMENT_API_STATUSES.has(err?.response?.status)
+          ? 'Payment temporarily unavailable'
+          : _d.title,
+        TRANSIENT_PAYMENT_API_STATUSES.has(err?.response?.status) ? message : _d.message,
+      );
       console.error('[CF Recurring] Payment failed to initialize:', err?.message, err.response);
     }
   };
@@ -2021,7 +2219,7 @@ const MPInvestNowModal = ({
         amount,
         user_email: userEmail,
         name,
-        phone: mobileNumber,
+        phone: paymentMobileNumber,
         plan_id: plandata?._id,
         duration: oneTimeDurationPlan || 30,
         couponId: appliedCouponId,
@@ -2067,11 +2265,13 @@ const MPInvestNowModal = ({
           name,
           email: userEmail,
           pan: panNumber,
-          phone: mobileNumber,
+          phone: paymentMobileNumber,
           countryCode,
         },
         digioRequired: isDigioEnabled,
         gateway: 'payu',
+        couponId: appliedCouponId,
+        couponCode: couponCode || appliedCoupon?.couponCode || appliedCoupon?.code || null,
       });
       await savePendingPayment(pendingPaymentData);
       console.log('[PayU] Saved pending payment for recovery:', response.data.txnid);
@@ -2110,7 +2310,7 @@ const MPInvestNowModal = ({
         amount,
         user_email: userEmail,
         name,
-        phone: mobileNumber,
+        phone: paymentMobileNumber,
         plan_id: plandata?._id,
         frequency,
         duration: 12,
@@ -2143,12 +2343,14 @@ const MPInvestNowModal = ({
           name,
           email: userEmail,
           pan: panNumber,
-          phone: mobileNumber,
+          phone: paymentMobileNumber,
           countryCode,
         },
         digioRequired: isDigioEnabled,
         gateway: 'payu',
         frequency,
+        couponId: appliedCouponId,
+        couponCode: couponCode || appliedCoupon?.couponCode || appliedCoupon?.code || null,
       });
       await savePendingPayment(pendingPaymentData);
       console.log('[PayU SI] Saved pending payment for recovery:', response.data.txnid);
@@ -2290,23 +2492,125 @@ const MPInvestNowModal = ({
 
   // END PAYU PAYMENT FUNCTIONS
 
-  const handlePaymentType = async () => {
-    if (payu) {
-      if (selectedPlanType === 'recurring') {
-        initiatePayUSIPayment(plandata, selectedCard);
+  // ── PhonePe (Standard Checkout, opened in the PhonePe app / browser) ──
+  // The server finalizes the purchase (subscription, client list, invoice,
+  // stated investment from `capital`); the app opens the order and, when the
+  // buyer comes back, reads its status and shows the same success flow.
+  const phonePeResumeCheckRef = useRef(false);
+
+  const reconcilePendingPhonePe = useCallback(async () => {
+    if (phonePeResumeCheckRef.current) return;
+    const pendingOrderId = await getPendingPhonePeOrderId();
+    if (!pendingOrderId) return;
+    phonePeResumeCheckRef.current = true;
+    setLoading(true);
+    try {
+      const result = await pollPhonePeOrder(pendingOrderId, { attempts: 5, delayMs: 3000 });
+      if (result?.state === 'COMPLETED') {
+        setPaymentModal(false);
+        getPlanList?.();
+        handlePaymentSuccessWithTelegram();
+      } else if (result?.state === 'FAILED') {
+        setShowPaymentFail(true);
+        setPaymentSuccess(false);
       } else {
-        initiatePayUPayment(plandata, onetimeamount);
+        Alert.alert(
+          'Payment pending',
+          'PhonePe is still processing this payment. Your plan will appear here once it is confirmed.',
+        );
       }
-    } else if (cashfree) {
-      if (selectedPlanType === 'recurring') {
-        initiateCashfreeRecurringPayment(plandata, selectedCard, inputValue);
-      } else {
-        console.log('this');
-        initiateCashfreePayment(plandata, onetimeamount);
-      }
-    } else {
-      handlePayment();
+    } catch (error) {
+      console.warn('[MPInvestNow][PhonePe] status check failed:', error?.message);
+    } finally {
+      phonePeResumeCheckRef.current = false;
+      setLoading(false);
+      setLoadingmp(false);
     }
+  }, [getPlanList]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const appStateSubscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') reconcilePendingPhonePe();
+    });
+    // UPI apps can return through a deep link without a background→active hop.
+    const linkSubscription = Linking.addEventListener('url', () => reconcilePendingPhonePe());
+    return () => {
+      appStateSubscription.remove();
+      linkSubscription.remove();
+    };
+  }, [reconcilePendingPhonePe]);
+
+  const initiatePhonePePayment = async (plan, amount, recurring = false) => {
+    const headerName = configData?.config?.REACT_APP_HEADER_NAME;
+    const paymentInstrumentGroup = await choosePhonePeGroup({ headerName, recurring });
+    if (paymentInstrumentGroup === null) return; // buyer closed the choice
+    setLoading(true);
+    try {
+      await openPhonePeCheckout({
+        plan_id: plan?._id,
+        amount,
+        user_email: userEmail,
+        mobileNumber: paymentMobileNumber,
+        name,
+        panNumber,
+        gstNumber: gstNumber || undefined,
+        countryCode,
+        birthDate,
+        // Stated model-portfolio investment; saved server-side once paid.
+        capital: invetAmount,
+        duration: oneTimeDurationPlan,
+        couponId: appliedCouponId || undefined,
+        recurring,
+        frequency: recurring ? selectedCard : undefined,
+        paymentInstrumentGroup,
+      });
+      // Some Android UPI intents never background the host app.
+      setTimeout(() => reconcilePendingPhonePe(), 1500);
+    } catch (error) {
+      setLoading(false);
+      Alert.alert(
+        'PhonePe unavailable',
+        error?.response?.data?.message || error?.message || 'Could not start PhonePe checkout.',
+      );
+    }
+  };
+
+  const handlePaymentType = async () => {
+    if (!paymentPhone.e164) {
+      Alert.alert(
+        'Check your phone number',
+        'Update your profile with the correct country code and phone number before starting payment.',
+      );
+      return;
+    }
+
+    // One dispatcher for every gateway the advisor can pick in supportAQ
+    // (app switch, else the website gateway). No silent Razorpay fallback.
+    const recurring = selectedPlanType === 'recurring';
+    dispatchAppCheckout({
+      surface: 'mp_invest_now',
+      gateway: adminpaymentPlatform,
+      recurring,
+      configData,
+      handlers: {
+        payu: {
+          oneTime: () => initiatePayUPayment(plandata, onetimeamount),
+          recurring: () => initiatePayUSIPayment(plandata, selectedCard),
+        },
+        cashfree: {
+          oneTime: () => initiateCashfreePayment(plandata, onetimeamount),
+          recurring: () => initiateCashfreeRecurringPayment(plandata, selectedCard, inputValue),
+        },
+        phonepe: {
+          oneTime: () => initiatePhonePePayment(plandata, onetimeamount, false),
+          recurring: () => initiatePhonePePayment(plandata, onetimeamount, true),
+        },
+        razorpay: {
+          oneTime: () => handlePayment(),
+          recurring: () => handlePayment(),
+        },
+      },
+    });
   };
 
   const updateLeadUser = async () => {
@@ -2393,30 +2697,42 @@ const MPInvestNowModal = ({
   };
 
   const handleDigioPayment = async () => {
-    await updateLeadUser();
+    // Immediate feedback across the WHOLE digio sequence — lead-user update,
+    // server digio-status check, MITC PDF download + upload are several
+    // sequential network calls, but previously `loading` only became true
+    // inside openDigioModal (i.e. after the first two calls), leaving a dead
+    // period with no spinner after "Complete Investment" (2026-08-17).
+    setLoading(true);
+    try {
+      await updateLeadUser();
 
-    if (!isDigioEnabled) {
-      console.log('Digio is disabled for this advisor, proceeding to payment');
-      handlePaymentType();
-      return;
-    }
+      if (!isDigioEnabled) {
+        console.log('Digio is disabled for this advisor, proceeding to payment');
+        handlePaymentType();
+        return;
+      }
 
-    // Authoritative server-side check (matches web). Replaces the stale cached
-    // advisorSpecificUserDetails?.digio_verification guard that re-prompted
-    // already-signed users.
-    const alreadyCompleted = await isDigioAlreadyCompleted(specificPlan?._id);
-    if (alreadyCompleted) {
-      console.log('[Digio] Already completed (server check) — skipping Digio');
-      handlePaymentType();
-      return;
-    }
+      // Authoritative server-side check (matches web). Replaces the stale cached
+      // advisorSpecificUserDetails?.digio_verification guard that re-prompted
+      // already-signed users.
+      const alreadyCompleted = await isDigioAlreadyCompleted(specificPlan?._id);
+      if (alreadyCompleted) {
+        console.log('[Digio] Already completed (server check) — skipping Digio');
+        handlePaymentType();
+        return;
+      }
 
-    if (digioCheck === 'beforePayment') {
-      openDigioModal();
-    } else if (digioCheck === 'afterPayment') {
-      handlePaymentType();
-    } else {
-      handlePaymentType();
+      if (digioCheck === 'beforePayment') {
+        // openDigioModal sets its own loading(true/false); awaiting it keeps
+        // the spinner up until the modal actually opens.
+        await openDigioModal();
+      } else if (digioCheck === 'afterPayment') {
+        handlePaymentType();
+      } else {
+        handlePaymentType();
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -2445,18 +2761,17 @@ const MPInvestNowModal = ({
     };
 
     try {
-      if (isIOS) {
-        if (selectedPlanType === 'recurring') {
-          await handleIOSSubscription(selectedCard, sip_amount);
-        } else {
-          await handleIOSOneTimePurchase(onetimeamount);
-        }
+      // Both platforms go through the advisor's configured payment gateway.
+      // iOS used to be forked onto StoreKit in-app purchase here, which meant
+      // the customer paid Apple (minus Apple's cut) instead of the advisor's
+      // own merchant account — and it only ever fired for Razorpay/unconfigured
+      // tenants, since handlePaymentType() short-circuits PayU and Cashfree
+      // before reaching this function. See the commit message for the
+      // App Store Guideline 3.1.1 consideration.
+      if (selectedPlanType === 'recurring') {
+        await subscribeToPlan(selectedCard, sip_amount);
       } else {
-        if (selectedPlanType === 'recurring') {
-          await subscribeToPlan(selectedCard, sip_amount);
-        } else {
-          await handleSinglePayment(onetimeamount);
-        }
+        await handleSinglePayment(onetimeamount);
       }
 
       let config = {
@@ -2478,295 +2793,6 @@ const MPInvestNowModal = ({
     } catch (error) {
       console.error('Payment error:', error);
       setLoadingmp(false);
-    }
-  };
-
-  const getIOSProductId = planName => {
-    const planMapping = {
-      growth: 'growth',
-      prime: 'prime',
-      priorRecommendationPlan: 'priorRecommendationPlan',
-      advanced: 'advanced',
-      ipoEdgeSmeMainboard: 'ipoEdgeSmeMainboard',
-      ipoEdge: 'ipoEdge',
-    };
-
-    const productKey = planMapping[planName?.toLowerCase()] || 'stockOption';
-    const productId = IOS_PRODUCT_IDS[productKey];
-    return productId;
-  };
-
-  useEffect(() => {
-    const initializeIAP = async () => {
-      if (!isIOS) return;
-
-      try {
-        console.log('Initializing iOS IAP for sandbox testing...');
-        const result = await RNIap.initConnection();
-        console.log('IAP Connection result:', result);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const productIds = Object.values(IOS_PRODUCT_IDS);
-        console.log('Testing product IDs:', productIds);
-
-        const products = await RNIap.getProducts({
-          skus: productIds,
-        });
-
-        console.log('Available products:', products.length);
-        products.forEach(product => {
-          console.log(
-            `- ${product.productId}: ${product.title} (${product.localizedPrice})`,
-          );
-        });
-
-        if (products.length === 0) {
-          console.warn(
-            'No products found - this might be normal for first-time sandbox testing',
-          );
-        }
-      } catch (error) {
-        console.error('IAP initialization failed:', error);
-
-        if (error.code === 'E_IAP_NOT_AVAILABLE') {
-          console.log(
-            'IAP not available - ensure you are on a physical device',
-          );
-        }
-      }
-    };
-
-    if (visible) {
-      initializeIAP();
-    }
-
-    return () => {
-      if (isIOS) {
-        RNIap.endConnection().catch(console.error);
-      }
-    };
-  }, [visible]);
-
-  const handleIOSSubscription = async (frequency, amount) => {
-    try {
-      await RNIap.initConnection();
-
-      const products = await RNIap.getSubscriptions({
-        skus: [`${formattedName}_${frequency}`],
-      });
-
-      if (products.length === 0) {
-        throw new Error('No subscription products available');
-      }
-
-      await RNIap.requestSubscription({
-        sku: products[0].productId,
-      });
-
-      const purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
-        async purchase => {
-          console.log('iOS Subscription purchase:', purchase);
-          await completeIOSSubscription(purchase, frequency, amount);
-        },
-      );
-
-      const purchaseErrorSubscription = RNIap.purchaseErrorListener(error => {
-        console.error('iOS Subscription error:', error);
-        setLoadingmp(false);
-        Alert.alert('Purchase Failed', error.message);
-      });
-
-      setTimeout(() => {
-        purchaseUpdateSubscription?.remove();
-        purchaseErrorSubscription?.remove();
-      }, 300000);
-    } catch (error) {
-      console.error('iOS subscription error:', error);
-      setLoadingmp(false);
-      Alert.alert('Error', 'Could not initialize iOS subscription');
-    }
-  };
-
-  const completeIOSSubscription = async (purchase, frequency, amount) => {
-    try {
-      await RNIap.finishTransaction({ purchase, isConsumable: false });
-
-      const response = await axios.post(
-        `${server.server.baseUrl}api/admin/subscription/complete-payment`,
-        {
-          receipt: purchase.transactionReceipt,
-          transactionId: purchase.transactionId,
-          productId: purchase.productId,
-          plan_id: planDetails._id,
-          frequency,
-          user_email: userEmail,
-          amount,
-          advisor: advisorTag,
-          name: name,
-          birthDate: birthDate,
-          capital: invetAmount,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        },
-      );
-
-      console.log('iOS Subscription completed:', response.data);
-      await handlePostPaymentSuccess(response.data, 'subscription');
-    } catch (error) {
-      console.error('Error completing iOS subscription:', error);
-      setLoadingmp(false);
-    }
-  };
-
-  const handleIOSOneTimePurchase = async amount => {
-    try {
-      setLoading(true);
-
-      const connectionResult = await RNIap.initConnection();
-
-      const productId = getIOSProductId(specificPlan?.name);
-
-      if (!productId) {
-        throw new Error(`No product ID found for plan: ${specificPlan?.name}`);
-      }
-
-      const products = await Promise.race([
-        RNIap.getProducts({ skus: [productId] }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Product fetch timeout')), 15000),
-        ),
-      ]);
-
-      if (products.length === 0) {
-        throw new Error(`Product not available: ${productId}`);
-      }
-
-      const purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
-        async purchase => {
-          const subscriptionResponse = await axios.post(
-            `${server.server.baseUrl}api/admin/subscription/one-time-payment/subscription`,
-            {
-              plan_id: specificPlan?._id,
-              user_email: userEmail,
-              name: name,
-              countryCode: userDetails?.countryCode || '+91',
-              panNumber: userDetails?.panNumber,
-              mobileNumber: userDetails?.mobileNumber,
-              amount: amount,
-              advisor: specificPlan?.advisor_email,
-              birthDate: userDetails?.birthDate,
-              telegramId: userDetails?.telegramId,
-              capital: invetAmount,
-              duration: oneTimeDurationPlan,
-
-              is_apple_iap: true,
-              iap_product_id: purchase?.productId,
-              iap_transaction_receipt: purchase?.transactionReceipt,
-              iap_transaction_id: purchase?.transactionId,
-            },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Advisor-Subdomain':
-                  configData?.config?.REACT_APP_HEADER_NAME,
-                'aq-encrypted-key': generateToken(
-                  Config.REACT_APP_AQ_KEYS,
-                  Config.REACT_APP_AQ_SECRET,
-                ),
-              },
-            },
-          );
-
-          try {
-            await completeIOSPurchase(purchase, amount);
-          } catch (error) {
-            console.error('Error completing purchase:', error);
-            setLoading(false);
-            Alert.alert('Error', 'Purchase validation failed');
-          }
-        },
-      );
-
-      const purchaseErrorSubscription = RNIap.purchaseErrorListener(error => {
-        console.error('Purchase error:', error);
-        setLoading(false);
-
-        if (error.code === 'E_USER_CANCELLED') {
-          Alert.alert('Purchase Cancelled', 'You cancelled the purchase.');
-        } else {
-          Alert.alert('Purchase Failed', `Error: ${error.message}`);
-        }
-      });
-
-      await RNIap.requestPurchase({
-        sku: productId,
-        andDangerouslyFinishTransactionAutomaticallyIOS: false,
-      });
-
-      setTimeout(() => {
-        purchaseUpdateSubscription?.remove();
-        purchaseErrorSubscription?.remove();
-      }, 300000);
-    } catch (error) {
-      console.error('Purchase initialization failed:', error);
-      setLoading(false);
-      Alert.alert('Error', `Purchase failed: ${error.message}`);
-    }
-  };
-
-  const completeIOSPurchase = async (purchase, amount) => {
-    try {
-      const response = await axios.post(
-        `${server.server.baseUrl}api/apple-iap/ios-purchase/validate`,
-        {
-          receipt: purchase.transactionReceipt,
-          transactionId: purchase.transactionId,
-          productId: purchase.productId,
-          user_email: userEmail,
-          plan_id: specificPlan?._id,
-          amount,
-          duration: oneTimeDurationPlan,
-          advisor_email: specificPlan?.advisor_email,
-          is_sandbox: true,
-          name: name,
-          capital: invetAmount,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Advisor-Subdomain': configData?.config?.REACT_APP_HEADER_NAME,
-            'aq-encrypted-key': generateToken(
-              Config.REACT_APP_AQ_KEYS,
-              Config.REACT_APP_AQ_SECRET,
-            ),
-          },
-        },
-      );
-
-      console.log('Backend validation successful');
-
-      await RNIap.finishTransaction({
-        purchase,
-        isConsumable: false,
-      });
-
-      console.log('Transaction finished');
-      await handlePostPaymentSuccess(response.data, 'onetime');
-    } catch (error) {
-      console.error('Purchase completion failed:', error);
-      setLoadingmp(false);
-      Alert.alert(
-        'Purchase Validation Failed',
-        `Your purchase could not be validated. Transaction ID: ${purchase.transactionId}. Please contact support.`,
-      );
     }
   };
 
@@ -2804,13 +2830,13 @@ const MPInvestNowModal = ({
         color: 'black',
         fontSize: 12,
         fontWeight: 0,
-        fontFamily: 'Poppins-Medium',
+        fontFamily: designFont('Poppins-Medium'),
       },
 
       text2Style: {
         color: 'black',
         fontSize: 13,
-        fontFamily: 'Poppins-Regular',
+        fontFamily: designFont('Poppins-Regular'),
       },
     });
   };
@@ -2868,7 +2894,7 @@ const MPInvestNowModal = ({
           telegramId: telegramId,
           birthDate: birthDate,
           capital: invetAmount,
-          mobileNumber: mobileNumber,
+          mobileNumber: paymentMobileNumber,
           countryCode: countryCode,
           couponId: appliedCouponId,
         },
@@ -2945,7 +2971,7 @@ const MPInvestNowModal = ({
             email: userEmail,
           },
           theme: {
-            color: '#F37254',
+            color: designColor('f37254'),
           },
         };
 
@@ -3088,6 +3114,7 @@ const MPInvestNowModal = ({
         location: data.location || '',
         telegram: telegramId || '',
         pan: panNumber || '',
+        gstNumber: gstNumber || '',
         creationDate: FormatDateTime(new Date()),
         comments: data.comments || '',
         advisorName: advisorTag,
@@ -3179,7 +3206,7 @@ const MPInvestNowModal = ({
         advisor: advisorTag,
         name: name,
         panNumber: panNumber,
-        mobileNumber: mobileNumber,
+        mobileNumber: paymentMobileNumber,
         birthDate: birthDate,
         capital: invetAmount,
         telegramId: telegramId,
@@ -3197,7 +3224,7 @@ const MPInvestNowModal = ({
           advisor: advisorTag,
           name: name,
           panNumber: panNumber,
-          mobileNumber: mobileNumber,
+          mobileNumber: paymentMobileNumber,
           birthDate: birthDate,
           capital: invetAmount,
           telegramId: telegramId,
@@ -3251,7 +3278,7 @@ const MPInvestNowModal = ({
             contact: '',
             name: '',
           },
-          theme: { color: '#F37254' },
+          theme: { color: designColor('f37254') },
         };
 
         try {
@@ -3416,7 +3443,7 @@ const MPInvestNowModal = ({
           userEmail: userEmail,
           model: strategyDetails?.model_name,
           advisor: configData?.config?.REACT_APP_HEADER_NAME,
-          model_id: latestRebalance.model_Id,
+          model_id: latestRebalance?.model_Id,
           userBroker: broker ? broker : '',
           subscriptionAmountRaw: [
             {
@@ -3706,129 +3733,27 @@ const MPInvestNowModal = ({
     setIsApplyingCoupon(false);
   };
 
-  let price = '';
-  let oldPrice = '';
-  let saveText = '';
-  let total = '';
-  let durationText = '';
-
-  // Common variables
   const gstText = gstLabel(configGst, configGstWithText);
-  const hasDiscount = specificPlan?.discountPercentage > 0;
-
-  const displayAmount = (base) => {
-    const amt = Number(base || 0);
-    return configGst && configGstWithText ? withGst(amt) : amt;
+  const displayAmount = base => {
+    const amount = Number(base || 0);
+    return configGst && configGstWithText ? withGst(amount) : amount;
   };
-  const paymentAmount = (base) => {
-    const amt = Number(base || 0);
-    return configGst ? withGst(amt) : amt;
+  const paymentAmount = base => {
+    const amount = Number(base || 0);
+    return configGst ? withGst(amount) : amount;
   };
-
-  if (selectedPlanType === 'recurring' && selectedCard) {
-    console.log('selected Card here------', selectedCard);
-    durationText =
-      selectedCard?.charAt(0)?.toUpperCase() + selectedCard?.slice(1);
-    const offerDetails = appliedCoupon
-      ? specificPlan?.offer_plans_details?.find(
-          (detail) => detail.couponId?.toString() === appliedCouponId?.toString(),
-        )
-      : specificPlan?.offer_plans_details?.[0];
-
-    if (appliedCoupon && offerDetails) {
-      const originalRecurringAmount =
-        specificPlan?.pricingWithoutGst?.[selectedCard];
-      const discountedRecurringAmount = Math?.round(
-        offerDetails?.pricingWithoutGst?.[selectedCard],
-      );
-      oldPrice = `₹${originalRecurringAmount}`;
-      price = `₹${displayAmount(discountedRecurringAmount)}${gstText}`;
-      saveText = 'Coupon Applied';
-      total = price;
-      setOneTimeAmount(paymentAmount(discountedRecurringAmount));
-    } else if (hasDiscount) {
-      const discountedAmount = specificPlan.pricingWithoutGst?.[selectedCard];
-      const mrp = Math.round(
-        discountedAmount * (100 / (100 - specificPlan.discountPercentage)),
-      );
-      oldPrice = `₹${mrp}`;
-      price = `₹${displayAmount(discountedAmount)}${gstText}`;
-      saveText = `${specificPlan.discountPercentage}% OFF`;
-      total = price;
-      setOneTimeAmount(paymentAmount(discountedAmount));
-    } else {
-      const recurringAmount = specificPlan.pricingWithoutGst?.[selectedCard];
-      oldPrice = '';
-      price = `₹${displayAmount(recurringAmount)}${gstText}`;
-      saveText = '';
-      total = price;
-      setOneTimeAmount(paymentAmount(recurringAmount));
-    }
-  } else {
-    const selectedOnetimeOption = specificPlan.onetimeOptions.find(
-      (opt, idx) => `onetime-${opt.id || idx}` === selectedCard,
-    );
-
-    const originalAmount = Number(
-      selectedOnetimeOption?.amountWithoutGst ||
-      specificPlan?.onetimeOptions?.[0]?.amountWithoutGst ||
-      0,
-    );
-    const durationInDays =
-      selectedOnetimeOption?.duration ||
-      specificPlan?.onetimeOptions?.[0]?.duration;
-
-    if (durationInDays) {
-      durationText = `${durationInDays} Days`;
-    } else {
-      durationText = 'One-Time Payment';
-    }
-
-    if (appliedCoupon) {
-      if (appliedCoupon?.discountType === 'percentage') {
-        const discounted = Math.round(
-          originalAmount -
-          (originalAmount * appliedCoupon?.discountValue) / 100,
-        );
-        oldPrice = `₹${displayAmount(originalAmount)}${gstText}`;
-        price = `₹${displayAmount(discounted)}${gstText}`;
-        saveText = `Coupon ${appliedCoupon?.discountValue}% Off`;
-        total = price;
-        setOneTimeAmount(paymentAmount(discounted));
-      } else {
-        const discounted = Math.round(
-          originalAmount - appliedCoupon?.discountValue,
-        );
-        oldPrice = `₹${displayAmount(originalAmount)}${gstText}`;
-        price = `₹${displayAmount(discounted)}${gstText}`;
-        saveText = `Coupon ₹${appliedCoupon?.discountValue} Off`;
-        total = price;
-        setOneTimeAmount(paymentAmount(discounted));
-      }
-    } else if (hasDiscount) {
-      const mrp = Math.round(
-        originalAmount * (1 + specificPlan.discountPercentage / 100),
-      );
-      oldPrice = `₹${displayAmount(mrp)}${gstText}`;
-      price = `₹${displayAmount(originalAmount)}${gstText}`;
-      saveText = `${specificPlan.discountPercentage}% OFF`;
-      total = price;
-      setOneTimeAmount(paymentAmount(originalAmount));
-    } else {
-      oldPrice = '';
-      price = `₹${displayAmount(originalAmount)}${gstText}`;
-      saveText = '';
-      total = price;
-      setOneTimeAmount(paymentAmount(originalAmount));
-    }
-  }
+  usePlanPaymentAmount(
+    {specificPlan, selectedPlanType, selectedCard, appliedCoupon, appliedCouponId, configGst},
+    onetimeamount,
+    setOneTimeAmount,
+  );
 
   const isDisabled =
     ((specificPlan?.frequency?.length > 0 ||
       specificPlan?.onetimeOptions?.length > 0) &&
       !selectedCard) ||
     (specificPlan?.type !== 'bespoke' &&
-      !(invetAmount >= specificPlan?.minInvestment));
+      !(Number(invetAmount) >= Number(specificPlan?.minInvestment || 0)));
 
   // Compute plan type label for presentation
   const planTypeLabel = (planDetails?.type || specificPlan?.type)
@@ -3890,12 +3815,16 @@ const MPInvestNowModal = ({
     gstText,
     displayAmount,
 
-    digioModalOpen,
+    // NB: `digioModalOpen` / `authUrl` are intentionally absent — DigioModal is
+    // rendered by the container, outside the design contract.
     digioSuccessModal,
+    // Drives the success modal's copy: an afterPayment advisor's customer has
+    // already paid, so "your plan is NOT yet activated / Proceed to Payment"
+    // is wrong for them.
+    digioAfterPayment: digioCheck === 'afterPayment',
     showTelegramModal,
     showPayUWebView,
 
-    authUrl,
     payuFormData,
     payuIsSI,
     whiteLabelText,
@@ -3933,23 +3862,23 @@ const MPInvestNowModal = ({
 
     onDigioPayment: handleDigioPayment,
 
-    onDigioModalClose: () => {
-      digioPollingShouldStopRef.current = true;
-      setDigioModalOpen(false);
-    },
-    onDigioVerificationComplete: handleDigioSuccess,
-    onDigioSuccess: (docId) => {
-      console.log('Document signed successfully:', docId);
-    },
-    onDigioError: (error) => {
-      console.error('Digio verification failed:', error);
-      digioPollingShouldStopRef.current = true;
-      setDigioUnsuccessModal(true);
-      setDigioModalOpen(false);
-    },
     onDigioSuccessModalClose: () => setDigioSuccessModal(false),
     onDigioSuccessPayment: () => {
       setDigioSuccessModal(false);
+
+      // afterPayment advisors sign AFTER money has already been taken
+      // (handlePaymentSuccessWithTelegram → openDigioModal). Calling
+      // handlePaymentType() here would re-open checkout for an already-paid
+      // subscription. Continue the post-payment tail instead.
+      if (digioCheck === 'afterPayment') {
+        if (!telegramId && !userDetails?.telegram_id) {
+          setShowTelegramModal(true);
+        } else {
+          setPaymentSuccess(true);
+        }
+        return;
+      }
+
       handlePaymentType();
     },
     onTelegramModalClose: () => {
@@ -3970,7 +3899,78 @@ const MPInvestNowModal = ({
     onPayUFailure: handlePayUFailure,
   };
 
-  return <Presentation viewModel={viewModel} actions={actions} />;
+  // DigioModal is rendered HERE, not handed to <Presentation>, and is
+  // deliberately NOT part of the design contract.
+  //
+  // It is a full-screen WebView hosting digio.in plus a header bar — an
+  // external service's UI. There is nothing advisor-brandable inside it, so a
+  // `designs/<variant>` fork of it would only ever be a stale copy. Keeping it
+  // in the presentation layer meant its wiring (`verifyDocumentStatus`,
+  // `onVerificationComplete`, …) crossed the variant boundary, where every
+  // prop silently defaults to a no-op: a fork that overrode
+  // `screens.MPInvestNowModal` and forgot one would quietly reinstate the
+  // 2026-08-01 "customer signs, never reaches payment" bug with no error.
+  //
+  // Contrast DigioSuccessModal, which stays in the presentation: it is a
+  // branded surface (tokens, brand colour, progress rail) that an advisor may
+  // legitimately want to restyle.
+  //
+  // Rule: third-party WebView surfaces are not design surfaces.
+  // See docs/DESIGN_SYSTEM_ARCHITECTURE.md § "What does NOT belong in a variant".
+  return (
+    <>
+      <Presentation
+        viewModel={viewModel}
+        actions={actions}
+        slots={{
+          DisclaimerModal,
+          DigioSuccessModal,
+          TelegramCollectionModal,
+          DatePickerSection,
+          PayUWebView,
+        }}
+      />
+
+      {digioModalOpen ? (
+        <DigioModal
+          authenticationUrl={authUrl}
+          digioModalOpen={digioModalOpen}
+          onClose={() => {
+            // Reached only after DigioModal's own verify-then-confirm step has
+            // established the customer is leaving unsigned.
+            digioPollingShouldStopRef.current = true;
+            setDigioModalOpen(false);
+          }}
+          verifyDocumentStatus={async () => {
+            const docId = storeDigioData?.id;
+            if (!docId) return null;
+            const result = await checkDigioDocumentStatus(
+              docId,
+              advisorTag,
+              configData,
+            );
+            if (result.digioStatus === DigioStatus.COMPLETED) {
+              await logPayment('DIGIO_COMPLETED_VIA_CLOSE_CHECK', {
+                documentId: docId,
+                userEmail,
+              }, configData);
+            }
+            return result.digioStatus;
+          }}
+          onVerificationComplete={handleDigioSuccess}
+          onSuccess={(docId) => {
+            console.log('Document signed successfully:', docId);
+          }}
+          onError={(error) => {
+            console.error('Digio verification failed:', error);
+            digioPollingShouldStopRef.current = true;
+            setDigioUnsuccessModal(true);
+            setDigioModalOpen(false);
+          }}
+        />
+      ) : null}
+    </>
+  );
 };
 
 export default MPInvestNowModal;
