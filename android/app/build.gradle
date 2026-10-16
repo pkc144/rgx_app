@@ -1,7 +1,6 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: "com.google.firebase.crashlytics"
 apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 /**
@@ -43,8 +42,8 @@ android {
         applicationId "com.rgx.aq"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 63
-        versionName "5.4.9"
+        versionCode 64
+        versionName "5.4.10"
 
         missingDimensionStrategy "store", "play"
 
@@ -120,6 +119,9 @@ dependencies {
 
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
 apply plugin: "com.google.gms.google-services"
+// After google-services: Crashlytics reads its config (rgx copies a
+// variant-specific google-services.json, see below).
+apply plugin: "com.google.firebase.crashlytics"
 
 // Force every library's generateCodegenArtifactsFromSchema to finish before
 // any :app CMake/NDK task runs. Without this, a clean assembleRelease races:
