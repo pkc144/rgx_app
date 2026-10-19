@@ -13,6 +13,8 @@ react {
 def enableProguardInReleaseBuilds = true
 def jscFlavor = 'org.webkit:android-jsc:+'
 
+def codePushDeploymentKey = project.findProperty("CODEPUSH_DEPLOYMENT_KEY") ?: System.getenv("CODEPUSH_DEPLOYMENT_KEY") ?: "gVlfmlo7eavaouYM_XFpwbEDSpWoNy7_jWqPVl"
+
 android {
     namespace "com.rgx.aq"
 
@@ -44,6 +46,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 64
         versionName "5.4.10"
+        resValue "string", "CodePushDeploymentKey", codePushDeploymentKey
 
         missingDimensionStrategy "store", "play"
 
@@ -192,3 +195,4 @@ tasks.register("brandIconAudit") {
     }
 }
 preBuild.dependsOn("brandIconAudit")
+apply from: "../../node_modules/@revopush/react-native-code-push/android/codepush.gradle"

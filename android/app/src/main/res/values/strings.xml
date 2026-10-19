@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">EquityPro</string>
+    <string name="CodePushPublicKey">-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyiwFG5JbkIIwfhvlhdG/
+VkZ//uaP294mDkF+Cmili3jC96mLSSMHtUn4rEh0RIE9Qf+AOHqxHz7i0iGd1chf
+A9QlK4HKgd/NQgibokA/JX+FmNHKzlyhr4Q7PH5HMGd6lkaeeQp0qA4cWFOgnTQP
+yh0lN5xiKBx5gFKmzqwYH2x8wGBF/iS52eMdHUFEtnu5nJWmAuLpa4RYU3EwZh/A
+HmtF1PZM5DRWzAhRGalOAKy3UeVa+uwDz/8e7dNtzk/qL8abpC52iosU2zbEnqkT
+gg72mbc6FFp6l19yEb2W82VzXiB3du1e8+KWgys0ouMTcCHykfOYvT5i4QAQNeup
+wwIDAQAB
+-----END PUBLIC KEY-----</string>
 </resources>
