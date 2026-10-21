@@ -17,7 +17,19 @@ you're new here.
   `AlphaQuark/trade_alert.wav` in the Xcode Resources phase). Ported directly
   from upstream Alphab2bapp (client req #1); the same files will also arrive
   on the next upstream merge (expected clean no-op).
-- **Last sync**: 2026-10-17 — full content sync to Alphab2bapp `release/deploy_5.1`
+- **Last sync**: 2026-10-21 — content port of Alphab2bapp `release/deploy_5.1`
+  `222267d5..94f41855`: sell-auth sheet only on a classified rejection,
+  portal-broker sheet leads with today's approval (DDPI optional), wait for
+  reconciliation before retry, auth bearer kept across a pre-sign-in request,
+  admin-featured plans of any type + admin-added bespoke subscribers
+  (`featuredPlans.js`), performance chart width, legal WebView guard
+  (`legalWebViewGuard.js`). 12 shared files copied (fork == upstream base for
+  each) + 6 new files. Kite tick, SL triggers, design-literal validator,
+  ASC retry, export compliance, metro one-React pin were already present.
+  Skipped: `android/app/build.gradle` version bump. Fork-specific files
+  unchanged (`index.js`, `executionBundleSafety.js`, `designs/registry.js`,
+  `whitelabel/*`, `package.json`, `ios-build.yml`, fork test variants).
+- **Previous sync**: 2026-10-17 — full content sync to Alphab2bapp `release/deploy_5.1`
   `222267d5`; this completes SYNC_PLAN phases 2–8. Every shared `src/` /
   `designs/default/` file now equals upstream except `index.js` +
   `src/utils/executionBundleSafety.js` (no signed OTA for this app: bundled
@@ -28,7 +40,7 @@ you're new here.
   Native ports: Crashlytics, react-native-keychain, ModalSoftInput module,
   ICICI Root R46 network config, PhonePe return path, MainActivity
   onCreate(null), bottom-tabs 7.10.1 patch, `whitelabel/content.js`.
-- **Previous sync**: 2026-05-10 — Phase 0 + Phase 1 of the byte-identical
+- **Earlier sync**: 2026-05-10 — Phase 0 + Phase 1 of the byte-identical
   src/ migration (see `docs/SYNC_PLAN.md` for the full plan).
 
 ## ⚠️ This fork has unrelated git history with upstream
