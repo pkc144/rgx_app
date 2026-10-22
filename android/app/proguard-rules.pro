@@ -140,3 +140,15 @@
 -keep class com.fasterxml.jackson.** { *; }
 -dontwarn com.fasterxml.jackson.**
 -dontwarn io.jsonwebtoken.**
+
+# R8 is on for release builds (escape hatch -PenableR8=false). Most libraries
+# ship their own consumer rules; these cover the payment SDKs and other code
+# loaded by reflection, and silence desktop-JVM references in Jackson/jjwt.
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keepclasseswithmembers class * { public void onPayment*(...); }
+-keep class com.microsoft.codepush.react.** { *; }
+-keep class com.rgx.aq.** { *; }
+-dontwarn java.beans.**
+-dontwarn javax.xml.bind.**
+-dontwarn org.w3c.dom.bootstrap.**
+-keep class com.android.installreferrer.** { *; }
